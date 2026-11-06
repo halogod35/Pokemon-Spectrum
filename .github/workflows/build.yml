@@ -59,6 +59,14 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: timeout 240 ./pokeemerald${{ matrix.bits }} --mp-selftest
 
+      # PS-014: crash-safe save I/O (write .tmp + fsync + rename, read back, leftover .tmp,
+      # slow-save path, in-memory ReadFlash). Uses pokeemerald.sav.selftest, never a real save.
+      - name: Save self-test
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: timeout 60 ./pokeemerald${{ matrix.bits }} --save-selftest
+
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
