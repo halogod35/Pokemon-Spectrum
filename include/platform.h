@@ -77,6 +77,13 @@ bool8 Platform_TakePastedText(char *out, u32 outSize);
 bool8 Platform_ReadMpConfig(char *out, u32 outSize);
 // Replaces "<savePath>.mp.cfg" with `line` plus a line break. FALSE on error.
 bool8 Platform_WriteMpConfig(const char *line);
+
+// MP: this machine's IPv4 addresses for the Host Game screen (PS-022), excluding loopback and
+// link-local. Writes up to `max` dotted quads separated by single spaces into `out` (ASCII,
+// NUL-terminated) and returns how many. Never blocks (no DNS, no packets sent).
+// Implemented in src/platform/net_info.c.
+#define PLATFORM_LAN_ADDRESSES_MAX 4
+u32 Platform_GetLanAddresses(char *out, u32 outSize, u32 max);
 #endif // PORTABLE
 
 #endif

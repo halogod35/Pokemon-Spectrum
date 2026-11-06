@@ -25,6 +25,7 @@
 #include "platform/system.h"
 #include "mp/mp.h" // MP:
 #include "platform/text_input.h" // MP: Join Game IP entry keyboard input (PS-021)
+#include "mp_menu.h" // MP: MpUi_Update, the single MP event consumer (PS-022)
 
 extern void (*const gIntrTable[])(void);
 
@@ -186,6 +187,7 @@ int main(int argc, char **argv)
         // MP: pump the network once per outer iteration, before the fixed-step
         // MainLoop() ticks; it also runs while paused (design.md section 5).
         MP_Update();
+        MpUi_Update(); // MP: drain MP events right after the pump (PS-022; PS-033 notices)
 
         curGameTime = SDL_GetPerformanceCounter();
         deltaTime = (double)((curGameTime - lastGameTime) / (double)SDL_GetPerformanceFrequency());

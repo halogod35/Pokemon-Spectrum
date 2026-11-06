@@ -177,6 +177,7 @@ static EWRAM_DATA u16 sCurrItemAndOptionMenuCheck = 0;
 static EWRAM_DATA u16 sMpMainMenuScrollOffset = 0;
 // MP: set by CB2_ReinitMainMenuMultiplayer: open the Host/Join sub-menu instead of the main menu.
 static EWRAM_DATA bool8 sMpReopenSubmenu = FALSE;
+static EWRAM_DATA u8 sMpReopenSubmenuItem = 0; // MP: MP_SUBMENU_* to select when reopening
 
 static u8 sBirchSpeechMainTaskId;
 
@@ -621,6 +622,15 @@ void CB2_ReinitMainMenu(void)
 void CB2_ReinitMainMenuMultiplayer(void)
 {
     sMpReopenSubmenu = TRUE;
+    sMpReopenSubmenuItem = MP_SUBMENU_JOIN;
+    InitMainMenu(TRUE);
+}
+
+// MP: back from the Host Game screen (PS-022): same, with HOST GAME selected.
+void CB2_ReinitMainMenuMultiplayerHost(void)
+{
+    sMpReopenSubmenu = TRUE;
+    sMpReopenSubmenuItem = MP_SUBMENU_HOST;
     InitMainMenu(TRUE);
 }
 
@@ -850,8 +860,9 @@ static void Task_DisplayMainMenu(u8 taskId)
             LoadPalette(&palette, BG_PLTT_ID(15) + 1, PLTT_SIZEOF(1));
         }
 
-        // MP: returning from the Join Game IP screen (PS-021): reopen the Host/Join sub-menu
-        // on JOIN GAME. B there goes back to the main menu with the cursor on MULTIPLAYER.
+        // MP: returning from the Join Game IP screen (PS-021) or the Host Game screen (PS-022):
+        // reopen the Host/Join sub-menu on that item. B there goes back to the main menu with
+        // the cursor on MULTIPLAYER.
         if (sMpReopenSubmenu)
         {
             sMpReopenSubmenu = FALSE;
@@ -861,7 +872,7 @@ static void Task_DisplayMainMenu(u8 taskId)
                 tIsScrolled = 0;
                 sCurrItemAndOptionMenuCheck = MP_MAIN_MENU_ITEM_MULTIPLAYER;
                 sMpMainMenuScrollOffset = 0;
-                MpMainMenu_ShowSubmenu(taskId, MP_SUBMENU_JOIN);
+                MpMainMenu_ShowSubmenu(taskId, sMpReopenSubmenuItem);
                 return;
             }
         }
@@ -1443,55 +1454,30 @@ static void Task_MpMainMenu_WaitForFadeIn(u8 taskId)
         gTasks[taskId].func = Task_HighlightSelectedMainMenuItem;
 }
 
-// Same exit as ACTION_CONTINUE in Task_HandleMainMenuAPressed.
-static void MpMainMenu_ContinueSavedGame(u8 taskId)
-{
-    MpMainMenu_ClearSubmenu();
-    gPlttBufferUnfaded[0] = RGB_BLACK;
-    gPlttBufferFaded[0] = RGB_BLACK;
-    SetMainCallback2(CB2_ContinueSavedGame);
-    DestroyTask(taskId);
-    FreeAllWindowBuffers();
-    sCurrItemAndOptionMenuCheck = 0;
-}
-
-static void MpMainMenu_HostGame(void)
-{
-    // MP_Host precondition (mp.h): state is OFFLINE or ERROR.
-    u8 state = MP_GetState();
-
-    if (state != MP_STATE_OFFLINE && state != MP_STATE_ERROR)
-    {
-        DBGPRINTF("[MP] HOST GAME: already in a session (state %u); not hosting again\n", (unsigned int)state);
-        return;
-    }
-    if (!MP_Host(MP_DEFAULT_PORT))
-        DBGPRINTF("[MP] HOST GAME: could not host on port %u; playing single-player\n", (unsigned int)MP_DEFAULT_PORT);
-}
-
 // HOST GAME / JOIN GAME after the fade to black.
 static void Task_MpMainMenu_SubmenuAPressed(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
+    u8 item;
 
     if (!gPaletteFade.active)
     {
-        switch (tMpSubmenuItem)
+        item = tMpSubmenuItem;
+        MpMainMenu_ClearSubmenu();
+        DestroyTask(taskId);
+        FreeAllWindowBuffers();
+        sCurrItemAndOptionMenuCheck = 0;
+        switch (item)
         {
         case MP_SUBMENU_HOST:
         default:
-            // Placeholder until PS-022 adds the "Hosting on port N" screen: start the
-            // session and continue the save.
-            MpMainMenu_HostGame();
-            MpMainMenu_ContinueSavedGame(taskId);
+            // PS-022: MP_Host, then "Hosting on port N" (A continues the save) or the error.
+            // B there comes back via CB2_ReinitMainMenuMultiplayerHost.
+            SetMainCallback2(CB2_MpStartHosting);
             break;
         case MP_SUBMENU_JOIN:
             // PS-021: the IP entry screen. B there comes back via CB2_ReinitMainMenuMultiplayer.
-            MpMainMenu_ClearSubmenu();
             SetMainCallback2(CB2_MpInitIpEntryScreen);
-            DestroyTask(taskId);
-            FreeAllWindowBuffers();
-            sCurrItemAndOptionMenuCheck = 0;
             break;
         }
     }

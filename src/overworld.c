@@ -67,6 +67,7 @@
 #include "constants/trainer_hill.h"
 #include "constants/weather.h"
 #include "mp/mp.h" // MP:
+#include "mp_menu.h" // MP: queued field notice ("Disconnected from host", PS-022)
 
 struct CableClubPlayer
 {
@@ -1454,6 +1455,10 @@ static void DoCB1_Overworld(u16 newKeys, u16 heldKeys)
     FieldGetPlayerInput(&inputStruct, newKeys, heldKeys);
     if (!ArePlayerFieldControlsLocked())
     {
+        // MP: a session error that happened during a battle, script or menu is shown here,
+        // once the player is back in free field control (PS-022). It locks the controls.
+        if (MpUi_TryShowFieldNotice())
+            return;
         if (ProcessPlayerFieldInput(&inputStruct) == 1)
         {
             LockPlayerFieldControls();

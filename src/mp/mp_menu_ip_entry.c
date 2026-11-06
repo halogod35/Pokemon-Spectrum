@@ -18,7 +18,12 @@
 // octet, ':' to the port, Backspace deletes, Ctrl+V pastes "a.b.c.d" or "a.b.c.d:port".
 //
 // The last address used is kept in "<savePath>.mp.cfg" (never in the save, AD-10) and is
-// pre-filled the next time. Until PS-022, confirming calls MP_Join and continues the save.
+// pre-filled the next time.
+//
+// Join flow (PS-022): A calls MP_Join and the help box shows "Connecting to a.b.c.d:port..."
+// (B cancels with MP_Leave). When the state becomes IN_SESSION the save continues (same
+// exit as CONTINUE). When it becomes ERROR (REJECT, timeout, bad address) the reason is
+// shown; A/B acknowledges it (MP_Leave) and the address can be edited again.
 
 #include "global.h"
 #include "bg.h"
@@ -32,6 +37,7 @@
 #include "scanline_effect.h"
 #include "sound.h"
 #include "sprite.h"
+#include "string_util.h"
 #include "strings.h"
 #include "task.h"
 #include "text.h"
@@ -79,19 +85,6 @@ enum
 {
     WIN_ADDRESS,
     WIN_HELP,
-};
-
-static const struct BgTemplate sBgTemplates[] =
-{
-    {
-        .bg = 0,
-        .charBaseIndex = 0,
-        .mapBaseIndex = 31,
-        .screenSize = 0,
-        .paletteMode = 0,
-        .priority = 0,
-        .baseTile = 0
-    }
 };
 
 // Tiles 1..0x144 are used; the frames are loaded at 0x200 (dialog) and 0x214 (std)
@@ -143,17 +136,17 @@ enum
 {
     STATE_WAIT_FADE_IN,
     STATE_INPUT,
+    STATE_CONNECTING,       // MP_Join returned TRUE; waiting for IN_SESSION or ERROR
+    STATE_CONNECT_FAILED,   // showing the reason; A/B goes back to STATE_INPUT
     STATE_EXIT,
 };
 
 enum
 {
-    EXIT_JOIN,
-    EXIT_BACK,
+    EXIT_CONTINUE,          // session started: continue the save
+    EXIT_BACK,              // back to the Host/Join sub-menu
 };
 
-static void CB2_MpIpEntry(void);
-static void VBlankCB_MpIpEntry(void);
 static void Task_MpIpEntry(u8 taskId);
 
 // ---------------------------------------------------------------------------
@@ -432,6 +425,9 @@ static void PrintChar(u8 x, u8 y, u8 c, const u8 *color)
     AddTextPrinterParameterized3(WIN_ADDRESS, FONT_NORMAL, x, y, color, TEXT_SKIP_DRAW, str);
 }
 
+// Title line of WIN_ADDRESS: the prompt, or gText_MpConnectFailedTitle after a failure.
+static EWRAM_DATA const u8 *sAddressTitle = NULL;
+
 static void PrintAddress(void)
 {
     u8 field, digit;
@@ -439,7 +435,7 @@ static void PrintAddress(void)
     u8 x = ADDRESS_LEFT;
 
     FillWindowPixelBuffer(WIN_ADDRESS, PIXEL_FILL(TEXT_COLOR_WHITE));
-    AddTextPrinterParameterized3(WIN_ADDRESS, FONT_NORMAL, 0, 1, sTextColor_Normal, TEXT_SKIP_DRAW, gText_MpHostAddress);
+    AddTextPrinterParameterized3(WIN_ADDRESS, FONT_NORMAL, 0, 1, sTextColor_Normal, TEXT_SKIP_DRAW, sAddressTitle);
     for (field = 0; field < IP_FIELD_COUNT; field++)
     {
         for (digit = 0; digit < sFieldDigits[field]; digit++)
@@ -474,8 +470,17 @@ static void PrintAddress(void)
     CopyWindowToVram(WIN_ADDRESS, COPYWIN_GFX);
 }
 
+// Replaces the help box text (2 lines).
+static void ShowHelpText(const u8 *text)
+{
+    FillWindowPixelBuffer(WIN_HELP, PIXEL_FILL(TEXT_COLOR_WHITE));
+    AddTextPrinterParameterized(WIN_HELP, FONT_NORMAL, text, 0, 1, TEXT_SKIP_DRAW, NULL);
+    CopyWindowToVram(WIN_HELP, COPYWIN_GFX);
+}
+
 static void DrawScreen(void)
 {
+    sAddressTitle = gText_MpHostAddress;
     DrawStdFrameWithCustomTileAndPalette(WIN_ADDRESS, FALSE, STD_FRAME_TILE, STD_FRAME_PALETTE);
     PrintAddress();
     DrawDialogFrameWithCustomTileAndPalette(WIN_HELP, FALSE, DLG_FRAME_TILE, DLG_FRAME_PALETTE);
@@ -489,75 +494,12 @@ static void DrawScreen(void)
 // Screen
 // ---------------------------------------------------------------------------
 
-static void InitBgAndWindows(void)
-{
-    ClearScheduledBgCopiesToVram();
-    ResetBgsAndClearDma3BusyFlags(0);
-    InitBgsFromTemplates(0, sBgTemplates, ARRAY_COUNT(sBgTemplates));
-    ChangeBgX(0, 0, BG_COORD_SET);
-    ChangeBgY(0, 0, BG_COORD_SET);
-    ScheduleBgCopyTilemapToVram(0);
-    SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_OBJ_ON | DISPCNT_OBJ_1D_MAP);
-    ShowBg(0);
-    InitWindows(sWindowTemplates);
-    DeactivateAllTextPrinters();
-    LoadMessageBoxAndBorderGfx();
-}
-
 void CB2_MpInitIpEntryScreen(void)
 {
-    u32 i;
-
-    SetGpuReg(REG_OFFSET_DISPCNT, 0);
-    SetVBlankCallback(NULL);
-    // The main menu leaves its highlight window and darken blend on; turn them off.
-    SetGpuReg(REG_OFFSET_WIN0H, 0);
-    SetGpuReg(REG_OFFSET_WIN0V, 0);
-    SetGpuReg(REG_OFFSET_WININ, 0);
-    SetGpuReg(REG_OFFSET_WINOUT, 0);
-    SetGpuReg(REG_OFFSET_BLDCNT, 0);
-    SetGpuReg(REG_OFFSET_BLDALPHA, 0);
-    SetGpuReg(REG_OFFSET_BLDY, 0);
-    DmaClear16(3, PLTT, PLTT_SIZE);
-    DmaClearLarge16(3, (void *)VRAM, VRAM_SIZE, 0x1000);
-    ResetOamRange(0, 128);
-    LoadOam();
-    ScanlineEffect_Stop();
-    ScanlineEffect_Clear();
-    ResetSpriteData();
-    FreeAllSpritePalettes();
-    ResetTasks();
-    ResetPaletteFade();
-    // Black backdrop: don't fade back in to the main menu's palettes.
-    for (i = 0; i < PLTT_BUFFER_SIZE; i++)
-    {
-        gPlttBufferUnfaded[i] = RGB_BLACK;
-        gPlttBufferFaded[i] = RGB_BLACK;
-    }
-    InitBgAndWindows();
+    MpMenu_InitScreen(sWindowTemplates);
     LoadAddress();
     DrawScreen();
-    // Start black (applied immediately, so nothing flashes before the first frame).
-    BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, RGB_BLACK);
-    SetVBlankCallback(VBlankCB_MpIpEntry);
-    SetMainCallback2(CB2_MpIpEntry);
-    CreateTask(Task_MpIpEntry, 80);
-}
-
-static void CB2_MpIpEntry(void)
-{
-    RunTasks();
-    AnimateSprites();
-    BuildOamBuffer();
-    DoScheduledBgTilemapCopiesToVram();
-    UpdatePaletteFade();
-}
-
-static void VBlankCB_MpIpEntry(void)
-{
-    ProcessSpriteCopyRequests();
-    LoadOam();
-    TransferPlttBuffer();
+    MpMenu_StartScreen(Task_MpIpEntry);
 }
 
 static void StartExit(u8 taskId, u8 action)
@@ -608,13 +550,15 @@ static bool8 HandleKeyboard(void)
     return changed;
 }
 
+static void StartJoin(u8 taskId);
+
 static void HandleInput(u8 taskId)
 {
     bool8 changed = HandleKeyboard();
 
     if (JOY_NEW(A_BUTTON | START_BUTTON))
     {
-        StartExit(taskId, EXIT_JOIN);
+        StartJoin(taskId);
         return;
     }
     if (JOY_NEW(B_BUTTON))
@@ -657,30 +601,93 @@ static void HandleInput(u8 taskId)
     }
 }
 
-static void JoinAndContinue(void)
+// Back to editing after a cancelled or failed connect.
+static void ReturnToInput(u8 taskId)
 {
+    s16 *data = gTasks[taskId].data;
+
+    sAddressTitle = gText_MpHostAddress;
+    PrintAddress();
+    ShowHelpText(gText_MpIpEntryHelp);
+    Platform_StartTextInput();
+    tState = STATE_INPUT;
+}
+
+static void ShowConnectFailed(u8 taskId, u8 reason)
+{
+    s16 *data = gTasks[taskId].data;
+
+    DBGPRINTF("[MP] Join Game: connect failed (%s)\n", MP_GetReasonName(reason));
+    PlaySE(SE_BOO);
+    sAddressTitle = gText_MpConnectFailedTitle;
+    PrintAddress();
+    ShowHelpText(MpUi_GetReasonText(reason));
+    tState = STATE_CONNECT_FAILED;
+}
+
+// A on the address: remember it, MP_Join, then "Connecting to ..." (or the error right away).
+static void StartJoin(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
     char ip[MP_ADDRESS_MAX_LEN + 1];
     char line[IP_CFG_LINE_SIZE];
     u16 port = sIpEntry.fields[IP_FIELD_PORT];
-    u8 state;
+
+    PlaySE(SE_SELECT);
+    Platform_StopTextInput(); // no typing while connecting (restarted by ReturnToInput)
+    ResetTyping();
 
     FormatIp(ip);
     FormatConfigLine(line);
     if (!Platform_WriteMpConfig(line))
         DBGPRINTF("[MP] Join Game: could not save the last address to .mp.cfg\n");
 
-    // MP_Join precondition (mp.h): state is OFFLINE or ERROR.
-    state = MP_GetState();
-    if (state != MP_STATE_OFFLINE && state != MP_STATE_ERROR)
-        DBGPRINTF("[MP] Join Game: already in a session (state %u); not joining\n", (unsigned int)state);
-    else if (!MP_Join(ip, port))
-        DBGPRINTF("[MP] Join Game: could not join %s:%u; playing single-player\n", ip, (unsigned int)port);
+    // The menu decides now: a pending --host/--join auto-start must not fire as well when
+    // the save continues. Clear any old ERROR/session first (MP_Join also resets it).
+    MP_SetAutoStart(MP_AUTOSTART_NONE, NULL, 0);
+    if (MP_GetState() != MP_STATE_OFFLINE)
+        MP_Leave();
 
-    // Placeholder until PS-022 adds the "Connecting..." screen: continue the save, the same
-    // way the main menu's CONTINUE does.
-    gPlttBufferUnfaded[0] = RGB_BLACK;
-    gPlttBufferFaded[0] = RGB_BLACK;
-    SetMainCallback2(CB2_ContinueSavedGame);
+    if (!MP_Join(ip, port))
+    {
+        ShowConnectFailed(taskId, MP_GetErrorReason());
+        return;
+    }
+    MpMenu_AsciiToGameString(gStringVar1, line, 0x100);
+    StringExpandPlaceholders(gStringVar4, gText_MpConnecting);
+    ShowHelpText(gStringVar4);
+    tState = STATE_CONNECTING;
+}
+
+static void HandleConnecting(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+
+    switch (MP_GetState())
+    {
+    case MP_STATE_IN_SESSION:
+        // WELCOME: continue the save with the session live.
+        PlaySE(SE_SELECT);
+        BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
+        tExitAction = EXIT_CONTINUE;
+        tState = STATE_EXIT;
+        return;
+    case MP_STATE_ERROR:
+        // REJECT, timeout or transport failure.
+        ShowConnectFailed(taskId, MP_GetErrorReason());
+        return;
+    case MP_STATE_OFFLINE:
+        // Someone else ended the attempt; nothing to wait for.
+        ReturnToInput(taskId);
+        return;
+    }
+
+    if (JOY_NEW(B_BUTTON))
+    {
+        PlaySE(SE_SELECT);
+        MP_Leave(); // cancels the connect
+        ReturnToInput(taskId);
+    }
 }
 
 static void Task_MpIpEntry(u8 taskId)
@@ -699,13 +706,31 @@ static void Task_MpIpEntry(u8 taskId)
     case STATE_INPUT:
         HandleInput(taskId);
         break;
+    case STATE_CONNECTING:
+        HandleConnecting(taskId);
+        break;
+    case STATE_CONNECT_FAILED:
+        if (JOY_NEW(A_BUTTON | B_BUTTON))
+        {
+            PlaySE(SE_SELECT);
+            MP_Leave(); // acknowledge the ERROR
+            ReturnToInput(taskId);
+        }
+        break;
     case STATE_EXIT:
         if (!gPaletteFade.active)
         {
-            if (tExitAction == EXIT_JOIN)
-                JoinAndContinue();
+            if (tExitAction == EXIT_CONTINUE)
+            {
+                // Same exit as the main menu's CONTINUE.
+                gPlttBufferUnfaded[0] = RGB_BLACK;
+                gPlttBufferFaded[0] = RGB_BLACK;
+                SetMainCallback2(CB2_ContinueSavedGame);
+            }
             else
+            {
                 SetMainCallback2(CB2_ReinitMainMenuMultiplayer);
+            }
             DestroyTask(taskId);
             FreeAllWindowBuffers();
         }
