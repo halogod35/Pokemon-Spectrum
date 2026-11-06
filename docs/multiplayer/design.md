@@ -38,6 +38,17 @@ Internal headers (`mp_protocol.h`, `mp_wire.h`, `mp_transport.h`, `mp_summary.h`
 `mp_internal.h` for shared session state and logging macros) are for `src/mp/*.c` only.
 Game code including them is a review failure.
 
+**As implemented in PS-012:**
+- All session state is in a `struct MpSession` (`include/mp/mp_session_internal.h`). The game uses
+  instance 0 only.
+- `--mp-selftest` drives up to 7 session instances, each with a matching transport instance, plus one
+  raw transport instance for hand-made packets. That lets one process run a host and several clients
+  over loopback (`src/mp/mp_selftest_session.c`).
+- The `--mp-fake-*` overrides are captured per session at `MP_Host`/`MP_Join`.
+- Presence functions (`MP_SetLocalPresence`, `MP_PopRemotePresence`, `MP_ClearPresenceOverflow`) are
+  minimal placeholders in `mp_session.c`: they store local presence, send nothing, and drop PRESENCE
+  messages without counting them as malformed. PS-030 replaces them.
+
 ### 2.1 Internal interfaces (contract for PS-011 / PS-013)
 
 **Transport** (`mp_transport.h`, PS-011). No ENet types leak out. Peers are small integer ids.

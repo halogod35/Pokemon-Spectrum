@@ -3,10 +3,11 @@
 The PC build accepts command-line flags so that several copies of the game can run on one machine, each with
 its own save file and its own multiplayer role, without going through menus.
 
-> Status: the flags are **parsed and stored** in `gPlatformArgs` (`include/platform.h`). `--save`, `--title`,
-> `--scale` and `--help` take effect now. `--host`, `--join`, `--port`, `--name` and `--mp-debug` are stored
-> for the multiplayer session code (PS-012) and do nothing yet, apart from `--mp-debug` printing the parsed
-> options at startup.
+> Status (PS-012): `--host` / `--join` start a session automatically once **Continue** reaches the overworld.
+> Choosing **New Game** (or having no save, which only offers New Game) cancels them with
+> `[MP] --host/--join needs an existing save` and the game runs single-player (AD-11). If the session can't
+> start (port in use, bad address, rejected), the reason is logged and the game keeps running single-player.
+> The menus (PS-020–022) use the same session code later.
 
 ## Flags
 
@@ -14,11 +15,13 @@ its own save file and its own multiplayer role, without going through menus.
 |---|---|---|
 | `--save <path>` | Save file to read and write. Created if it doesn't exist. | `pokeemerald.sav` (working directory) |
 | `--host [port]` | Host a game. The port is optional and is only taken if the next argument starts with a digit. | port 27500 |
-| `--join <ip[:port]>` | Join the game at `ip` (IPv4 address or hostname, no IPv6 literals). | port 27500 |
+| `--join <ip[:port]>` | Join the game at `ip`. **IPv4 dotted quad only** (`a.b.c.d`). A hostname is refused when connecting (`BAD_ADDRESS`), because a DNS lookup would block the game loop (AD-4). | port 27500 |
 | `--port <n>` | Port for `--host` / `--join` (1–65535). | 27500 |
-| `--name <text>` | Debug override for the displayed player name (max 31 bytes). | the save's name |
+| `--name <text>` | Debug override for the name other players see (never saved). 1–7 characters, `A-Z a-z 0-9` only. Anything else exits with code 2 before the window opens. | the save's name |
 | `--mp-debug` | Verbose multiplayer/network logging. | off |
 | `--mp-selftest` | Run the multiplayer self-test (loopback on 127.0.0.1, UDP 27590–27599) without a window or a save, print `[MP] selftest OK` / `FAILED`, and exit 0 / 1. Added by PS-011. | off |
+| `--mp-fake-protocol <n>` | **Test only.** Advertise protocol version `n` (0–65535) in HELLO, so a normal host answers `REJECT(VERSION)`. | off |
+| `--mp-fake-build <id>` | **Test only.** Hash `<id>` (1–15 printable ASCII) instead of the real build id, so a normal host answers `REJECT(BUILD)`. | off |
 | `--title <text>` | Window title (max 127 bytes). | `Pokémon Spectrum`, `Pokémon Spectrum [HOST]` or `Pokémon Spectrum [CLIENT]` |
 | `--scale <n>` | Initial window scale, 1–10. | 1 |
 | `-h`, `--help` | Print help and exit. | |

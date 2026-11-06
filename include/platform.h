@@ -30,6 +30,7 @@ void Platform_SetAlarm(u8 *alarmData);
 #define PLATFORM_ARG_ADDRESS_SIZE   256
 #define PLATFORM_ARG_NAME_SIZE      32
 #define PLATFORM_ARG_TITLE_SIZE     128
+#define PLATFORM_ARG_FAKE_BUILD_SIZE 16  // MP: --mp-fake-build, 15 chars + NUL
 
 enum
 {
@@ -44,6 +45,9 @@ struct PlatformArgs
     u8 mpRole;                                   // PLATFORM_MP_ROLE_*
     bool8 mpDebug;                               // --mp-debug
     bool8 mpSelftest;                            // --mp-selftest (MP: PS-011)
+    bool8 hasFakeProtocol;                       // --mp-fake-protocol given (MP: PS-012)
+    u16 fakeProtocol;                            // --mp-fake-protocol <0..65535>
+    char fakeBuild[PLATFORM_ARG_FAKE_BUILD_SIZE]; // --mp-fake-build <1..15 printable ASCII>, empty if not given
     bool8 hasName;                               // TRUE if --name was given
     u16 port;                                    // listen port (host) or remote port (client), default PLATFORM_MP_DEFAULT_PORT
     char joinAddress[PLATFORM_ARG_ADDRESS_SIZE]; // host part of --join <ip[:port]>, empty otherwise

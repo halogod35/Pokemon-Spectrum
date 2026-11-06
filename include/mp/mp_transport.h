@@ -18,7 +18,7 @@
 #define MP_CHANNEL_COUNT        2
 #define MP_PEER_NONE            0xFF
 #define MP_TRANSPORT_MAX_EVENTS_PER_POLL 64
-#define MP_TRANSPORT_INSTANCE_COUNT 2   // 0 = normal, 1 = selftest only
+#define MP_TRANSPORT_INSTANCE_COUNT 8   // 0 = normal, 1..7 = selftest only
 
 enum
 {
@@ -75,5 +75,9 @@ u16 MpTransport_GetRttMs(u8 peer);
 void MpTransport_SelectInstance(u8 instance);
 // Strict IPv4 dotted-quad check: four decimal octets 0..255, 1-3 digits each.
 bool8 MpTransport_IsValidIPv4(const char *text);
+// Selftest only (AD-9 flood test): sends about `totalBytes` of random UDP datagrams
+// (0..1400 bytes each, xorshift PRNG from `seed`) from a fresh plain socket to
+// ipv4:port. Not ENet traffic. Returns the number of datagrams sent.
+u32 MpTransport_DebugSendRandomUdp(const char *ipv4, u16 port, u32 totalBytes, u32 seed);
 
 #endif // GUARD_MP_MP_TRANSPORT_H

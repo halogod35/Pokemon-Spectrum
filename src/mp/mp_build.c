@@ -78,6 +78,14 @@ u8 MpBuild_IsDirty(void)
     return MP_BUILD_DIRTY ? 1 : 0;
 }
 
+void MpBuild_ClearOverrides(void)
+{
+    MpBuild_Init();
+    sProtocolVersion = MP_PROTOCOL_VERSION;
+    MpSetBuildIdString(MP_BUILD_ID);
+    MpComputeBuildHash();
+}
+
 void MP_SetFakeProtocolVersion(u16 version)
 {
     MpBuild_Init();

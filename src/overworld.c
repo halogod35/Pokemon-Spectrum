@@ -66,6 +66,7 @@
 #include "constants/songs.h"
 #include "constants/trainer_hill.h"
 #include "constants/weather.h"
+#include "mp/mp.h" // MP:
 
 struct CableClubPlayer
 {
@@ -1540,6 +1541,7 @@ static bool8 RunFieldCallback(void)
 
 void CB2_NewGame(void)
 {
+    MP_OnNewGame(); // MP: cancel a pending --host/--join (needs an existing save, AD-11)
     FieldClearVBlankHBlankCallbacks();
     StopMapMusic();
     ResetSafariZoneFlag_();
@@ -1772,6 +1774,7 @@ void CB2_ContinueSavedGame(void)
         SetMainCallback1(CB1_Overworld);
         CB2_ReturnToField();
     }
+    MP_OnContinueSavedGame(); // MP: --host/--join auto-start (runs in the next MP_Update)
 }
 
 static void FieldClearVBlankHBlankCallbacks(void)

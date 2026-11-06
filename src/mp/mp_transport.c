@@ -349,6 +349,50 @@ u32 MpTransport_GetTimeMs(void)
     return (u32)enet_time_get();
 }
 
+u32 MpTransport_DebugSendRandomUdp(const char *ipv4, u16 port, u32 totalBytes, u32 seed)
+{
+    ENetAddress address;
+    ENetSocket sock;
+    ENetBuffer buffer;
+    static u8 sData[1400];
+    u32 state = (seed != 0) ? seed : 0x12345678u;
+    u32 sent = 0;
+    u32 bytes = 0;
+    u32 len, i;
+
+    if (!MpTransport_IsValidIPv4(ipv4) || !MpTransport_Init())
+        return 0;
+    memset(&address, 0, sizeof(address));
+    if (enet_address_set_host_ip(&address, ipv4) != 0)
+        return 0;
+    address.port = port;
+    sock = enet_socket_create(ENET_SOCKET_TYPE_DATAGRAM);
+    if (sock == ENET_SOCKET_NULL)
+        return 0;
+
+    while (bytes < totalBytes)
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        len = state % (sizeof(sData) + 1);
+        for (i = 0; i < len; i++)
+        {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            sData[i] = (u8)(state >> 24);
+        }
+        buffer.data = sData;
+        buffer.dataLength = len;
+        if (enet_socket_send(sock, &address, &buffer, 1) >= 0)
+            sent++;
+        bytes += (len != 0) ? len : 1;
+    }
+    enet_socket_destroy(sock);
+    return sent;
+}
+
 u16 MpTransport_GetRttMs(u8 peerId)
 {
     ENetPeer *peer = MpGetPeer(peerId);

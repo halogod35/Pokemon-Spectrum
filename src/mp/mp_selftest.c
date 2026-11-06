@@ -10,6 +10,7 @@
 #include "mp/mp.h"
 #include "mp/mp_internal.h"
 #include "mp/mp_protocol.h"
+#include "mp/mp_selftest.h"
 #include "mp/mp_summary.h"
 #include "mp/mp_transport.h"
 #include "mp/mp_wire.h"
@@ -333,6 +334,9 @@ s32 MP_RunSelftest(void)
     {
         TestLoopback();
     }
+    // PS-012: protocol.md 8.3 parser fuzzing, then the in-process session scenario.
+    sFailures += MpSelftest_Parsers();
+    sFailures += MpSelftest_Session();
     MpTransport_Shutdown();
 
     if (sFailures == 0)

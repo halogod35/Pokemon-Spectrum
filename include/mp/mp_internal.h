@@ -9,6 +9,8 @@
 #include "gba/types.h"
 #include "gba/defines.h" // TRUE, FALSE, NULL
 
+#define MP_EOS 0xFF // game charset string terminator (EOS), without pulling in global.h
+
 // [MP] logging (design.md section 7).
 // MP_LOG: always printed (session timeline, errors, warnings).
 // MP_DLOG: only with --mp-debug (MP_SetDebugLogging(TRUE)).
@@ -35,5 +37,7 @@ u16 MpBuild_GetProtocolVersion(void);
 u8 MpBuild_IsDirty(void);
 // mp_build.c: computes and logs the build identity. Called by MP_Init.
 void MpBuild_Init(void);
+// mp_build.c: selftest only: drops --mp-fake-* overrides (sessions keep what they captured).
+void MpBuild_ClearOverrides(void);
 
 #endif // GUARD_MP_MP_INTERNAL_H

@@ -85,6 +85,13 @@ int main(int argc, char **argv)
         return MP_RunSelftest();
     }
 
+    // MP: --name is checked before anything opens (A-Z a-z 0-9, 1-7 chars)
+    if (gPlatformArgs.hasName && !MP_SetNameOverride(gPlatformArgs.name))
+    {
+        fprintf(stderr, "--name: 1-7 characters, A-Z a-z 0-9 only\n");
+        return 2;
+    }
+
     if (!ReadSaveFile(gPlatformArgs.savePath))
         return 1;
 
@@ -151,6 +158,15 @@ int main(int argc, char **argv)
 
     MP_Init(); // MP: no socket is opened here
     MP_SetDebugLogging(gPlatformArgs.mpDebug); // MP:
+    if (gPlatformArgs.hasFakeProtocol) // MP:
+        MP_SetFakeProtocolVersion(gPlatformArgs.fakeProtocol);
+    if (gPlatformArgs.fakeBuild[0] != '\0') // MP:
+        MP_SetFakeBuildId(gPlatformArgs.fakeBuild);
+    // MP: --host / --join start after Continue reaches the overworld (MP_OnContinueSavedGame)
+    if (gPlatformArgs.mpRole == PLATFORM_MP_ROLE_HOST)
+        MP_SetAutoStart(MP_AUTOSTART_HOST, NULL, gPlatformArgs.port);
+    else if (gPlatformArgs.mpRole == PLATFORM_MP_ROLE_CLIENT)
+        MP_SetAutoStart(MP_AUTOSTART_JOIN, gPlatformArgs.joinAddress, gPlatformArgs.port);
 
     AgbMain();
 
@@ -245,6 +261,8 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --name <text>        Debug override for the displayed player name (max %d bytes)\n"
         "  --mp-debug           Verbose multiplayer/network logging\n"
         "  --mp-selftest        Run the multiplayer self-test (no window), print OK/FAILED and exit\n"
+        "  --mp-fake-protocol <n>  Test only: advertise protocol version n (host rejects with VERSION)\n"
+        "  --mp-fake-build <id>    Test only: hash this build id instead of the real one (BUILD reject)\n"
         "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
         "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
         "  -h, --help           Show this help and exit\n"
@@ -415,6 +433,33 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--mp-selftest") == 0) // MP:
         {
             gPlatformArgs.mpSelftest = TRUE;
+        }
+        else if (strcmp(arg, "--mp-fake-protocol") == 0) // MP: test the VERSION reject
+        {
+            unsigned long version;
+
+            if (value == NULL)
+                goto missing_value;
+            if (!ParseUnsigned(value, 0, 65535, &version))
+                goto bad_value;
+            gPlatformArgs.hasFakeProtocol = TRUE;
+            gPlatformArgs.fakeProtocol = (u16)version;
+            i++;
+        }
+        else if (strcmp(arg, "--mp-fake-build") == 0) // MP: test the BUILD reject
+        {
+            const char *c;
+
+            if (value == NULL || value[0] == '\0')
+                goto missing_value;
+            for (c = value; *c != '\0'; c++)
+            {
+                if (*c <= ' ' || *c >= 0x7F)
+                    goto bad_value;
+            }
+            if (!CopyArgString(gPlatformArgs.fakeBuild, sizeof(gPlatformArgs.fakeBuild), value))
+                goto bad_value;
+            i++;
         }
         else if (strcmp(arg, "--title") == 0)
         {
