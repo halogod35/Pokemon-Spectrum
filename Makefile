@@ -358,6 +358,32 @@ ifeq ($(TARGET_OS),WINDOWS)
   OBJS += $(OBJ_DIR)/res.o
 endif
 
+# MP: multiplayer (PS-011). src/mp/*.c is already collected by C_SRCS_IN above.
+# ENet (libs/enet, vendored 1.3.18, MIT) is plain C: it gets its own rule below,
+# without preproc and without the game's warning flags.
+ifeq ($(PORTABLE),1)
+  ENET_DIR    := libs/enet
+  ENET_SRCS   := $(addprefix $(ENET_DIR)/,callbacks.c compress.c host.c list.c packet.c peer.c protocol.c unix.c win32.c)
+  ENET_OBJS   := $(patsubst %.c,$(OBJ_DIR)/%.o,$(ENET_SRCS))
+  ENET_CFLAGS := -O2 -std=gnu99 -m$(BIT_WIDTH) $(LEADING_UNDERSCORE_FLAG) -I $(ENET_DIR)/include -w
+  ifeq ($(TARGET_OS),WINDOWS)
+    OS_LFLAGS   += -lws2_32
+  else
+    # Replaces ENet's configure step (unix.c only defaults these on __APPLE__).
+    ENET_CFLAGS += -DHAS_FCNTL=1 -DHAS_POLL=1 -DHAS_INET_PTON=1 -DHAS_INET_NTOP=1 \
+                   -DHAS_MSGHDR_FLAGS=1 -DHAS_SOCKLEN_T=1 -DHAS_GETADDRINFO=1 -DHAS_GETNAMEINFO=1
+  endif
+  OBJS += $(ENET_OBJS)
+
+  # Build id for the multiplayer handshake (docs/multiplayer/protocol.md section 9).
+  # Only src/mp/mp_build.c sees it; a stamp file rebuilds that one file when it changes.
+  MP_GIT_ID      := $(shell git rev-parse HEAD 2>/dev/null | cut -c1-8)
+  MP_BUILD_ID    ?= $(if $(MP_GIT_ID),$(MP_GIT_ID),nogit)
+  MP_BUILD_DIRTY := $(if $(shell git status --porcelain --untracked-files=no 2>/dev/null),1,0)
+  MP_BUILD_STAMP := $(OBJ_DIR)/mp_build_id.txt
+  $(shell mkdir -p $(OBJ_DIR); echo '$(MP_BUILD_ID) $(MP_BUILD_DIRTY)' | cmp -s - $(MP_BUILD_STAMP) || echo '$(MP_BUILD_ID) $(MP_BUILD_DIRTY)' > $(MP_BUILD_STAMP))
+endif
+
 OBJS_REL := $(patsubst $(OBJ_DIR)/%,%,$(OBJS))
 
 SUBDIRS  := $(sort $(dir $(OBJS)))
@@ -475,6 +501,20 @@ endif
 
 $(C_BUILDDIR)/%.d: $(C_SUBDIR)/%.c
 	$(SCANINC) -M $@ -g $(ASSETS_DIR_NAME) $(INCLUDE_SCANINC_ARGS) -I tools/agbcc/include $<
+
+# MP: multiplayer build rules (PS-011)
+ifeq ($(PORTABLE),1)
+$(OBJ_DIR)/$(ENET_DIR)/%.o: $(ENET_DIR)/%.c $(wildcard $(ENET_DIR)/include/enet/*.h)
+	@echo "$(MODERNCC) <enet flags> -o $@ $<"
+	@$(MODERNCC) $(ENET_CFLAGS) -c -o $@ $<
+
+# Only the transport sees the ENet headers.
+$(C_BUILDDIR)/mp/mp_transport.o: CPPFLAGS += -I $(ENET_DIR)/include
+$(C_BUILDDIR)/mp/mp_transport.o: $(wildcard $(ENET_DIR)/include/enet/*.h)
+
+$(C_BUILDDIR)/mp/mp_build.o: CPPFLAGS += -DMP_BUILD_ID=\"$(MP_BUILD_ID)\" -DMP_BUILD_DIRTY=$(MP_BUILD_DIRTY)
+$(C_BUILDDIR)/mp/mp_build.o: $(MP_BUILD_STAMP)
+endif
 
 ifneq ($(NODEP),1)
 -include $(addprefix $(OBJ_DIR)/,$(C_SRCS:.c=.d))

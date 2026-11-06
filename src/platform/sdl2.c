@@ -23,6 +23,7 @@
 #include "platform/dma.h"
 #include "platform/framedraw.h"
 #include "platform/system.h"
+#include "mp/mp.h" // MP:
 
 extern void (*const gIntrTable[])(void);
 
@@ -77,6 +78,12 @@ int main(int argc, char **argv)
     int argsResult = ParsePlatformArgs(argc, argv);
     if (argsResult >= 0)
         return argsResult;
+
+    if (gPlatformArgs.mpSelftest) // MP: --mp-selftest runs without a window or a save
+    {
+        MP_SetDebugLogging(gPlatformArgs.mpDebug);
+        return MP_RunSelftest();
+    }
 
     if (!ReadSaveFile(gPlatformArgs.savePath))
         return 1;
@@ -142,6 +149,9 @@ int main(int argc, char **argv)
         SDL_PauseAudio(0);
     }
 
+    MP_Init(); // MP: no socket is opened here
+    MP_SetDebugLogging(gPlatformArgs.mpDebug); // MP:
+
     AgbMain();
 
     double accumulator = 0.0;
@@ -156,6 +166,9 @@ int main(int argc, char **argv)
         double deltaTime;
 
         ProcessEvents();
+        // MP: pump the network once per outer iteration, before the fixed-step
+        // MainLoop() ticks; it also runs while paused (design.md section 5).
+        MP_Update();
 
         curGameTime = SDL_GetPerformanceCounter();
         deltaTime = (double)((curGameTime - lastGameTime) / (double)SDL_GetPerformanceFrequency());
@@ -204,6 +217,7 @@ int main(int argc, char **argv)
         SDL_RenderPresent(sdlRenderer);
     }
 
+    MP_Shutdown(); // MP:
     CloseSaveFile();
 
     SDL_DestroyWindow(sdlWindow);
@@ -230,6 +244,7 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --port <n>           Multiplayer port for --host / --join\n"
         "  --name <text>        Debug override for the displayed player name (max %d bytes)\n"
         "  --mp-debug           Verbose multiplayer/network logging\n"
+        "  --mp-selftest        Run the multiplayer self-test (no window), print OK/FAILED and exit\n"
         "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
         "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
         "  -h, --help           Show this help and exit\n"
@@ -396,6 +411,10 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--mp-debug") == 0)
         {
             gPlatformArgs.mpDebug = TRUE;
+        }
+        else if (strcmp(arg, "--mp-selftest") == 0) // MP:
+        {
+            gPlatformArgs.mpSelftest = TRUE;
         }
         else if (strcmp(arg, "--title") == 0)
         {
@@ -838,6 +857,7 @@ void Platform_SetAlarm(u8 *alarmData)
 void SoftReset(u32 resetFlags)
 {
     puts("Soft Reset called. Exiting.");
+    MP_Shutdown(); // MP: leave the session before exiting
     exit(0);
 }
 

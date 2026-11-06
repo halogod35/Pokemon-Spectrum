@@ -70,7 +70,17 @@ void  MpTransport_Close(void);                      // destroy the ENet host (en
 void  MpTransport_Flush(void);                      // enet_host_flush
 u32   MpTransport_GetTimeMs(void);                  // enet_time_get
 u16   MpTransport_GetRttMs(u8 peer);                // peer->roundTripTime (diagnostics)
+// Added in PS-011:
+bool8 MpTransport_IsOpen(void);                     // this instance has an ENet host
+bool8 MpTransport_IsValidIPv4(const char *text);    // strict a.b.c.d check used by Connect
+void  MpTransport_SelectInstance(u8 instance);      // selftest only: 2nd instance for loopback
 ```
+
+As implemented in PS-011 (`include/mp/mp_transport.h` is the reference): ENet is initialised
+**lazily** by the first `MpTransport_Listen`/`Connect` (or an explicit `MpTransport_Init`), not by
+`MP_Init`, so single-player never calls into ENet (on Windows `enet_initialize` also calls
+`timeBeginPeriod(1)`). `MP_RunSelftest()` (in `mp.h`) is the `--mp-selftest` entry point;
+`gPlatformArgs.mpSelftest` selects it in `main()` before the save is read.
 
 PS-011's card calls these `Transport_*`; they are named `MpTransport_*` here to follow the
 `MP_`/`Mp` naming rule (PROJECT.md §5.5). The transport applies the ENet settings from

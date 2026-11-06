@@ -212,6 +212,10 @@ void MP_Update(void);
 void MP_Shutdown(void);
 // Verbose [MP] logging (--mp-debug). Errors and the session timeline are always logged.
 void MP_SetDebugLogging(bool8 enabled);
+// --mp-selftest (PS-011): runs the multiplayer self-tests without a window or a save
+// (loopback transport, wire helpers; parser fuzzing from PS-012/PS-013). Prints
+// "[MP] selftest OK" or "[MP] selftest FAILED (<n>)". Returns the exit status (0 / 1).
+s32 MP_RunSelftest(void);
 
 // ---------------------------------------------------------------------------
 // Build identity and test overrides (protocol.md section 9)

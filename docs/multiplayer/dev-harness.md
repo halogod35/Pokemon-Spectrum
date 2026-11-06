@@ -18,6 +18,7 @@ its own save file and its own multiplayer role, without going through menus.
 | `--port <n>` | Port for `--host` / `--join` (1–65535). | 27500 |
 | `--name <text>` | Debug override for the displayed player name (max 31 bytes). | the save's name |
 | `--mp-debug` | Verbose multiplayer/network logging. | off |
+| `--mp-selftest` | Run the multiplayer self-test (loopback on 127.0.0.1, UDP 27590–27599) without a window or a save, print `[MP] selftest OK` / `FAILED`, and exit 0 / 1. Added by PS-011. | off |
 | `--title <text>` | Window title (max 127 bytes). | `Pokémon Spectrum`, `Pokémon Spectrum [HOST]` or `Pokémon Spectrum [CLIENT]` |
 | `--scale <n>` | Initial window scale, 1–10. | 1 |
 | `-h`, `--help` | Print help and exit. | |

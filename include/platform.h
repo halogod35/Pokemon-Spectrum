@@ -43,6 +43,7 @@ struct PlatformArgs
     char savePath[PLATFORM_ARG_PATH_SIZE];       // --save, default PLATFORM_DEFAULT_SAVE_PATH
     u8 mpRole;                                   // PLATFORM_MP_ROLE_*
     bool8 mpDebug;                               // --mp-debug
+    bool8 mpSelftest;                            // --mp-selftest (MP: PS-011)
     bool8 hasName;                               // TRUE if --name was given
     u16 port;                                    // listen port (host) or remote port (client), default PLATFORM_MP_DEFAULT_PORT
     char joinAddress[PLATFORM_ARG_ADDRESS_SIZE]; // host part of --join <ip[:port]>, empty otherwise

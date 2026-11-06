@@ -22,6 +22,21 @@ Use `-j$(nproc)` to build with all CPU threads, for example `make linux -j$(npro
 If you switch between `linux` and `winwsl` builds, the object folders are separate (`build/pc64`, `build/pc32`),
 but the build tools in `tools/` are built for the host, so you don't need to clean between them.
 
+### Multiplayer networking (ENet)
+
+Multiplayer uses [ENet](http://enet.bespin.org/) 1.3.18 (MIT), vendored in `libs/enet/`, so there is nothing to
+install. The Makefile compiles it into every PC build and links `-lws2_32 -lwinmm` on Windows. The build also embeds
+a build id (the first 8 hex digits of the git commit, or `nogit`) that the multiplayer handshake compares. Two
+games can only play together if they were built from the same commit. Override it with `make linux MP_BUILD_ID=<id>`.
+
+Check the network layer without starting the game:
+
+```
+./pokeemerald64 --mp-selftest     # prints "[MP] selftest OK" and exits 0 (FAILED / exit 1 otherwise)
+```
+
+It uses UDP ports 27590–27599 on 127.0.0.1. Windows may ask once whether to allow network access.
+
 ## Linux (Arch)
 
 Install the required packages:
