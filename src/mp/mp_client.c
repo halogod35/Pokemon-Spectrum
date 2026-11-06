@@ -93,7 +93,8 @@ static void MpClientHandleWelcome(const u8 *payload, u32 len)
     MP_SLOG("joined the session as slot %u (epoch %u)\n", (unsigned)welcome.yourSlot, (unsigned)welcome.yourEpoch);
     MpSession_LogTable();
     MpSession_QueueEvent(MP_EVENT_SESSION_STARTED, welcome.yourSlot, MP_REASON_NONE);
-    // PS-030: send the current local presence here.
+    // protocol.md 6.2: send the current local presence immediately.
+    MpPresence_Update(MpTransport_GetTimeMs());
 }
 
 static void MpClientHandleReject(const u8 *payload, u32 len)
@@ -212,7 +213,10 @@ static void MpClientHandleSessionMessage(u8 channel, const struct MpMsgHeader *h
             s->players[MP_HOST_SLOT].pingMs = (u16)rtt;
         break;
     case MP_MSG_PRESENCE:
-        // PS-030 implements presence; until then it is ignored (not malformed).
+        if (channel != MP_CHANNEL_PRESENCE)
+            MpClientMalformed("PRESENCE wrong channel");
+        else if (MpPresence_OnClientReceive(payload, len) == MP_PRESENCE_INVALID)
+            MpClientMalformed("PRESENCE");
         break;
     default:
         MpClientMalformed("unexpected message type");
@@ -257,6 +261,8 @@ void MpClient_OnTransportEvent(const struct MpTransportEvent *ev)
                 MpClientHandleReject(ev->data + MP_HEADER_SIZE, hdr.length); // any header version (frozen)
             else if (hdr.type == MP_MSG_WELCOME && ev->channel == MP_CHANNEL_CONTROL && hdr.version == MP_PROTOCOL_VERSION)
                 MpClientHandleWelcome(ev->data + MP_HEADER_SIZE, hdr.length);
+            else if (hdr.type == MP_MSG_PRESENCE && ev->channel == MP_CHANNEL_PRESENCE)
+                break; // relayed presence overtook a delayed WELCOME (expected race, protocol.md 6.8)
             else
                 MpClientMalformed("unexpected message while connecting");
         }

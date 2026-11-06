@@ -22,6 +22,22 @@
 #define MP_PING_MIN_GAP_MS          250
 #define MP_UPDATE_MIN_GAP_MS        1000
 
+// Presence (PS-030, protocol.md 6.8 / 8.4)
+#define MP_PRESENCE_MIN_GAP_MS      50      // sender: at most 20 Hz
+#define MP_PRESENCE_KEEPALIVE_MS    1000    // sender: resend unchanged presence
+#define MP_PRESENCE_HOST_GAP_MS     25      // host: drop a client's PRESENCE closer than this
+#define MP_PRESENCE_STATS_MS        10000   // --mp-debug bytes/s report interval
+#define MP_PRESENCE_WIRE_OVERHEAD   40      // est. ENet (12) + UDP/IPv4 (28) bytes per packet
+
+// Results of the presence receive paths (mp_presence.c)
+enum
+{
+    MP_PRESENCE_ACCEPTED,
+    MP_PRESENCE_STALE,      // duplicate or older seq: silent drop
+    MP_PRESENCE_IGNORED,    // slot empty / own slot / epoch mismatch / rate limit: silent drop
+    MP_PRESENCE_INVALID,    // failed validation: the caller counts it as malformed
+};
+
 enum
 {
     MP_HOST_PEER_NONE,
@@ -40,6 +56,43 @@ struct MpHostPeer
     u32 lastPingSentMs;
     u32 lastPingRecvMs;
     u32 lastUpdateRecvMs;
+    u32 lastPresenceRecvMs; // last accepted PRESENCE from this client (25 ms rule)
+};
+
+// Per remote slot: newer-than state and the FIFO consumed by MP_PopRemotePresence.
+struct MpPresenceSlot
+{
+    bool8 seqValid;         // FALSE until the first PRESENCE after the slot was (re)assigned
+    u16 lastSeq;
+    u8 head;
+    u8 count;
+    struct MpPresence queue[MP_PRESENCE_QUEUE_SIZE];
+};
+
+// PRESENCE traffic per transport peer for the --mp-debug report (message bytes, header included).
+struct MpPresenceTraffic
+{
+    u32 bytesOut;
+    u32 packetsOut;
+    u32 bytesIn;
+    u32 packetsIn;
+};
+
+struct MpPresenceState
+{
+    bool8 sentAny;              // at least one PRESENCE sent in this session
+    u16 nextSeq;                // starts at 0 when the session starts
+    u32 lastSentMs;
+    struct MpPresence lastSent; // includes the seq it was sent with
+    struct MpPresenceSlot slots[MP_MAX_PLAYERS];
+    struct MpPresenceTraffic traffic[MP_HOST_PEER_COUNT];   // client: [0] = the host
+    u32 trafficStartMs;
+    // Session totals (selftest and --mp-debug)
+    u32 sent;
+    u32 accepted;
+    u32 stale;
+    u32 ignored;
+    u32 invalid;
 };
 
 struct MpClientState
@@ -83,7 +136,9 @@ struct MpSession
     bool8 summaryDirty;
     u32 lastUpdateSentMs;
 
-    bool8 flushing;         // MP_Leave / failure: transport kept open to deliver BYE
+    struct MpPresenceState presence;    // PS-030
+
+    bool8 flushing;        // MP_Leave / failure: transport kept open to deliver BYE
     u32 flushStartMs;
 };
 
@@ -114,6 +169,23 @@ void MpClient_OnTransportEvent(const struct MpTransportEvent *ev);
 void MpClient_Update(u32 now);
 void MpClient_SendBye(u8 byeReason);
 void MpClient_SendLocalUpdate(void);
+
+// mp_presence.c (PS-030)
+void MpPresence_ResetLocal(u8 instance);                // forget the stored local presence (MP_Init, selftest)
+void MpPresence_ResetSlot(u8 slot);                     // slot (re)assigned or freed: clear FIFO + seq state
+// Sends the local presence when it changed (>= 50 ms since the last send) or as the 1 s
+// keep-alive. Host: to every player peer; client: to the host. Call while IN_SESSION.
+void MpPresence_Update(u32 now);
+// Host: a PRESENCE payload from client `peer` (already in the table). Overwrites slot/epoch,
+// validates, applies the 25 ms rule and the newer-than check, stores, queues and forwards.
+u8 MpPresence_OnHostReceive(u8 peer, const u8 *payload, u32 len, u32 now);
+// Client: a PRESENCE payload from the host. Validates, drops stale / foreign-epoch / own-slot
+// updates, stores and queues.
+u8 MpPresence_OnClientReceive(const u8 *payload, u32 len);
+// Host: sends the cached presence of every other player (host included) to a new client.
+void MpPresence_SendCachedTo(u8 peer, u8 newSlot);
+// --mp-debug: presence bytes/s per peer every MP_PRESENCE_STATS_MS.
+void MpPresence_DebugReport(u32 now);
 
 #define MP_SLOG(fmt, ...) MP_LOG("%s" fmt, MpSession_Tag(), ##__VA_ARGS__)
 #define MP_SDLOG(fmt, ...) MP_DLOG("%s" fmt, MpSession_Tag(), ##__VA_ARGS__)

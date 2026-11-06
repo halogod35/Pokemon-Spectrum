@@ -11,5 +11,9 @@ u32 MpSelftest_Parsers(void);
 // PS-012: in-process session scenario (host + 3 clients, rejects, kick, leave, timeouts,
 // UDP flood, host BYE, host loss).
 u32 MpSelftest_Session(void);
+// PS-030: PRESENCE parser fuzzing, MP_IsValidMap, seq wraparound, the receive paths
+// (stale / duplicate / foreign epoch / overflow), and an in-process host + clients scenario
+// with relay order, cached presence for a late joiner and the < 2 KB/s walking budget.
+u32 MpSelftest_Presence(void);
 
 #endif // GUARD_MP_MP_SELFTEST_H

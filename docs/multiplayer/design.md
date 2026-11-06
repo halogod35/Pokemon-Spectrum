@@ -45,9 +45,21 @@ Game code including them is a review failure.
   raw transport instance for hand-made packets. That lets one process run a host and several clients
   over loopback (`src/mp/mp_selftest_session.c`).
 - The `--mp-fake-*` overrides are captured per session at `MP_Host`/`MP_Join`.
-- Presence functions (`MP_SetLocalPresence`, `MP_PopRemotePresence`, `MP_ClearPresenceOverflow`) are
-  minimal placeholders in `mp_session.c`: they store local presence, send nothing, and drop PRESENCE
-  messages without counting them as malformed. PS-030 replaces them.
+- ~~Presence functions are placeholders in `mp_session.c`.~~ Replaced by PS-030 (below).
+
+**As implemented in PS-030:**
+- `src/mp/mp_presence.c` (feature layer, no game state): `MP_SetLocalPresence` (sanitises and
+  stores per session instance; survives `MP_Host`/`MP_Join`), send-on-change at most 20 Hz plus
+  the 1 s keep-alive (`MpPresence_Update`, called by `MP_Update` after the role update), the host
+  receive / relay / cache path, the client receive path, the per-slot FIFO,
+  `MP_PopRemotePresence`, `MP_ClearPresenceOverflow`, `MP_IsValidMap` and the `--mp-debug`
+  10 s bytes/s report. State lives in `struct MpSession.presence` (`mp_session_internal.h`).
+- `src/mp/mp_presence_capture.c` (reads game state, never writes it): `MP_CaptureLocalPresence()`.
+  Its only hook is one `// MP:` call at the end of the callbacks in `MainLoop()` (`src/main.c`),
+  so it runs once per game tick in every callback (field, battle, menus, map loads), which is what
+  the `busy` states need. It runs inside the fixed-step loop, not in `MP_Update()`.
+- Field semantics: `protocol.md` 6.8.1.
+- `--mp-selftest` group `src/mp/mp_selftest_presence.c` (`MpSelftest_Presence`).
 
 ### 2.1 Internal interfaces (contract for PS-011 / PS-013)
 
@@ -152,7 +164,7 @@ slot is freed.
 ### 3.3 Presence data flow
 
 ```
-field tick (PS-030 hook, // MP:) ─► MP_SetLocalPresence(&p)       stores, marks dirty
+game tick (MainLoop hook, // MP:) ─► MP_CaptureLocalPresence ─► MP_SetLocalPresence(&p)   stores
 MP_Update ─► mp_presence: changed or 1 s keep-alive, >= 50 ms since last ─► PRESENCE (ch 1)
 host: validate, cache, forward to other clients
 client: validate, newer-seq check ─► MpPlayer.presence + per-slot FIFO(8)

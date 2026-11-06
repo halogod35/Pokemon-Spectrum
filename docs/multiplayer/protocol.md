@@ -295,7 +295,9 @@ A transport-level disconnect without BYE is handled the same way with reason
 
 ### 6.8 `PRESENCE` (0x10) — both directions, channel 1 (unreliable sequenced), payload 16 bytes
 
-Draft defined by PS-010; PS-030 may refine field semantics (any byte change bumps the version).
+Defined by PS-010, implemented by PS-030 (`src/mp/mp_presence.c`, capture in
+`src/mp/mp_presence_capture.c`). PS-030 kept the byte layout unchanged and pinned down the field
+semantics (6.8.1), so the protocol version stays 1. Packet = 4-byte header + 16 = 20 bytes.
 
 | Offset | Size | Type | Field | Meaning | Validation |
 |---|---|---|---|---|---|
@@ -330,6 +332,9 @@ trusts them), validates the rest, applies the newer-than check against that send
 accepted `seq`, stores it as the cached presence for that slot, then forwards the packet
 unchanged otherwise (same `seq`) to every other IN_SESSION client on channel 1.
 
+A client that is still CONNECTING (its WELCOME was delayed or retransmitted while the host
+already relays presence to it) drops PRESENCE silently as well, without counting it as malformed.
+
 **Host → client:** drop silently (not counted as malformed; these are expected races) if `slot`
 is not occupied, is the client's own slot, or `epoch` differs from the table. Then apply the
 newer-than check per slot. Accepted updates replace `MpPlayer.presence`, set
@@ -353,6 +358,40 @@ bool8 MpSeqIsNewer(u16 s, u16 last)
   treated as **not newer** (dropped). That can only happen after 32768 lost packets, and the next
   keep-alive (1 s later) is accepted again.
 - Wraparound: `seq` goes 65535 → 0 normally; `MpSeqIsNewer(0, 65535)` is TRUE.
+
+### 6.8.1 Field semantics (PS-030)
+
+Sender (`MP_SetLocalPresence` sanitises, so every PRESENCE sent passes the checks above):
+
+| Field | How the capture hook fills it |
+|---|---|
+| `mapGroup`, `mapNum` | `gSaveBlock1Ptr->location` while the overworld callback (`CB2_Overworld`) runs. Outside it the **last field map** is kept. `0xFF`/`0xFF` + `NOT_IN_FIELD` before the overworld has been reached once (title, intro, main menu). An invalid map is sent as `0xFF`/`0xFF`. |
+| `x`, `y` | player object `currentCoords - MAP_OFFSET` (already the destination during a step), clamped to `-16..1023`. Kept from the last field tick outside the overworld. |
+| `facing` | player object `facingDirection` (1..4; anything else is sent as `DIR_SOUTH`). |
+| `movement` | The kind of the **last step that started**. A 1-tile move is `WALK` (`WALK_NORMAL`, `WALK_SLOW`, 1-tile jumps), `WALK_FAST` (`WALK_FAST`, `PLAYER_RUN`, `RIDE_WATER_CURRENT`, `SLIDE`: running, surfing, acro bike, currents, ice) or `WALK_FASTER` (`WALK_FASTER`: mach bike top speed). A straight 2-tile move is `JUMP` (ledge). Starting a `JUMP_IN_PLACE_*` / `ACRO_WHEELIE_HOP_FACE_*` action is `JUMP_IN_PLACE`. A facing change in place is `TURN`. Any other position change, a map change that is not a seam step, or the first field tick after a load at another tile is `WARP`. Walking across a **map seam** (the map changes while the overworld callback keeps running and the player is mid-step) is reported as the step it is, with coordinates already in the new map. It returns to `NONE` after 2 consecutive ticks without a held movement in progress (so consecutive steps do not flicker), and is `NONE` outside the overworld. |
+| `avatarState` | `gPlayerAvatar.flags`: UNDERWATER > SURFING > MACH_BIKE > ACRO_BIKE > ON_FOOT. |
+| `busy` | Overworld: `MENU` while the start menu task runs, `SCRIPT` while field controls are locked (scripts, cutscenes, door and warp animations, battle transitions), else `NONE`. Elsewhere: `BATTLE` if `gMain.inBattle`, `WARPING` if the save's map already differs from the last field map (`WarpIntoMap()` ran and the new map is loading), else `MENU` (bag, party, PC, summary, ...). |
+| `stepId` | +1 (mod 256) each time a new step / turn / jump / jump-in-place / warp starts. |
+
+**Sending** (`MP_Update`, at most once per call): the first PRESENCE goes out as soon as the
+session starts (host: the first `MP_Update` after `MP_Host`; client: right after WELCOME). After
+that, it is sent when any field except `seq` differs from the last one sent and at least 50 ms have
+passed, or after 1000 ms unchanged (keep-alive). The host relays an accepted client PRESENCE with the
+same `seq`, re-serialised from the validated message (so reserved bits are 0 and ignored fields
+normalised).
+
+**Receiver storage:** `MpPlayer.presence` (latest) and a per-slot FIFO of 8
+(`MP_PopRemotePresence`; overflow drops the oldest and sets `presenceOverflow`). The host keeps the
+same for every client, because the host is a player too. The FIFO and the seq state are cleared
+whenever the slot is (re)assigned or freed. Clients receive every player's presence whatever map
+they are on. Filtering by map is the consumer's job (PS-031).
+
+**`--mp-debug`:** every PRESENCE sent or accepted that differs from the previous one is logged as
+`presence sent|recv slot S seq N map G.M (x,y) facing F MOVE state A busy B step K`, and stale drops
+are logged. Every 10 s each peer gets a line
+`presence peer P (slot S): out X B/s Y pkt/s (~W B/s on the wire), in ...`. The byte count is
+message bytes including the 4-byte header; "on the wire" adds an estimated 40 bytes of ENet +
+UDP/IPv4 per packet. A totals line follows (sent, accepted, stale, ignored, invalid).
 
 Why keep `seq` although channel 1 is ENet unreliable-*sequenced* (ENet already drops
 out-of-order packets per peer and channel): (a) on a client, presence of different players is
@@ -639,3 +678,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | Version | Card | Change |
 |---|---|---|
 | 1 | PS-010 | Initial spec |
+| 1 | PS-030 | PRESENCE implemented. No byte change, so no version bump: field semantics pinned down (6.8.1); a CONNECTING client drops PRESENCE silently instead of counting it malformed (a relayed update can overtake a retransmitted WELCOME; it was dropped before too, only the malformed count changes); `MP_IsValidMap` from a compile-time-checked map count table. |

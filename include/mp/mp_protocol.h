@@ -45,6 +45,12 @@
 #define MP_PLAYER_LEFT_SIZE     4
 #define MP_BYE_SIZE             4
 #define MP_PING_SIZE            4
+#define MP_PRESENCE_SIZE        16
+
+// PRESENCE coordinate range (protocol.md 6.8): map-local tiles, a little outside the
+// map is allowed while crossing a seam.
+#define MP_PRESENCE_COORD_MIN   (-16)
+#define MP_PRESENCE_COORD_MAX   1023
 
 #define MP_ENTRY_FLAG_HOST      (1 << 0)
 #define MP_BUILD_FLAG_DIRTY     (1 << 0)
@@ -121,6 +127,13 @@ struct MpMsgPing
     u32 timeMs;
 };
 
+struct MpMsgPresence
+{
+    u8 slot;
+    u8 epoch;
+    struct MpPresence presence; // presence.seq is the wire seq
+};
+
 // Header: 4 <= len <= MP_MAX_PACKET_SIZE and length == len - 4. Type/version/state
 // are not checked here.
 bool8 MpProto_ParseHeader(const u8 *buf, u32 len, struct MpMsgHeader *out);
@@ -139,6 +152,11 @@ u8 MpProto_ParsePlayerLeft(const u8 *payload, u32 len, struct MpMsgPlayerLeft *o
 u8 MpProto_ParseBye(const u8 *payload, u32 len, struct MpMsgBye *out);
 // PING and PONG
 u8 MpProto_ParsePing(const u8 *payload, u32 len, struct MpMsgPing *out);
+// PRESENCE (PS-030): exactly 16 bytes, slot < 4, epoch != 0, the map rule (MP_IsValidMap),
+// coordinate range, facing and enum ranges of protocol.md 6.8. When the map is MP_MAP_NONE
+// the ignored fields (x, y, facing, movement) are normalised to 0 / DIR_SOUTH / NONE, and
+// the reserved presenceFlags byte always parses as 0.
+u8 MpProto_ParsePresence(const u8 *payload, u32 len, struct MpMsgPresence *out);
 
 // `headerVersion` is the version byte written in the HELLO header (low 8 bits of the
 // advertised protocol version, so --mp-fake-protocol reaches the header too).
@@ -151,6 +169,9 @@ u16 MpProto_WritePlayerLeft(u8 *buf, u16 cap, const struct MpMsgPlayerLeft *msg)
 u16 MpProto_WriteBye(u8 *buf, u16 cap, const struct MpMsgBye *msg);
 // type = MP_MSG_PING or MP_MSG_PONG
 u16 MpProto_WritePing(u8 *buf, u16 cap, u8 type, const struct MpMsgPing *msg);
+// Writes the fields as given (reserved presenceFlags as 0). The sender sanitises first
+// (MP_SetLocalPresence), so what it writes always passes MpProto_ParsePresence.
+u16 MpProto_WritePresence(u8 *buf, u16 cap, const struct MpMsgPresence *msg);
 
 // RFC 1982 serial-number "newer than" for u16 sequence numbers (protocol.md 6.8).
 bool8 MpSeqIsNewer(u16 s, u16 last);
