@@ -141,9 +141,9 @@ ifeq ($(PORTABLE),1)
 
   ifeq ($(TARGET_PLATFORM), PLATFORM_SDL2)
     PLATFORM_LFLAGS += -lSDL2main -lSDL2 -lm
-    ifeq ($(IS64BIT),0)
-      PLATFORM_INCLUDES += -DSDL_DISABLE_IMMINTRIN_H -DSDL_DISABLE_MMINTRIN_H -DSDL_DISABLE_XMMINTRIN_H -DSDL_DISABLE_EMMINTRIN_H -DSDL_DISABLE_PMMINTRIN_H
-    endif
+    # SDL headers pull in x86 intrinsics headers, which break under -fno-builtin with GCC 15.
+    # We never use SDL intrinsics, so disable them for every SDL2 build (was 32-bit only).
+    PLATFORM_INCLUDES += -DSDL_DISABLE_IMMINTRIN_H -DSDL_DISABLE_MMINTRIN_H -DSDL_DISABLE_XMMINTRIN_H -DSDL_DISABLE_EMMINTRIN_H -DSDL_DISABLE_PMMINTRIN_H
   endif
 
   ifeq ($(TARGET_PLATFORM), PLATFORM_WIN32)
