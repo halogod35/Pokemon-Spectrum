@@ -13,7 +13,7 @@
 # If host.sav / client.sav don't exist yet and <repo>/pokeemerald.sav does,
 # it is copied to create them. Existing saves are never overwritten.
 #
-# See docs/multiplayer/testing.md.
+# See docs/multiplayer/dev-harness.md.
 
 set -euo pipefail
 

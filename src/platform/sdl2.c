@@ -71,6 +71,7 @@ int main(int argc, char **argv)
     AllocConsole() ;
     AttachConsole( GetCurrentProcessId() ) ;
     freopen( "CON", "w", stdout ) ;
+    freopen( "CON", "w", stderr ) ; // MP: so argument errors are visible on Windows
 #endif
 
     int argsResult = ParsePlatformArgs(argc, argv);
@@ -212,7 +213,7 @@ int main(int argc, char **argv)
 
 // ---------------------------------------------------------------------------
 // Command-line options (dev harness, AD-12). Only parsed and stored here; the
-// multiplayer session code acts on gPlatformArgs. See docs/multiplayer/testing.md.
+// multiplayer session code acts on gPlatformArgs. See docs/multiplayer/dev-harness.md.
 // ---------------------------------------------------------------------------
 
 #define WINDOW_TITLE_BASE "Pok\xC3\xA9" "mon Spectrum" // "Pokémon Spectrum" in UTF-8

@@ -19,7 +19,7 @@ void Platform_SetAlarm(u8 *alarmData);
 
 #ifdef PORTABLE
 // Command-line options of the PC build (parsed in src/platform/sdl2.c main()).
-// See docs/multiplayer/testing.md.
+// See docs/multiplayer/dev-harness.md.
 
 #define PLATFORM_DEFAULT_SAVE_PATH  "pokeemerald.sav"
 #define PLATFORM_MP_DEFAULT_PORT    27500
