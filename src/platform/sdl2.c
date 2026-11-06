@@ -2,6 +2,8 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #ifdef _WIN32
@@ -44,6 +46,8 @@ struct SiiRtcInfo internalClock;
 
 static FILE *sSaveFile = NULL;
 
+struct PlatformArgs gPlatformArgs;
+
 extern void AgbMain(void);
 extern void MainLoop(void);
 extern void DoSoftReset(void);
@@ -52,9 +56,11 @@ int DoMain(void *param);
 void ProcessEvents(void);
 void VDraw(SDL_Texture *texture);
 
-static void ReadSaveFile(char *path);
+static bool ReadSaveFile(const char *path);
 static void StoreSaveFile(void);
 static void CloseSaveFile(void);
+
+static int ParsePlatformArgs(int argc, char **argv);
 
 static void UpdateInternalClock(void);
 
@@ -67,7 +73,14 @@ int main(int argc, char **argv)
     freopen( "CON", "w", stdout ) ;
 #endif
 
-    ReadSaveFile("pokeemerald.sav");
+    int argsResult = ParsePlatformArgs(argc, argv);
+    if (argsResult >= 0)
+        return argsResult;
+
+    if (!ReadSaveFile(gPlatformArgs.savePath))
+        return 1;
+
+    videoScale = gPlatformArgs.scale;
 
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
@@ -75,7 +88,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    sdlWindow = SDL_CreateWindow("pokeemerald", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISPLAY_WIDTH * videoScale, DISPLAY_HEIGHT * videoScale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    sdlWindow = SDL_CreateWindow(gPlatformArgs.windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISPLAY_WIDTH * videoScale, DISPLAY_HEIGHT * videoScale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (sdlWindow == NULL)
     {
         DBGPRINTF("Window could not be created! SDL_Error: %s\n", SDL_GetError());
@@ -197,13 +210,270 @@ int main(int argc, char **argv)
     return 0;
 }
 
-static void ReadSaveFile(char *path)
+// ---------------------------------------------------------------------------
+// Command-line options (dev harness, AD-12). Only parsed and stored here; the
+// multiplayer session code acts on gPlatformArgs. See docs/multiplayer/testing.md.
+// ---------------------------------------------------------------------------
+
+#define WINDOW_TITLE_BASE "Pok\xC3\xA9" "mon Spectrum" // "Pokémon Spectrum" in UTF-8
+
+static void PrintUsage(FILE *out, const char *programName)
+{
+    fprintf(out,
+        "Usage: %s [options]\n"
+        "\n"
+        "Options:\n"
+        "  --save <path>        Save file to use (default: " PLATFORM_DEFAULT_SAVE_PATH ")\n"
+        "  --host [port]        Host a multiplayer game (listen on port, default %d)\n"
+        "  --join <ip[:port]>   Join the multiplayer game at ip (default port %d)\n"
+        "  --port <n>           Multiplayer port for --host / --join\n"
+        "  --name <text>        Debug override for the displayed player name (max %d bytes)\n"
+        "  --mp-debug           Verbose multiplayer/network logging\n"
+        "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
+        "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
+        "  -h, --help           Show this help and exit\n"
+        "\n"
+        "If a port is given more than once (--host <port>, --join ip:port, --port), the last one wins.\n",
+        programName, PLATFORM_MP_DEFAULT_PORT, PLATFORM_MP_DEFAULT_PORT,
+        PLATFORM_ARG_NAME_SIZE - 1, PLATFORM_MAX_SCALE);
+}
+
+// Parses a decimal number in [minValue, maxValue]. The whole string must be digits.
+static bool ParseUnsigned(const char *str, unsigned long minValue, unsigned long maxValue, unsigned long *out)
+{
+    unsigned long value = 0;
+    const char *c;
+
+    if (str == NULL || *str == '\0')
+        return false;
+
+    for (c = str; *c != '\0'; c++)
+    {
+        if (*c < '0' || *c > '9')
+            return false;
+        value = value * 10 + (unsigned long)(*c - '0');
+        if (value > maxValue)
+            return false;
+    }
+
+    if (value < minValue)
+        return false;
+
+    *out = value;
+    return true;
+}
+
+static bool ParsePort(const char *str, u16 *out)
+{
+    unsigned long value;
+
+    if (!ParseUnsigned(str, 1, 65535, &value))
+        return false;
+    *out = (u16)value;
+    return true;
+}
+
+// Copies src into dest (size bytes, always NUL-terminated). Fails if src does not fit.
+static bool CopyArgString(char *dest, size_t size, const char *src)
+{
+    size_t len = strlen(src);
+
+    if (len >= size)
+        return false;
+    memcpy(dest, src, len + 1);
+    return true;
+}
+
+// Parses "<ip>" or "<ip>:<port>" into gPlatformArgs.joinAddress / port.
+static bool ParseJoinAddress(const char *str)
+{
+    const char *colon = strchr(str, ':');
+    size_t hostLen;
+
+    if (colon == NULL)
+    {
+        hostLen = strlen(str);
+    }
+    else
+    {
+        // Only one ':' is allowed (no IPv6 literals).
+        if (strchr(colon + 1, ':') != NULL)
+            return false;
+        if (!ParsePort(colon + 1, &gPlatformArgs.port))
+            return false;
+        hostLen = (size_t)(colon - str);
+    }
+
+    if (hostLen == 0 || hostLen >= sizeof(gPlatformArgs.joinAddress))
+        return false;
+
+    memcpy(gPlatformArgs.joinAddress, str, hostLen);
+    gPlatformArgs.joinAddress[hostLen] = '\0';
+    return true;
+}
+
+// Fills gPlatformArgs from the command line.
+// Returns -1 to continue starting the game, otherwise the exit code main() should return.
+static int ParsePlatformArgs(int argc, char **argv)
+{
+    const char *programName = (argc > 0 && argv[0] != NULL) ? argv[0] : "pokeemerald";
+    const char *title = NULL;
+    int i;
+
+    memset(&gPlatformArgs, 0, sizeof(gPlatformArgs));
+    CopyArgString(gPlatformArgs.savePath, sizeof(gPlatformArgs.savePath), PLATFORM_DEFAULT_SAVE_PATH);
+    gPlatformArgs.mpRole = PLATFORM_MP_ROLE_NONE;
+    gPlatformArgs.port = PLATFORM_MP_DEFAULT_PORT;
+    gPlatformArgs.scale = 1;
+
+    for (i = 1; i < argc; i++)
+    {
+        const char *arg = argv[i];
+        // Value of an option that requires one (NULL if it is missing)
+        const char *value = (i + 1 < argc) ? argv[i + 1] : NULL;
+
+        if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0 || strcmp(arg, "-?") == 0 || strcmp(arg, "/?") == 0)
+        {
+            PrintUsage(stdout, programName);
+            return 0;
+        }
+        else if (strcmp(arg, "--save") == 0)
+        {
+            if (value == NULL || value[0] == '\0')
+                goto missing_value;
+            if (!CopyArgString(gPlatformArgs.savePath, sizeof(gPlatformArgs.savePath), value))
+                goto bad_value;
+            i++;
+        }
+        else if (strcmp(arg, "--host") == 0)
+        {
+            if (gPlatformArgs.mpRole == PLATFORM_MP_ROLE_CLIENT)
+            {
+                fprintf(stderr, "%s: --host and --join cannot be used together\n", programName);
+                goto usage_error;
+            }
+            gPlatformArgs.mpRole = PLATFORM_MP_ROLE_HOST;
+            // Optional port: only taken if the next argument starts with a digit.
+            if (value != NULL && value[0] >= '0' && value[0] <= '9')
+            {
+                if (!ParsePort(value, &gPlatformArgs.port))
+                    goto bad_value;
+                i++;
+            }
+        }
+        else if (strcmp(arg, "--join") == 0)
+        {
+            if (gPlatformArgs.mpRole == PLATFORM_MP_ROLE_HOST)
+            {
+                fprintf(stderr, "%s: --host and --join cannot be used together\n", programName);
+                goto usage_error;
+            }
+            if (value == NULL || value[0] == '\0' || value[0] == '-')
+                goto missing_value;
+            if (!ParseJoinAddress(value))
+                goto bad_value;
+            gPlatformArgs.mpRole = PLATFORM_MP_ROLE_CLIENT;
+            i++;
+        }
+        else if (strcmp(arg, "--port") == 0)
+        {
+            if (value == NULL)
+                goto missing_value;
+            if (!ParsePort(value, &gPlatformArgs.port))
+                goto bad_value;
+            i++;
+        }
+        else if (strcmp(arg, "--name") == 0)
+        {
+            if (value == NULL || value[0] == '\0')
+                goto missing_value;
+            if (!CopyArgString(gPlatformArgs.name, sizeof(gPlatformArgs.name), value))
+                goto bad_value;
+            gPlatformArgs.hasName = TRUE;
+            i++;
+        }
+        else if (strcmp(arg, "--mp-debug") == 0)
+        {
+            gPlatformArgs.mpDebug = TRUE;
+        }
+        else if (strcmp(arg, "--title") == 0)
+        {
+            if (value == NULL)
+                goto missing_value;
+            if (strlen(value) >= sizeof(gPlatformArgs.windowTitle))
+                goto bad_value;
+            title = value;
+            i++;
+        }
+        else if (strcmp(arg, "--scale") == 0)
+        {
+            unsigned long scale;
+
+            if (value == NULL)
+                goto missing_value;
+            if (!ParseUnsigned(value, 1, PLATFORM_MAX_SCALE, &scale))
+                goto bad_value;
+            gPlatformArgs.scale = (u32)scale;
+            i++;
+        }
+        else
+        {
+            fprintf(stderr, "%s: unknown option '%s'\n", programName, arg);
+            goto usage_error;
+        }
+        continue;
+
+    missing_value:
+        fprintf(stderr, "%s: option '%s' needs a value\n", programName, arg);
+        goto usage_error;
+    bad_value:
+        fprintf(stderr, "%s: invalid value '%s' for option '%s'\n", programName, value, arg);
+        goto usage_error;
+    }
+
+    if (title != NULL)
+        CopyArgString(gPlatformArgs.windowTitle, sizeof(gPlatformArgs.windowTitle), title);
+    else if (gPlatformArgs.mpRole == PLATFORM_MP_ROLE_HOST)
+        CopyArgString(gPlatformArgs.windowTitle, sizeof(gPlatformArgs.windowTitle), WINDOW_TITLE_BASE " [HOST]");
+    else if (gPlatformArgs.mpRole == PLATFORM_MP_ROLE_CLIENT)
+        CopyArgString(gPlatformArgs.windowTitle, sizeof(gPlatformArgs.windowTitle), WINDOW_TITLE_BASE " [CLIENT]");
+    else
+        CopyArgString(gPlatformArgs.windowTitle, sizeof(gPlatformArgs.windowTitle), WINDOW_TITLE_BASE);
+
+    if (gPlatformArgs.mpDebug)
+    {
+        static const char *const sRoleNames[] = { "none", "host", "client" };
+
+        printf("[mp] args: save='%s' role=%s join='%s' port=%u name='%s' title='%s' scale=%u\n",
+               gPlatformArgs.savePath,
+               sRoleNames[gPlatformArgs.mpRole],
+               gPlatformArgs.joinAddress,
+               (unsigned int)gPlatformArgs.port,
+               gPlatformArgs.hasName ? gPlatformArgs.name : "",
+               gPlatformArgs.windowTitle,
+               (unsigned int)gPlatformArgs.scale);
+    }
+
+    return -1;
+
+usage_error:
+    fprintf(stderr, "\n");
+    PrintUsage(stderr, programName);
+    return 2;
+}
+
+static bool ReadSaveFile(const char *path)
 {
     // Check whether the saveFile exists, and create it if not
     sSaveFile = fopen(path, "r+b");
     if (sSaveFile == NULL)
     {
         sSaveFile = fopen(path, "w+b");
+    }
+    if (sSaveFile == NULL)
+    {
+        fprintf(stderr, "Could not open or create save file '%s'.\n", path);
+        return false;
     }
 
     fseek(sSaveFile, 0, SEEK_END);
@@ -221,6 +491,8 @@ static void ReadSaveFile(char *path)
     {
         FLASH_BASE[i] = 0xFF;
     }
+
+    return true;
 }
 
 static void StoreSaveFile()
@@ -240,7 +512,7 @@ void Platform_StoreSaveFile(void)
 void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 {
     DBGPRINTF("ReadFlash(sectorNum=0x%04X,offset=0x%08X,size=0x%02X)\n",sectorNum,offset,size);
-    FILE * savefile = fopen("pokeemerald.sav", "r+b");
+    FILE * savefile = fopen(gPlatformArgs.savePath, "r+b");
     if (savefile == NULL)
     {
         puts("Error opening save file.");
