@@ -2,12 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [ pc_port ]
+    branches: [ master, 'ps-*' ]
   pull_request:
-    branches: [ pc_port ]
+    branches: [ master ]
+  workflow_dispatch:
+
+env:
+  SDL2_VERSION: 2.0.16
 
 jobs:
-  build:
+  # GBA matching build (AD-6). `make compare` must keep passing.
+  gba:
+    name: GBA (compare)
     runs-on: ubuntu-latest
     env:
       GAME_VERSION: EMERALD
@@ -17,28 +23,40 @@ jobs:
       COMPARE: 1
     steps:
       - name: Checkout
-        uses: actions/checkout@master
+        uses: actions/checkout@v4
+
+      # Upstream pret publishes symbol files to a `symbols` branch. This fork
+      # has no such branch, so only check it out if it exists. Nothing below
+      # depends on it.
+      - name: Check for symbols branch
+        id: syms
+        run: |
+          if git ls-remote --exit-code --heads origin symbols >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No 'symbols' branch on this repo; skipping symbols checkout."
+          fi
 
       - name: Checkout syms
-        if: ${{ github.event_name == 'push' }}
-        uses: actions/checkout@master
+        if: ${{ github.event_name == 'push' && steps.syms.outputs.exists == 'true' }}
+        uses: actions/checkout@v4
         with:
           path: symbols
           ref: symbols
 
       - name: Checkout agbcc
-        uses: actions/checkout@master
+        uses: actions/checkout@v4
         with:
           path: agbcc
           repository: pret/agbcc
 
-      - name: Install binutils
+      - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi libpng-dev
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi libpng-dev
         # build-essential and git are already installed
         # gcc-arm-none-eabi is only needed for the modern build
-        # as an alternative to dkP
 
       - name: Install agbcc
         run: |
@@ -47,30 +65,110 @@ jobs:
         working-directory: agbcc
 
       - name: Compare
-        run: make -j${nproc} all syms
+        run: make -j"$(nproc)" all syms
 
+      # The modern (arm-none-eabi-gcc) GBA build is not required by the
+      # project, so a failure here does not fail CI.
       - name: Modern
+        continue-on-error: true
         env:
           MODERN: 1
           COMPARE: 0
-        run: make -j${nproc} all
+        run: make -j"$(nproc)" all
 
-      - name: Windows (64-bit)
-        env:
-          IS64BIT: 1
-        run: make -j${nproc} winwsl
+  linux:
+    name: Linux (${{ matrix.bits }}-bit)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - bits: 64
+            is64bit: 1
+            experimental: false
+          # 32-bit Linux needs i386 SDL2 packages, which are fragile on recent
+          # Ubuntu runners (see INSTALL_PC.md). Reported, but non-blocking.
+          - bits: 32
+            is64bit: 0
+            experimental: true
+    continue-on-error: ${{ matrix.experimental }}
+    env:
+      COMPARE: 0
+      IS64BIT: ${{ matrix.is64bit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Windows (32-bit)
-        env:
-          IS64BIT: 0
-        run: make -j${nproc} winwsl
+      - name: Install dependencies (64-bit)
+        if: ${{ matrix.is64bit == 1 }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libpng-dev libsdl2-dev
 
-      - name: Linux (64-bit)
-        env:
-          IS64BIT: 1
-        run: make -j${nproc} linux
+      - name: Install dependencies (32-bit)
+        if: ${{ matrix.is64bit == 0 }}
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-multilib libpng-dev libsdl2-dev:i386
 
-      - name: Linux (32-bit)
-        env:
-          IS64BIT: 0
-        run: make -j${nproc} linux
+      - name: Build
+        run: make -j"$(nproc)" linux
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeemerald-linux${{ matrix.bits }}
+          path: pokeemerald${{ matrix.bits }}
+          if-no-files-found: error
+
+  windows:
+    name: Windows (${{ matrix.bits }}-bit, mingw cross)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - bits: 64
+            is64bit: 1
+            triplet: x86_64-w64-mingw32
+          - bits: 32
+            is64bit: 0
+            triplet: i686-w64-mingw32
+    env:
+      COMPARE: 0
+      IS64BIT: ${{ matrix.is64bit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libpng-dev g++-mingw-w64-i686 g++-mingw-w64-x86-64
+
+      # Same SDL2 mingw dev package as INSTALL_PC.md, extracted to ./SDL2
+      - name: Fetch SDL2 mingw dev libs
+        run: |
+          tarball="SDL2-devel-${SDL2_VERSION}-mingw.tar.gz"
+          curl -fsSL -o "$tarball" "https://www.libsdl.org/release/$tarball" \
+            || curl -fsSL -o "$tarball" "https://archive.org/download/sdl-2-${SDL2_VERSION}/$tarball"
+          tar -xzf "$tarball"
+          mv "SDL2-${SDL2_VERSION}" SDL2
+          rm "$tarball"
+
+      - name: Build
+        run: make -j"$(nproc)" winwsl
+
+      - name: Package executable with SDL2.dll
+        run: |
+          mkdir -p dist
+          cp pokeemerald${{ matrix.bits }}.exe dist/
+          cp SDL2/${{ matrix.triplet }}/bin/SDL2.dll dist/
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeemerald-windows${{ matrix.bits }}
+          path: dist/
+          if-no-files-found: error

@@ -1,54 +1,163 @@
 # Instructions
 
-These instructions explain how to set up the tools required to build **pokeemerald**, which assembles the source files into a binary.
+These instructions explain how to build the PC (SDL2) port of **pokeemerald** for Windows and Linux.
+For the original GBA ROM build, see [INSTALL.md](INSTALL.md).
 
 If you run into trouble, ask for help on Discord (see [README.md](README.md)).
 
-## Windows 10/11 (WSL1)
-Follow pret instructions on how to install WSL1 [here](INSTALL.md)
+All PC builds produce an executable in the repository root:
 
-Install the following libraries
+| Command | Output |
+|---|---|
+| `make linux` | `pokeemerald64` |
+| `make linux IS64BIT=0` | `pokeemerald32` |
+| `make winwsl` | `pokeemerald64.exe` |
+| `make winwsl IS64BIT=0` | `pokeemerald32.exe` |
+
+The game reads and writes its save file, `pokeemerald.sav`, in the **current working directory**.
+Run the executable from the folder where you want the save to be.
+
+Use `-j$(nproc)` to build with all CPU threads, for example `make linux -j$(nproc)`.
+
+If you switch between `linux` and `winwsl` builds, the object folders are separate (`build/pc64`, `build/pc32`),
+but the build tools in `tools/` are built for the host, so you don't need to clean between them.
+
+## Linux (Arch)
+
+Install the required packages:
 
 ```
-sudo apt install build-essential git make g++-mingw-w64-i686 g++-mingw-w64-x86-64 libpng-dev
-```
-Download SDL2 mingw libraries from [here](https://archive.org/download/sdl-2-2.0.16/SDL2-devel-2.0.16-mingw.tar.gz)
-
-Extract the tar to the root of the project and rename the SDL2-2.0.16 folder to SDL2
-
-Get the number of threads in your pc using the command `nproc`
-
-Build the Windows version using the following command (replace the parentheses with the number you got from nproc)
-
-```
-make winwsl -j(nproc number here)
+sudo pacman -S --needed base-devel git libpng sdl2
 ```
 
-To build 32 bit version add `IS64BIT=0` to the end of the command above
+(On current Arch, `sdl2` is provided by `sdl2-compat`. That works fine.)
 
-You should get an executable named `pokeemerald(64 or 32).exe`
+Build and run:
 
-Download SDL2.dll [32 bit version](https://archive.org/download/sdl-2-2.0.16/SDL2-2.0.16-win32-x86.zip), [64 bit version](https://archive.org/download/sdl-2-2.0.16/SDL2-2.0.16-win32-x64.zip) and put it in the same place as the executable and you should be good to go
+```
+make linux -j$(nproc)
+./pokeemerald64
+```
 
-## Linux (Ubuntu)
+### 32-bit (optional)
+
+Enable the `[multilib]` repository in `/etc/pacman.conf`, then:
+
+```
+sudo pacman -S --needed lib32-gcc-libs lib32-glibc lib32-sdl2
+make linux IS64BIT=0 -j$(nproc)
+```
+
+### Windows executable from Arch (cross build)
+
+You can build the Windows `.exe` directly on Arch, no Windows machine needed:
+
+```
+sudo pacman -S --needed mingw-w64-gcc
+```
+
+Then fetch the SDL2 mingw libraries and run `make winwsl` exactly as described in
+[Windows: SDL2 libraries and build](#windows-sdl2-libraries-and-build) below.
+
+## Linux (Ubuntu / Debian)
 
 Run the following command to install the required libraries
 ```
 sudo apt install build-essential git make libpng-dev libsdl2-dev
 ```
 
-Get the number of threads in your pc using the command `nproc`
-
-Build the Linux version using the following command (replace the parentheses with the number you got from nproc)
+Build:
 
 ```
-make linux -j(nproc number here)
+make linux -j$(nproc)
 ```
 
-To build 32 bit version add `IS64BIT=0` to the end of the command above (32 bit version does not build on Ubuntu 25 and above)
+To build the 32-bit version add `IS64BIT=0` (needs `gcc-multilib` and `libsdl2-dev:i386`; the 32-bit version does not build on Ubuntu 25 and above).
 
-You should get an executable named `pokeemerald(64 or 32)`
+You should get an executable named `pokeemerald64` (or `pokeemerald32`).
+
+## Windows 10/11
+
+The Windows build is a **cross build**: it runs inside Linux (WSL on Windows) using the mingw-w64 compiler and
+produces a native `.exe`. There is no native MSVC or MSYS2 build.
+
+### 1. Install WSL and a distro
+
+WSL1 and WSL2 both work. In an **administrator** PowerShell:
+
+```
+wsl --install -d Ubuntu
+```
+
+On older Windows 10 builds (including LTSC 2019/2021) where `wsl --install` is not available, follow the pret WSL
+steps in [INSTALL.md](INSTALL.md) instead: enable the "Windows Subsystem for Linux" optional feature, reboot, then
+install a distro (for example Ubuntu) from the Microsoft Store or with `wsl --import`.
+
+Open the distro once and create your Linux user.
+
+Tip: the build is much faster if the repository is inside the Linux filesystem (for example `~/pokemon-spectrum`)
+rather than under `/mnt/c/...` or `/mnt/f/...`, especially on WSL2.
+
+### 2. Install the toolchain (inside WSL)
+
+Ubuntu:
+
+```
+sudo apt update
+sudo apt install build-essential git make libpng-dev g++-mingw-w64-i686 g++-mingw-w64-x86-64
+```
+
+Arch (Arch-WSL): `sudo pacman -S --needed base-devel git libpng mingw-w64-gcc`
+
+### Windows: SDL2 libraries and build
+
+Download the SDL2 2.0.16 mingw development libraries and extract them to the repository root as `./SDL2`
+(this folder is in `.gitignore`):
+
+```
+curl -fLO https://www.libsdl.org/release/SDL2-devel-2.0.16-mingw.tar.gz
+# mirror: https://archive.org/download/sdl-2-2.0.16/SDL2-devel-2.0.16-mingw.tar.gz
+tar -xzf SDL2-devel-2.0.16-mingw.tar.gz
+mv SDL2-2.0.16 SDL2
+rm SDL2-devel-2.0.16-mingw.tar.gz
+```
+
+You should now have `SDL2/x86_64-w64-mingw32/` and `SDL2/i686-w64-mingw32/`.
+
+Build:
+
+```
+make winwsl -j$(nproc)            # 64-bit -> pokeemerald64.exe
+make winwsl IS64BIT=0 -j$(nproc)  # 32-bit -> pokeemerald32.exe
+```
+
+### 3. SDL2.dll
+
+The `.exe` needs `SDL2.dll` **in the same folder as the executable**. The matching DLL is already inside the
+package you extracted:
+
+```
+cp SDL2/x86_64-w64-mingw32/bin/SDL2.dll .   # for pokeemerald64.exe
+cp SDL2/i686-w64-mingw32/bin/SDL2.dll .     # for pokeemerald32.exe
+```
+
+(Only one of them can sit next to the executables at a time, since both are called `SDL2.dll`. If you build both,
+put each `.exe` and its DLL in its own folder.)
+
+Standalone downloads also exist: [32-bit](https://archive.org/download/sdl-2-2.0.16/SDL2-2.0.16-win32-x86.zip),
+[64-bit](https://archive.org/download/sdl-2-2.0.16/SDL2-2.0.16-win32-x64.zip).
+
+### 4. Run
+
+Double-click `pokeemerald64.exe` in Explorer (a console window opens next to the game for log output), or start
+it from WSL with `./pokeemerald64.exe`. The save `pokeemerald.sav` is created in the working directory.
 
 ## GBA
 
-Follow instructions in [INSTALL.md](INSTALL.md)
+Follow instructions in [INSTALL.md](INSTALL.md). Building the matching ROM (`make compare`) needs agbcc.
+
+## CI
+
+`.github/workflows/build.yml` runs on pushes to `master` and `ps-*` branches and on pull requests to `master`.
+It runs the GBA `make compare` build, `make linux` (64-bit, plus a non-blocking 32-bit job) and `make winwsl`
+(64- and 32-bit). The Windows and Linux executables are uploaded as workflow artifacts.
