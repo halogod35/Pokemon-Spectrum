@@ -27,6 +27,10 @@ const u8 gText_MainMenuOption[] = _("OPTION");
 const u8 gText_MainMenuMysteryGift[] = _("MYSTERY GIFT");
 const u8 gText_MainMenuMysteryGift2[] = _("MYSTERY GIFT");
 const u8 gText_MainMenuMysteryEvents[] = _("MYSTERY EVENTS");
+// MP: Pokemon Spectrum multiplayer main menu (PS-020)
+const u8 gText_MainMenuMultiplayer[] = _("MULTIPLAYER");
+const u8 gText_MpHostGame[] = _("HOST GAME");
+const u8 gText_MpJoinGame[] = _("JOIN GAME");
 const u8 gText_WirelessNotConnected[] = _("The Wireless Adapter is not\nconnected.");
 const u8 gText_MysteryGiftCantUse[] = _("MYSTERY GIFT can't be used while\nthe Wireless Adapter is attached.");
 const u8 gText_MysteryEventsCantUse[] = _("MYSTERY EVENTS can't be used while\nthe Wireless Adapter is attached.");
