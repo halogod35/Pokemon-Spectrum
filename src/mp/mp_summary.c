@@ -14,6 +14,7 @@
 #include "constants/flags.h"
 #include "mp/mp.h"
 #include "mp/mp_summary.h"
+#include "mp/mp_wire.h"
 
 // Wire offsets (protocol.md 5.1).
 #define SUMMARY_OFS_NAME           0
@@ -37,28 +38,6 @@ static const u8 sFallbackName[MP_PLAYER_NAME_SIZE] =
 {
     CHAR_P, CHAR_L, CHAR_A, CHAR_Y, CHAR_E, CHAR_R, EOS, EOS
 };
-
-// ---------------------------------------------------------------------------
-// Little-endian helpers.
-// Minimal local copies because mp_wire.c (PS-011) does not exist on this branch's base.
-// Swap for MpWriteU32 / MpReadU32 from mp_wire.h when PS-011 is merged.
-// ---------------------------------------------------------------------------
-
-static void MpSummaryPutU32(u8 *dst, u32 value)
-{
-    dst[0] = (u8)(value & 0xFF);
-    dst[1] = (u8)((value >> 8) & 0xFF);
-    dst[2] = (u8)((value >> 16) & 0xFF);
-    dst[3] = (u8)((value >> 24) & 0xFF);
-}
-
-static u32 MpSummaryGetU32(const u8 *src)
-{
-    return (u32)src[0]
-         | ((u32)src[1] << 8)
-         | ((u32)src[2] << 16)
-         | ((u32)src[3] << 24);
-}
 
 // ---------------------------------------------------------------------------
 // Names
@@ -262,6 +241,8 @@ void MP_BuildPlayerSummary(struct MpPlayerSummary *out)
 
 u16 MP_WritePlayerSummary(u8 *buf, u16 cap, const struct MpPlayerSummary *in)
 {
+    struct MpWriter w;
+
     if (buf == NULL || in == NULL || cap < MP_PLAYER_SUMMARY_WIRE_SIZE)
         return 0;
 
@@ -270,12 +251,15 @@ u16 MP_WritePlayerSummary(u8 *buf, u16 cap, const struct MpPlayerSummary *in)
     buf[SUMMARY_OFS_AVATAR_STYLE] = in->avatarStyle;
     buf[SUMMARY_OFS_BADGES] = in->badges;
     buf[SUMMARY_OFS_FLAGS] = 0; // Reserved: the sender writes 0.
-    MpSummaryPutU32(&buf[SUMMARY_OFS_TRAINER_ID], in->trainerId);
+    MpWriter_Init(&w, &buf[SUMMARY_OFS_TRAINER_ID], 4);
+    MpWriteU32(&w, in->trainerId);
     return MP_PLAYER_SUMMARY_WIRE_SIZE;
 }
 
 static bool8 MpParsePlayerSummary(const u8 *buf, u32 len, struct MpPlayerSummary *tmp)
 {
+    struct MpReader r;
+
     if (buf == NULL || len < MP_PLAYER_SUMMARY_WIRE_SIZE)
         return FALSE;
     if (!MP_IsValidPlayerName(&buf[SUMMARY_OFS_NAME]))
@@ -291,7 +275,8 @@ static bool8 MpParsePlayerSummary(const u8 *buf, u32 len, struct MpPlayerSummary
     tmp->avatarStyle = buf[SUMMARY_OFS_AVATAR_STYLE];
     tmp->badges = buf[SUMMARY_OFS_BADGES];   // Any value.
     tmp->summaryFlags = 0;                   // Reserved: ignored on receive.
-    tmp->trainerId = MpSummaryGetU32(&buf[SUMMARY_OFS_TRAINER_ID]); // Any value.
+    MpReader_Init(&r, &buf[SUMMARY_OFS_TRAINER_ID], 4);
+    tmp->trainerId = MpReadU32(&r);          // Any value.
     return TRUE;
 }
 

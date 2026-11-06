@@ -10,6 +10,7 @@
 #include "mp/mp.h"
 #include "mp/mp_internal.h"
 #include "mp/mp_protocol.h"
+#include "mp/mp_summary.h"
 #include "mp/mp_transport.h"
 #include "mp/mp_wire.h"
 
@@ -316,6 +317,13 @@ s32 MP_RunSelftest(void)
 
     TestWire();
     TestIPv4();
+    // PS-013: summary round trip / malformed buffers / name rules. Uses its own
+    // in-memory fixture save blocks, so no .sav file is needed.
+    if (!MpSummary_SelfTest())
+    {
+        MP_LOG("selftest: FAIL: player summary (see the lines above)\n");
+        sFailures++;
+    }
     if (!MpTransport_Init())
     {
         MP_LOG("selftest: FAIL: ENet initialisation\n");

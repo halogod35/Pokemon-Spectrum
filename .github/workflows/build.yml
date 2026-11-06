@@ -50,6 +50,15 @@ jobs:
       - name: Build
         run: make -j"$(nproc)" linux
 
+      # PS-011: run the multiplayer self-test (loopback UDP on 127.0.0.1:27590-27599,
+      # wire helpers, player summary). It runs before any window or save is opened;
+      # the dummy SDL drivers are only a safety net. A non-zero exit fails the job.
+      - name: Multiplayer self-test
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: timeout 120 ./pokeemerald${{ matrix.bits }} --mp-selftest
+
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
