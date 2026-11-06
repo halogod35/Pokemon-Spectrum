@@ -24,7 +24,15 @@ bool8 MP_Host(u16 port)
     return TRUE;
 }
 
-// Used by: PS-020 (precondition check before MP_Host).
+// Used by: PS-021 (Join Game IP entry screen, on confirm).
+bool8 MP_Join(const char *ip, u16 port)
+{
+    DBGPRINTF("[MP] stub: MP_Join(%s, %u) - no network yet (PS-012), continuing single-player\n",
+              ip != NULL ? ip : "(null)", (unsigned int)(port == 0 ? MP_DEFAULT_PORT : port));
+    return TRUE;
+}
+
+// Used by: PS-020 and PS-021 (precondition check before MP_Host / MP_Join).
 u8 MP_GetState(void)
 {
     return MP_STATE_OFFLINE;

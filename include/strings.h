@@ -338,6 +338,9 @@ extern const u8 gText_MainMenuMysteryGift[];
 extern const u8 gText_MainMenuMultiplayer[];
 extern const u8 gText_MpHostGame[];
 extern const u8 gText_MpJoinGame[];
+// MP: Join Game IP entry screen (PS-021)
+extern const u8 gText_MpHostAddress[];
+extern const u8 gText_MpIpEntryHelp[];
 extern const u8 gText_WirelessNotConnected[];
 extern const u8 gText_MysteryGiftCantUse[];
 extern const u8 gText_MysteryEventsCantUse[];

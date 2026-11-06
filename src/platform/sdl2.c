@@ -23,6 +23,7 @@
 #include "platform/dma.h"
 #include "platform/framedraw.h"
 #include "platform/system.h"
+#include "platform/text_input.h" // MP: Join Game IP entry keyboard input (PS-021)
 
 extern void (*const gIntrTable[])(void);
 
@@ -572,6 +573,7 @@ void ProcessEvents(void)
 
     while (SDL_PollEvent(&event))
     {
+        Platform_HandleTextInputEvent(&event); // MP: typed digits / Ctrl+V for the Join Game screen (PS-021)
         switch (event.type)
         {
         case SDL_QUIT:

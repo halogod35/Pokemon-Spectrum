@@ -38,6 +38,8 @@
 #include "window.h"
 #include "mystery_gift_menu.h"
 #include "mp/mp.h" // MP: MULTIPLAYER main menu entry (PS-020)
+#include "main_menu.h" // MP: CB2_ReinitMainMenuMultiplayer (PS-021)
+#include "mp_menu.h"   // MP: Join Game IP entry screen (PS-021)
 
 /*
  * Main menu state machine
@@ -173,6 +175,8 @@ static EWRAM_DATA bool8 sStartedPokeBallTask = 0;
 static EWRAM_DATA u16 sCurrItemAndOptionMenuCheck = 0;
 // MP: how many items the main menu list is scrolled down (0..2). The scroll arrows watch it.
 static EWRAM_DATA u16 sMpMainMenuScrollOffset = 0;
+// MP: set by CB2_ReinitMainMenuMultiplayer: open the Host/Join sub-menu instead of the main menu.
+static EWRAM_DATA bool8 sMpReopenSubmenu = FALSE;
 
 static u8 sBirchSpeechMainTaskId;
 
@@ -612,6 +616,14 @@ void CB2_ReinitMainMenu(void)
     InitMainMenu(TRUE);
 }
 
+// MP: back from the Join Game IP screen (PS-021). Fades in from black like
+// CB2_ReinitMainMenu, then shows the Host/Join sub-menu with JOIN GAME selected.
+void CB2_ReinitMainMenuMultiplayer(void)
+{
+    sMpReopenSubmenu = TRUE;
+    InitMainMenu(TRUE);
+}
+
 static u32 InitMainMenu(bool8 returningFromOptionsMenu)
 {
     SetVBlankCallback(NULL);
@@ -836,6 +848,22 @@ static void Task_DisplayMainMenu(u8 taskId)
         {
             palette = RGB(31, 3, 21);
             LoadPalette(&palette, BG_PLTT_ID(15) + 1, PLTT_SIZEOF(1));
+        }
+
+        // MP: returning from the Join Game IP screen (PS-021): reopen the Host/Join sub-menu
+        // on JOIN GAME. B there goes back to the main menu with the cursor on MULTIPLAYER.
+        if (sMpReopenSubmenu)
+        {
+            sMpReopenSubmenu = FALSE;
+            if (MpMainMenu_HasMultiplayerItem(tMenuType))
+            {
+                tCurrItem = MP_MAIN_MENU_ITEM_MULTIPLAYER;
+                tIsScrolled = 0;
+                sCurrItemAndOptionMenuCheck = MP_MAIN_MENU_ITEM_MULTIPLAYER;
+                sMpMainMenuScrollOffset = 0;
+                MpMainMenu_ShowSubmenu(taskId, MP_SUBMENU_JOIN);
+                return;
+            }
         }
 
         switch (gTasks[taskId].tMenuType)
@@ -1458,9 +1486,12 @@ static void Task_MpMainMenu_SubmenuAPressed(u8 taskId)
             MpMainMenu_ContinueSavedGame(taskId);
             break;
         case MP_SUBMENU_JOIN:
-            // Placeholder until PS-021 adds the IP entry screen: continue single-player.
-            DBGPRINTF("[MP] JOIN GAME: IP entry screen not implemented yet (PS-021); playing single-player\n");
-            MpMainMenu_ContinueSavedGame(taskId);
+            // PS-021: the IP entry screen. B there comes back via CB2_ReinitMainMenuMultiplayer.
+            MpMainMenu_ClearSubmenu();
+            SetMainCallback2(CB2_MpInitIpEntryScreen);
+            DestroyTask(taskId);
+            FreeAllWindowBuffers();
+            sCurrItemAndOptionMenuCheck = 0;
             break;
         }
     }
