@@ -37,6 +37,9 @@
 #include "title_screen.h"
 #include "window.h"
 #include "mystery_gift_menu.h"
+#include "mp/mp.h" // MP: MULTIPLAYER main menu entry (PS-020)
+#include "main_menu.h" // MP: CB2_ReinitMainMenuMultiplayer (PS-021)
+#include "mp_menu.h"   // MP: Join Game IP entry screen (PS-021)
 
 /*
  * Main menu state machine
@@ -170,6 +173,10 @@
 
 static EWRAM_DATA bool8 sStartedPokeBallTask = 0;
 static EWRAM_DATA u16 sCurrItemAndOptionMenuCheck = 0;
+// MP: how many items the main menu list is scrolled down (0..2). The scroll arrows watch it.
+static EWRAM_DATA u16 sMpMainMenuScrollOffset = 0;
+// MP: set by CB2_ReinitMainMenuMultiplayer: open the Host/Join sub-menu instead of the main menu.
+static EWRAM_DATA bool8 sMpReopenSubmenu = FALSE;
 
 static u8 sBirchSpeechMainTaskId;
 
@@ -244,6 +251,19 @@ static void MainMenu_FormatSavegamePokedex(void);
 static void MainMenu_FormatSavegameTime(void);
 static void MainMenu_FormatSavegameBadges(void);
 static void NewGameBirchSpeech_CreateDialogueWindowBorder(u8, u8, u8, u8, u8, u8);
+// MP: MULTIPLAYER entry and Host/Join sub-menu (PS-020)
+static bool8 MpMainMenu_HasMultiplayerItem(u8);
+static u8 MpMainMenu_ExtraItems(u8);
+static u16 MpMainMenu_GetWindowVCoords(u8, s16);
+static void MpMainMenu_AddScrollArrows(u8);
+static void MpMainMenu_RemoveScrollArrows(u8);
+static void MpMainMenu_ShowSubmenu(u8, u8);
+static void MpMainMenu_ClearSubmenu(void);
+static void MpMainMenu_HighlightSubmenuItem(u8);
+static void Task_MpMainMenu_HandleSubmenuInput(u8);
+static void Task_MpMainMenu_CloseSubmenu(u8);
+static void Task_MpMainMenu_WaitForFadeIn(u8);
+static void Task_MpMainMenu_SubmenuAPressed(u8);
 
 // .rodata
 
@@ -272,6 +292,8 @@ static const u16 sBirchSpeechBgGradientPal[] = INCGFX_U16("graphics/birch_speech
 #define MENU_HEIGHT_WIN4 2
 #define MENU_HEIGHT_WIN5 2
 #define MENU_HEIGHT_WIN6 2
+#define MENU_TOP_WIN8 25    // MP: 6th item of HAS_MYSTERY_EVENTS (window 8, below window 6)
+#define MENU_HEIGHT_WIN8 2  // MP:
 
 #define MENU_LEFT_ERROR 2
 #define MENU_TOP_ERROR 15
@@ -367,6 +389,18 @@ static const struct WindowTemplate sWindowTemplates_MainMenu[] =
         .height = MENU_HEIGHT_ERROR,
         .paletteNum = 15,
         .baseBlock = 0x16D
+    },
+    // MP: window 8, the 6th item of HAS_MYSTERY_EVENTS (OPTION) now that MULTIPLAYER
+    // was added. Appended after the error window so window 7 keeps its index. Its tiles
+    // start after the 9 frame tiles loaded at MAIN_MENU_BORDER_TILE (0x1D5..0x1DD).
+    {
+        .bg = 0,
+        .tilemapLeft = MENU_LEFT,
+        .tilemapTop = MENU_TOP_WIN8,
+        .width = MENU_WIDTH,
+        .height = MENU_HEIGHT_WIN8,
+        .paletteNum = 15,
+        .baseBlock = 0x1DE
     },
     DUMMY_WIN_TEMPLATE
 };
@@ -523,8 +557,36 @@ enum
     ACTION_MYSTERY_GIFT,
     ACTION_MYSTERY_EVENTS,
     ACTION_EREADER,
-    ACTION_INVALID
+    ACTION_INVALID,
+    ACTION_MULTIPLAYER, // MP: opens the Host/Join sub-menu (PS-020)
 };
+
+// MP: Pokemon Spectrum multiplayer (PS-020). In every layout that has a save (AD-11),
+// MULTIPLAYER is inserted right after CONTINUE, so the decomp's items after CONTINUE
+// move down by one:
+//   HAS_SAVED_GAME:     CONTINUE, MULTIPLAYER, NEW GAME, OPTION                              (windows 2-5)
+//   HAS_MYSTERY_GIFT:   CONTINUE, MULTIPLAYER, NEW GAME, MYSTERY GIFT, OPTION                (windows 2-6, scrolls 1)
+//   HAS_MYSTERY_EVENTS: CONTINUE, MULTIPLAYER, NEW GAME, MYSTERY GIFT, MYSTERY EVENTS, OPTION (windows 2-6 + 8, scrolls 2)
+// HAS_NO_SAVED_GAME is unchanged.
+#define MP_MAIN_MENU_ITEM_MULTIPLAYER   1
+#define MP_MAIN_MENU_VISIBLE_ITEMS      4   // CONTINUE + 3 buttons fill the screen
+#define MP_MAIN_MENU_WIN_LAST           8   // window 8 in sWindowTemplates_MainMenu
+
+// MP: window that shows main menu item N in the save layouts.
+static const u8 sMpMainMenuItemWindowIds[] = {2, 3, 4, 5, 6, MP_MAIN_MENU_WIN_LAST};
+
+// MP: Host/Join sub-menu. It reuses the main menu's own button windows 0, 1 and 3
+// (rows 1, 5 and 9), which are free while the save layouts' windows are cleared.
+enum
+{
+    MP_SUBMENU_HOST,
+    MP_SUBMENU_JOIN,
+    MP_SUBMENU_CANCEL,
+    MP_SUBMENU_COUNT,
+};
+
+static const u8 sMpSubmenuWindowIds[MP_SUBMENU_COUNT] = {0, 1, 3};
+static const u8 *const sMpSubmenuTexts[MP_SUBMENU_COUNT] = {gText_MpHostGame, gText_MpJoinGame, gText_Cancel};
 
 #define MAIN_MENU_BORDER_TILE   0x1D5
 #define BIRCH_DLG_BASE_TILE_NUM 0xFC
@@ -551,6 +613,14 @@ void CB2_InitMainMenu(void)
 
 void CB2_ReinitMainMenu(void)
 {
+    InitMainMenu(TRUE);
+}
+
+// MP: back from the Join Game IP screen (PS-021). Fades in from black like
+// CB2_ReinitMainMenu, then shows the Host/Join sub-menu with JOIN GAME selected.
+void CB2_ReinitMainMenuMultiplayer(void)
+{
+    sMpReopenSubmenu = TRUE;
     InitMainMenu(TRUE);
 }
 
@@ -615,9 +685,10 @@ static u32 InitMainMenu(bool8 returningFromOptionsMenu)
 
 #define tMenuType data[0]
 #define tCurrItem data[1]
+#define tMpSubmenuItem data[2]  // MP: selected Host/Join sub-menu item (MP_SUBMENU_*)
 #define tItemCount data[12]
 #define tScrollArrowTaskId data[13]
-#define tIsScrolled data[14]
+#define tIsScrolled data[14]    // MP: now the number of items scrolled (0..2), was a bool
 #define tWirelessAdapterConnected data[15]
 
 #define tArrowTaskIsScrolled data[15]   // For scroll indicator arrow task
@@ -636,6 +707,7 @@ static void Task_MainMenuCheckSaveFile(u8 taskId)
         SetGpuReg(REG_OFFSET_BLDALPHA, 0);
         SetGpuReg(REG_OFFSET_BLDY, 7);
 
+        tScrollArrowTaskId = TASK_NONE; // MP: lets MpMainMenu_RemoveScrollArrows know if there are arrows
         if (IsWirelessAdapterConnected())
             tWirelessAdapterConnected = TRUE;
         switch (gSaveFileStatus)
@@ -673,21 +745,22 @@ static void Task_MainMenuCheckSaveFile(u8 taskId)
         {
             switch (tMenuType)  // if so, highlight the OPTIONS item
             {
+                // MP: OPTION moved down by one in the save layouts (MULTIPLAYER was inserted).
                 case HAS_NO_SAVED_GAME:
                 case HAS_SAVED_GAME:
-                    sCurrItemAndOptionMenuCheck = tMenuType + 1;
+                    sCurrItemAndOptionMenuCheck = tMenuType + 1 + MpMainMenu_ExtraItems(tMenuType);
                     break;
                 case HAS_MYSTERY_GIFT:
-                    sCurrItemAndOptionMenuCheck = 3;
+                    sCurrItemAndOptionMenuCheck = 3 + MpMainMenu_ExtraItems(tMenuType);
                     break;
                 case HAS_MYSTERY_EVENTS:
-                    sCurrItemAndOptionMenuCheck = 4;
+                    sCurrItemAndOptionMenuCheck = 4 + MpMainMenu_ExtraItems(tMenuType);
                     break;
             }
         }
         sCurrItemAndOptionMenuCheck &= ~OPTION_MENU_FLAG;  // turn off the "returning from options menu" flag
         tCurrItem = sCurrItemAndOptionMenuCheck;
-        tItemCount = tMenuType + 2;
+        tItemCount = tMenuType + 2 + MpMainMenu_ExtraItems(tMenuType); // MP: + MULTIPLAYER
     }
 }
 
@@ -777,6 +850,22 @@ static void Task_DisplayMainMenu(u8 taskId)
             LoadPalette(&palette, BG_PLTT_ID(15) + 1, PLTT_SIZEOF(1));
         }
 
+        // MP: returning from the Join Game IP screen (PS-021): reopen the Host/Join sub-menu
+        // on JOIN GAME. B there goes back to the main menu with the cursor on MULTIPLAYER.
+        if (sMpReopenSubmenu)
+        {
+            sMpReopenSubmenu = FALSE;
+            if (MpMainMenu_HasMultiplayerItem(tMenuType))
+            {
+                tCurrItem = MP_MAIN_MENU_ITEM_MULTIPLAYER;
+                tIsScrolled = 0;
+                sCurrItemAndOptionMenuCheck = MP_MAIN_MENU_ITEM_MULTIPLAYER;
+                sMpMainMenuScrollOffset = 0;
+                MpMainMenu_ShowSubmenu(taskId, MP_SUBMENU_JOIN);
+                return;
+            }
+        }
+
         switch (gTasks[taskId].tMenuType)
         {
             case HAS_NO_SAVED_GAME:
@@ -792,32 +881,18 @@ static void Task_DisplayMainMenu(u8 taskId)
                 DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[0], MAIN_MENU_BORDER_TILE);
                 DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[1], MAIN_MENU_BORDER_TILE);
                 break;
+            // MP: the three save layouts below gained MULTIPLAYER after CONTINUE, so every
+            // later item moved to the next window (see the layout comment above
+            // sMpMainMenuItemWindowIds). HAS_MYSTERY_GIFT now scrolls like HAS_MYSTERY_EVENTS
+            // did, and HAS_MYSTERY_EVENTS scrolls by up to two items.
             case HAS_SAVED_GAME:
-                FillWindowPixelBuffer(2, PIXEL_FILL(0xA));
-                FillWindowPixelBuffer(3, PIXEL_FILL(0xA));
-                FillWindowPixelBuffer(4, PIXEL_FILL(0xA));
-                AddTextPrinterParameterized3(2, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuContinue);
-                AddTextPrinterParameterized3(3, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuNewGame);
-                AddTextPrinterParameterized3(4, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuOption);
-                MainMenu_FormatSavegameText();
-                PutWindowTilemap(2);
-                PutWindowTilemap(3);
-                PutWindowTilemap(4);
-                CopyWindowToVram(2, COPYWIN_GFX);
-                CopyWindowToVram(3, COPYWIN_GFX);
-                CopyWindowToVram(4, COPYWIN_GFX);
-                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[2], MAIN_MENU_BORDER_TILE);
-                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[3], MAIN_MENU_BORDER_TILE);
-                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[4], MAIN_MENU_BORDER_TILE);
-                break;
-            case HAS_MYSTERY_GIFT:
                 FillWindowPixelBuffer(2, PIXEL_FILL(0xA));
                 FillWindowPixelBuffer(3, PIXEL_FILL(0xA));
                 FillWindowPixelBuffer(4, PIXEL_FILL(0xA));
                 FillWindowPixelBuffer(5, PIXEL_FILL(0xA));
                 AddTextPrinterParameterized3(2, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuContinue);
-                AddTextPrinterParameterized3(3, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuNewGame);
-                AddTextPrinterParameterized3(4, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMysteryGift);
+                AddTextPrinterParameterized3(3, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMultiplayer);
+                AddTextPrinterParameterized3(4, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuNewGame);
                 AddTextPrinterParameterized3(5, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuOption);
                 MainMenu_FormatSavegameText();
                 PutWindowTilemap(2);
@@ -833,16 +908,16 @@ static void Task_DisplayMainMenu(u8 taskId)
                 DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[4], MAIN_MENU_BORDER_TILE);
                 DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[5], MAIN_MENU_BORDER_TILE);
                 break;
-            case HAS_MYSTERY_EVENTS:
+            case HAS_MYSTERY_GIFT:
                 FillWindowPixelBuffer(2, PIXEL_FILL(0xA));
                 FillWindowPixelBuffer(3, PIXEL_FILL(0xA));
                 FillWindowPixelBuffer(4, PIXEL_FILL(0xA));
                 FillWindowPixelBuffer(5, PIXEL_FILL(0xA));
                 FillWindowPixelBuffer(6, PIXEL_FILL(0xA));
                 AddTextPrinterParameterized3(2, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuContinue);
-                AddTextPrinterParameterized3(3, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuNewGame);
-                AddTextPrinterParameterized3(4, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMysteryGift2);
-                AddTextPrinterParameterized3(5, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMysteryEvents);
+                AddTextPrinterParameterized3(3, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMultiplayer);
+                AddTextPrinterParameterized3(4, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuNewGame);
+                AddTextPrinterParameterized3(5, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMysteryGift);
                 AddTextPrinterParameterized3(6, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuOption);
                 MainMenu_FormatSavegameText();
                 PutWindowTilemap(2);
@@ -860,15 +935,41 @@ static void Task_DisplayMainMenu(u8 taskId)
                 DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[4], MAIN_MENU_BORDER_TILE);
                 DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[5], MAIN_MENU_BORDER_TILE);
                 DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[6], MAIN_MENU_BORDER_TILE);
-                tScrollArrowTaskId = AddScrollIndicatorArrowPair(&sScrollArrowsTemplate_MainMenu, &sCurrItemAndOptionMenuCheck);
-                gTasks[tScrollArrowTaskId].func = Task_ScrollIndicatorArrowPairOnMainMenu;
-                if (sCurrItemAndOptionMenuCheck == 4)
-                {
-                    ChangeBgY(0, 0x2000, BG_COORD_ADD);
-                    ChangeBgY(1, 0x2000, BG_COORD_ADD);
-                    tIsScrolled = TRUE;
-                    gTasks[tScrollArrowTaskId].tArrowTaskIsScrolled = TRUE;
-                }
+                MpMainMenu_AddScrollArrows(taskId);
+                break;
+            case HAS_MYSTERY_EVENTS:
+                FillWindowPixelBuffer(2, PIXEL_FILL(0xA));
+                FillWindowPixelBuffer(3, PIXEL_FILL(0xA));
+                FillWindowPixelBuffer(4, PIXEL_FILL(0xA));
+                FillWindowPixelBuffer(5, PIXEL_FILL(0xA));
+                FillWindowPixelBuffer(6, PIXEL_FILL(0xA));
+                FillWindowPixelBuffer(MP_MAIN_MENU_WIN_LAST, PIXEL_FILL(0xA));
+                AddTextPrinterParameterized3(2, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuContinue);
+                AddTextPrinterParameterized3(3, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMultiplayer);
+                AddTextPrinterParameterized3(4, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuNewGame);
+                AddTextPrinterParameterized3(5, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMysteryGift2);
+                AddTextPrinterParameterized3(6, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuMysteryEvents);
+                AddTextPrinterParameterized3(MP_MAIN_MENU_WIN_LAST, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, gText_MainMenuOption);
+                MainMenu_FormatSavegameText();
+                PutWindowTilemap(2);
+                PutWindowTilemap(3);
+                PutWindowTilemap(4);
+                PutWindowTilemap(5);
+                PutWindowTilemap(6);
+                PutWindowTilemap(MP_MAIN_MENU_WIN_LAST);
+                CopyWindowToVram(2, COPYWIN_GFX);
+                CopyWindowToVram(3, COPYWIN_GFX);
+                CopyWindowToVram(4, COPYWIN_GFX);
+                CopyWindowToVram(5, COPYWIN_GFX);
+                CopyWindowToVram(6, COPYWIN_GFX);
+                CopyWindowToVram(MP_MAIN_MENU_WIN_LAST, COPYWIN_GFX);
+                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[2], MAIN_MENU_BORDER_TILE);
+                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[3], MAIN_MENU_BORDER_TILE);
+                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[4], MAIN_MENU_BORDER_TILE);
+                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[5], MAIN_MENU_BORDER_TILE);
+                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[6], MAIN_MENU_BORDER_TILE);
+                DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[MP_MAIN_MENU_WIN_LAST], MAIN_MENU_BORDER_TILE);
+                MpMainMenu_AddScrollArrows(taskId);
                 break;
         }
         gTasks[taskId].func = Task_HighlightSelectedMainMenuItem;
@@ -902,11 +1003,15 @@ static bool8 HandleMainMenuInput(u8 taskId)
     }
     else if ((JOY_NEW(DPAD_UP)) && tCurrItem > 0)
     {
-        if (tMenuType == HAS_MYSTERY_EVENTS && tIsScrolled == TRUE && tCurrItem == 1)
+        // MP: generalised from the single HAS_MYSTERY_EVENTS scroll step. The list scrolls
+        // by one item whenever the cursor would leave the MP_MAIN_MENU_VISIBLE_ITEMS on screen
+        // (same behaviour as before for 5 items, and it also handles 6).
+        if (tCurrItem - 1 < tIsScrolled)
         {
             ChangeBgY(0, 0x2000, BG_COORD_SUB);
             ChangeBgY(1, 0x2000, BG_COORD_SUB);
-            gTasks[tScrollArrowTaskId].tArrowTaskIsScrolled = tIsScrolled = FALSE;
+            tIsScrolled--;
+            sMpMainMenuScrollOffset = tIsScrolled;
         }
         tCurrItem--;
         sCurrItemAndOptionMenuCheck = tCurrItem;
@@ -914,11 +1019,13 @@ static bool8 HandleMainMenuInput(u8 taskId)
     }
     else if ((JOY_NEW(DPAD_DOWN)) && tCurrItem < tItemCount - 1)
     {
-        if (tMenuType == HAS_MYSTERY_EVENTS && tCurrItem == 3 && tIsScrolled == FALSE)
+        // MP: see DPAD_UP above.
+        if (tCurrItem + 1 > tIsScrolled + MP_MAIN_MENU_VISIBLE_ITEMS - 1)
         {
             ChangeBgY(0, 0x2000, BG_COORD_ADD);
             ChangeBgY(1, 0x2000, BG_COORD_ADD);
-            gTasks[tScrollArrowTaskId].tArrowTaskIsScrolled = tIsScrolled = TRUE;
+            tIsScrolled++;
+            sMpMainMenuScrollOffset = tIsScrolled;
         }
         tCurrItem++;
         sCurrItemAndOptionMenuCheck = tCurrItem;
@@ -937,11 +1044,11 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
 {
     bool8 wirelessAdapterConnected;
     u8 action;
+    u8 item; // MP: tCurrItem with MULTIPLAYER taken out, i.e. the decomp's item index
 
     if (!gPaletteFade.active)
     {
-        if (gTasks[taskId].tMenuType == HAS_MYSTERY_EVENTS)
-            RemoveScrollIndicatorArrowPair(gTasks[taskId].tScrollArrowTaskId);
+        MpMainMenu_RemoveScrollArrows(taskId); // MP: HAS_MYSTERY_GIFT has arrows now too
         ClearStdWindowAndFrame(0, TRUE);
         ClearStdWindowAndFrame(1, TRUE);
         ClearStdWindowAndFrame(2, TRUE);
@@ -950,12 +1057,20 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
         ClearStdWindowAndFrame(5, TRUE);
         ClearStdWindowAndFrame(6, TRUE);
         ClearStdWindowAndFrame(7, TRUE);
+        ClearStdWindowAndFrame(MP_MAIN_MENU_WIN_LAST, TRUE); // MP:
         wirelessAdapterConnected = IsWirelessAdapterConnected();
-        switch (gTasks[taskId].tMenuType)
+        // MP: MULTIPLAYER sits right after CONTINUE; map the items after it back to the
+        // decomp's indexes so the original cursor-to-action mapping below is unchanged.
+        item = gTasks[taskId].tCurrItem;
+        if (MpMainMenu_HasMultiplayerItem(gTasks[taskId].tMenuType) && item > MP_MAIN_MENU_ITEM_MULTIPLAYER)
+            item--;
+        if (MpMainMenu_HasMultiplayerItem(gTasks[taskId].tMenuType) && gTasks[taskId].tCurrItem == MP_MAIN_MENU_ITEM_MULTIPLAYER)
+            action = ACTION_MULTIPLAYER; // MP:
+        else switch (gTasks[taskId].tMenuType)
         {
             case HAS_NO_SAVED_GAME:
             default:
-                switch (gTasks[taskId].tCurrItem)
+                switch (item) // MP: was tCurrItem
                 {
                     case 0:
                     default:
@@ -967,7 +1082,7 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
                 }
                 break;
             case HAS_SAVED_GAME:
-                switch (gTasks[taskId].tCurrItem)
+                switch (item) // MP: was tCurrItem
                 {
                     case 0:
                     default:
@@ -982,7 +1097,7 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
                 }
                 break;
             case HAS_MYSTERY_GIFT:
-                switch (gTasks[taskId].tCurrItem)
+                switch (item) // MP: was tCurrItem
                 {
                     case 0:
                     default:
@@ -1005,7 +1120,7 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
                 }
                 break;
             case HAS_MYSTERY_EVENTS:
-                switch (gTasks[taskId].tCurrItem)
+                switch (item) // MP: was tCurrItem
                 {
                     case 0:
                     default:
@@ -1097,6 +1212,14 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
                 SetGpuReg(REG_OFFSET_BG0VOFS, 0);
                 BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, RGB_BLACK);
                 return;
+            case ACTION_MULTIPLAYER:
+                // MP: the screen is black and every main menu window is cleared; show the
+                // Host/Join sub-menu in their place and fade back in. Windows stay allocated.
+                gTasks[taskId].tIsScrolled = 0;
+                sMpMainMenuScrollOffset = 0;
+                MpMainMenu_ShowSubmenu(taskId, MP_SUBMENU_HOST);
+                BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, RGB_BLACK);
+                return;
         }
         FreeAllWindowBuffers();
         if (action != ACTION_OPTION)
@@ -1110,8 +1233,7 @@ static void Task_HandleMainMenuBPressed(u8 taskId)
 {
     if (!gPaletteFade.active)
     {
-        if (gTasks[taskId].tMenuType == HAS_MYSTERY_EVENTS)
-            RemoveScrollIndicatorArrowPair(gTasks[taskId].tScrollArrowTaskId);
+        MpMainMenu_RemoveScrollArrows(taskId); // MP: HAS_MYSTERY_GIFT has arrows now too
         sCurrItemAndOptionMenuCheck = 0;
         FreeAllWindowBuffers();
         SetMainCallback2(CB2_InitTitleScreen);
@@ -1158,8 +1280,228 @@ static void Task_DisplayMainMenuInvalidActionError(u8 taskId)
     }
 }
 
+// MP: ---------------------------------------------------------------------------------
+// Pokemon Spectrum multiplayer: MULTIPLAYER main menu entry and Host/Join sub-menu (PS-020).
+// Everything from here to the end of this block is new code.
+
+// AD-11: multiplayer is only offered when there is a save.
+static bool8 MpMainMenu_HasMultiplayerItem(u8 menuType)
+{
+    return (menuType == HAS_SAVED_GAME || menuType == HAS_MYSTERY_GIFT || menuType == HAS_MYSTERY_EVENTS);
+}
+
+// Number of items MP adds to a layout.
+static u8 MpMainMenu_ExtraItems(u8 menuType)
+{
+    return MpMainMenu_HasMultiplayerItem(menuType) ? 1 : 0;
+}
+
+// WIN0V value that highlights main menu window `windowId` while the list is scrolled down
+// by `scroll` items. Same formula as MENU_WIN_VCOORDS, read from the window template.
+static u16 MpMainMenu_GetWindowVCoords(u8 windowId, s16 scroll)
+{
+    const struct WindowTemplate *template = &sWindowTemplates_MainMenu[windowId];
+    u16 top = ((template->tilemapTop - 1) * 8) + MENU_SHADOW_PADDING;
+    u16 bottom = (template->tilemapTop + template->height + 1) * 8 - MENU_SHADOW_PADDING;
+
+    return WIN_RANGE(top, bottom) - scroll * MENU_SCROLL_SHIFT;
+}
+
+// Replaces the decomp's HAS_MYSTERY_EVENTS-only arrows. Called from Task_DisplayMainMenu for
+// layouts with more items than fit on screen. Uses the generic arrow task, which hides the
+// up arrow at scroll 0 and the down arrow at the last scroll position.
+static void MpMainMenu_AddScrollArrows(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+    struct ScrollArrowsTemplate arrows = sScrollArrowsTemplate_MainMenu;
+    s16 maxScroll = tItemCount - MP_MAIN_MENU_VISIBLE_ITEMS;
+    s16 scroll = 0;
+
+    if (maxScroll < 1)
+        return;
+    // Start with the current item visible (e.g. OPTION when returning from the options menu).
+    if (tCurrItem >= MP_MAIN_MENU_VISIBLE_ITEMS)
+        scroll = tCurrItem - (MP_MAIN_MENU_VISIBLE_ITEMS - 1);
+    if (scroll > maxScroll)
+        scroll = maxScroll;
+
+    arrows.fullyUpThreshold = 0;
+    arrows.fullyDownThreshold = maxScroll;
+    sMpMainMenuScrollOffset = scroll;
+    tIsScrolled = scroll;
+    tScrollArrowTaskId = AddScrollIndicatorArrowPair(&arrows, &sMpMainMenuScrollOffset);
+    ChangeBgY(0, 0x2000 * scroll, BG_COORD_SET);
+    ChangeBgY(1, 0x2000 * scroll, BG_COORD_SET);
+}
+
+static void MpMainMenu_RemoveScrollArrows(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+
+    if (tScrollArrowTaskId != TASK_NONE)
+    {
+        RemoveScrollIndicatorArrowPair(tScrollArrowTaskId);
+        tScrollArrowTaskId = TASK_NONE;
+    }
+}
+
+// Draws HOST GAME / JOIN GAME / CANCEL as main-menu-style buttons. Expects the main menu
+// windows to be cleared and the background not scrolled.
+static void MpMainMenu_ShowSubmenu(u8 taskId, u8 selectedItem)
+{
+    s16 *data = gTasks[taskId].data;
+    u8 i;
+
+    for (i = 0; i < MP_SUBMENU_COUNT; i++)
+    {
+        u8 windowId = sMpSubmenuWindowIds[i];
+
+        FillWindowPixelBuffer(windowId, PIXEL_FILL(0xA));
+        AddTextPrinterParameterized3(windowId, FONT_NORMAL, 0, 1, sTextColor_Headers, TEXT_SKIP_DRAW, sMpSubmenuTexts[i]);
+        PutWindowTilemap(windowId);
+        CopyWindowToVram(windowId, COPYWIN_GFX);
+        DrawMainMenuWindowBorder(&sWindowTemplates_MainMenu[windowId], MAIN_MENU_BORDER_TILE);
+    }
+    if (selectedItem >= MP_SUBMENU_COUNT)
+        selectedItem = MP_SUBMENU_HOST;
+    tMpSubmenuItem = selectedItem;
+    MpMainMenu_HighlightSubmenuItem(selectedItem);
+    gTasks[taskId].func = Task_MpMainMenu_HandleSubmenuInput;
+}
+
+static void MpMainMenu_ClearSubmenu(void)
+{
+    u8 i;
+
+    for (i = 0; i < MP_SUBMENU_COUNT; i++)
+        ClearStdWindowAndFrame(sMpSubmenuWindowIds[i], TRUE);
+}
+
+static void MpMainMenu_HighlightSubmenuItem(u8 item)
+{
+    SetGpuReg(REG_OFFSET_WIN0H, MENU_WIN_HCOORDS);
+    SetGpuReg(REG_OFFSET_WIN0V, MpMainMenu_GetWindowVCoords(sMpSubmenuWindowIds[item], 0));
+}
+
+static void Task_MpMainMenu_HandleSubmenuInput(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+
+    if (gPaletteFade.active)
+        return;
+
+    if (JOY_NEW(A_BUTTON))
+    {
+        PlaySE(SE_SELECT);
+        BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 0x10, RGB_BLACK);
+        if (tMpSubmenuItem == MP_SUBMENU_CANCEL)
+            gTasks[taskId].func = Task_MpMainMenu_CloseSubmenu;
+        else
+            gTasks[taskId].func = Task_MpMainMenu_SubmenuAPressed;
+    }
+    else if (JOY_NEW(B_BUTTON))
+    {
+        PlaySE(SE_SELECT);
+        BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 0x10, RGB_BLACK);
+        gTasks[taskId].func = Task_MpMainMenu_CloseSubmenu;
+    }
+    else if (JOY_NEW(DPAD_UP) && tMpSubmenuItem > 0)
+    {
+        tMpSubmenuItem--;
+        MpMainMenu_HighlightSubmenuItem(tMpSubmenuItem);
+    }
+    else if (JOY_NEW(DPAD_DOWN) && tMpSubmenuItem < MP_SUBMENU_COUNT - 1)
+    {
+        tMpSubmenuItem++;
+        MpMainMenu_HighlightSubmenuItem(tMpSubmenuItem);
+    }
+}
+
+// B / CANCEL: back to the main menu with the cursor on MULTIPLAYER. The screen is black here.
+static void Task_MpMainMenu_CloseSubmenu(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+
+    if (!gPaletteFade.active)
+    {
+        MpMainMenu_ClearSubmenu();
+        tCurrItem = MP_MAIN_MENU_ITEM_MULTIPLAYER;
+        sCurrItemAndOptionMenuCheck = tCurrItem;
+        tIsScrolled = 0;
+        sMpMainMenuScrollOffset = 0;
+        // Redraw the main menu now (the fade is over, so it draws immediately), then fade in
+        // from black in the same frame and take input once the fade is done.
+        Task_DisplayMainMenu(taskId);
+        BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, RGB_BLACK);
+        gTasks[taskId].func = Task_MpMainMenu_WaitForFadeIn;
+    }
+}
+
+static void Task_MpMainMenu_WaitForFadeIn(u8 taskId)
+{
+    if (!gPaletteFade.active)
+        gTasks[taskId].func = Task_HighlightSelectedMainMenuItem;
+}
+
+// Same exit as ACTION_CONTINUE in Task_HandleMainMenuAPressed.
+static void MpMainMenu_ContinueSavedGame(u8 taskId)
+{
+    MpMainMenu_ClearSubmenu();
+    gPlttBufferUnfaded[0] = RGB_BLACK;
+    gPlttBufferFaded[0] = RGB_BLACK;
+    SetMainCallback2(CB2_ContinueSavedGame);
+    DestroyTask(taskId);
+    FreeAllWindowBuffers();
+    sCurrItemAndOptionMenuCheck = 0;
+}
+
+static void MpMainMenu_HostGame(void)
+{
+    // MP_Host precondition (mp.h): state is OFFLINE or ERROR.
+    u8 state = MP_GetState();
+
+    if (state != MP_STATE_OFFLINE && state != MP_STATE_ERROR)
+    {
+        DBGPRINTF("[MP] HOST GAME: already in a session (state %u); not hosting again\n", (unsigned int)state);
+        return;
+    }
+    if (!MP_Host(MP_DEFAULT_PORT))
+        DBGPRINTF("[MP] HOST GAME: could not host on port %u; playing single-player\n", (unsigned int)MP_DEFAULT_PORT);
+}
+
+// HOST GAME / JOIN GAME after the fade to black.
+static void Task_MpMainMenu_SubmenuAPressed(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+
+    if (!gPaletteFade.active)
+    {
+        switch (tMpSubmenuItem)
+        {
+        case MP_SUBMENU_HOST:
+        default:
+            // Placeholder until PS-022 adds the "Hosting on port N" screen: start the
+            // session and continue the save.
+            MpMainMenu_HostGame();
+            MpMainMenu_ContinueSavedGame(taskId);
+            break;
+        case MP_SUBMENU_JOIN:
+            // PS-021: the IP entry screen. B there comes back via CB2_ReinitMainMenuMultiplayer.
+            MpMainMenu_ClearSubmenu();
+            SetMainCallback2(CB2_MpInitIpEntryScreen);
+            DestroyTask(taskId);
+            FreeAllWindowBuffers();
+            sCurrItemAndOptionMenuCheck = 0;
+            break;
+        }
+    }
+}
+
+// MP: end of the multiplayer main menu block -----------------------------------------
+
 #undef tMenuType
 #undef tCurrItem
+#undef tMpSubmenuItem // MP:
 #undef tItemCount
 #undef tScrollArrowTaskId
 #undef tIsScrolled
@@ -1186,68 +1528,15 @@ static void HighlightSelectedMainMenuItem(u8 menuType, u8 selectedMenuItem, s16 
                     break;
             }
             break;
+        // MP: the save layouts gained MULTIPLAYER and scroll by up to two items, so the
+        // per-layout tables of MENU_WIN_VCOORDS(n) became one lookup: item -> window ->
+        // its rows, minus one MENU_SCROLL_SHIFT per item scrolled (isScrolled is a count now).
         case HAS_SAVED_GAME:
-            switch (selectedMenuItem)
-            {
-                case 0:
-                default:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(2));
-                    break;
-                case 1:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(3));
-                    break;
-                case 2:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(4));
-                    break;
-            }
-            break;
         case HAS_MYSTERY_GIFT:
-            switch (selectedMenuItem)
-            {
-                case 0:
-                default:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(2));
-                    break;
-                case 1:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(3));
-                    break;
-                case 2:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(4));
-                    break;
-                case 3:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(5));
-                    break;
-            }
-            break;
         case HAS_MYSTERY_EVENTS:
-            switch (selectedMenuItem)
-            {
-                case 0:
-                default:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(2));
-                    break;
-                case 1:
-                    if (isScrolled)
-                        SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(3) - MENU_SCROLL_SHIFT);
-                    else
-                        SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(3));
-                    break;
-                case 2:
-                    if (isScrolled)
-                        SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(4) - MENU_SCROLL_SHIFT);
-                    else
-                        SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(4));
-                    break;
-                case 3:
-                    if (isScrolled)
-                        SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(5) - MENU_SCROLL_SHIFT);
-                    else
-                        SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(5));
-                    break;
-                case 4:
-                    SetGpuReg(REG_OFFSET_WIN0V, MENU_WIN_VCOORDS(6) - MENU_SCROLL_SHIFT);
-                    break;
-            }
+            if (selectedMenuItem >= ARRAY_COUNT(sMpMainMenuItemWindowIds))
+                selectedMenuItem = 0;
+            SetGpuReg(REG_OFFSET_WIN0V, MpMainMenu_GetWindowVCoords(sMpMainMenuItemWindowIds[selectedMenuItem], isScrolled));
             break;
     }
 }

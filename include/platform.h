@@ -57,6 +57,26 @@ struct PlatformArgs
 };
 
 extern struct PlatformArgs gPlatformArgs;
+
+// MP: keyboard entry and settings file for the Join Game IP screen (PS-021).
+// Implemented in src/platform/sdl2_text_input.c (no-ops on non-SDL platforms).
+// All strings are ASCII and NUL-terminated.
+#define PLATFORM_TEXT_INPUT_QUEUE_SIZE  64
+#define PLATFORM_TEXT_BACKSPACE         0x08    // queued for the Backspace key (ASCII BS)
+// Starts queueing typed characters (printable ASCII, plus PLATFORM_TEXT_BACKSPACE) and
+// Ctrl+V pastes. Clears anything queued before.
+void Platform_StartTextInput(void);
+void Platform_StopTextInput(void);
+// Moves up to `outSize` queued characters into `out` (NOT NUL-terminated); returns how many.
+u32 Platform_ReadTextInput(char *out, u32 outSize);
+// If Ctrl+V was pressed since the last call, copies the clipboard text (printable ASCII only,
+// truncated to outSize - 1) into `out` and returns TRUE.
+bool8 Platform_TakePastedText(char *out, u32 outSize);
+// First line of "<savePath>.mp.cfg" (the last Join Game address, "a.b.c.d:port"), without the
+// line break. FALSE if the file doesn't exist or can't be read.
+bool8 Platform_ReadMpConfig(char *out, u32 outSize);
+// Replaces "<savePath>.mp.cfg" with `line` plus a line break. FALSE on error.
+bool8 Platform_WriteMpConfig(const char *line);
 #endif // PORTABLE
 
 #endif
