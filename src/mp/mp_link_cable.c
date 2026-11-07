@@ -23,6 +23,7 @@
 #include "mp/mp.h"
 #include "mp/mp_internal.h"
 #include "mp/mp_link.h"
+#include "mp/mp_summary.h"
 
 // The bus carries CMD_LENGTH words per member and at most MAX_LINK_PLAYERS members.
 typedef char MpLinkCmdLengthCheck[(CMD_LENGTH == MP_LINK_CMD_WORDS) ? 1 : -1];
@@ -234,8 +235,8 @@ static void MpLinkTestFail(const char *what)
 
 void MP_LinkTestTick(void)
 {
-    char name[PLAYER_NAME_LENGTH + 1];
-    u32 i, j;
+    char name[MP_PLAYER_NAME_SIZE + 1];
+    u32 i;
     u8 me;
 
     if (!sLinkTestEnabled || sLinkTestState == LT_DONE)
@@ -301,20 +302,7 @@ void MP_LinkTestTick(void)
             break;
         for (i = 0; i < GetLinkPlayerCount(); i++)
         {
-            for (j = 0; j < PLAYER_NAME_LENGTH && gLinkPlayers[i].name[j] != EOS; j++)
-            {
-                u8 c = gLinkPlayers[i].name[j];
-                // Debug only: A-Z, a-z, 0-9 in the game charset, '?' for anything else.
-                if (c >= CHAR_A && c <= CHAR_Z)
-                    name[j] = 'A' + (c - CHAR_A);
-                else if (c >= CHAR_a && c <= CHAR_z)
-                    name[j] = 'a' + (c - CHAR_a);
-                else if (c >= CHAR_0 && c <= CHAR_9)
-                    name[j] = '0' + (c - CHAR_0);
-                else
-                    name[j] = '?';
-            }
-            name[j] = '\0';
+            MP_NameToAscii(gLinkPlayers[i].name, name, sizeof(name)); // logs only (PS-013 helper)
             MP_LOG("link test: gLinkPlayers[%u] = %s, trainer id 0x%08X, gender %u, version 0x%04X%s\n",
                    (unsigned)i, name, (unsigned)gLinkPlayers[i].trainerId, (unsigned)gLinkPlayers[i].gender,
                    (unsigned)gLinkPlayers[i].version, (i == GetMultiplayerId()) ? " (me)" : "");
