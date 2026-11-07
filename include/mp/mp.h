@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      2       // Wire protocol version (2: PS-046 LINK_*). Bump on ANY wire change. Max 255.
+#define MP_PROTOCOL_VERSION      3       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -185,6 +185,11 @@ enum
                                 // The slot is already empty when this event is polled.
     MP_EVENT_PLAYER_UPDATED,    // slot's summary changed (e.g. a new badge).
     MP_EVENT_DISCONNECTED,      // Client: session lost after being IN_SESSION. reason = MP_REASON_*. State is ERROR.
+    // PS-041 player interaction (see "Interaction" below). `kind` = MP_INTERACT_*.
+    MP_EVENT_INTERACT_REQUEST,  // Someone asks us to trade/battle. slot = requester. Answer with MP_RespondInteract().
+    MP_EVENT_INTERACT_RESULT,   // Our request ended. slot = target, result = MP_INTERACT_RESULT_*.
+    MP_EVENT_INTERACT_CANCELLED,// The request to us is gone (requester cancelled or left, or it timed out).
+                                // slot = requester, result = MP_INTERACT_RESULT_CANCELLED / TIMEOUT.
     MP_EVENT_COUNT,
 };
 
@@ -195,8 +200,11 @@ struct MpEvent
     u8 type;                    // MP_EVENT_*.
     u8 slot;                    // MP_SLOT_NONE if not applicable.
     u8 reason;                  // MP_REASON_*, MP_REASON_NONE if not applicable.
-    u8 name[MP_PLAYER_NAME_SIZE]; // Copy of the player's name at the time of the event (valid for JOINED/LEFT/UPDATED),
-                                  // so notices still work after the slot has been freed. EOS-filled otherwise.
+    u8 kind;                    // MP_INTERACT_* for the INTERACT events, else 0.
+    u8 result;                  // MP_INTERACT_RESULT_* for the INTERACT events, else 0.
+    u8 name[MP_PLAYER_NAME_SIZE]; // Copy of the player's name at the time of the event (valid for JOINED/LEFT/UPDATED
+                                  // and the INTERACT events), so notices still work after the slot has been freed.
+                                  // EOS-filled otherwise.
 };
 
 // ---------------------------------------------------------------------------
@@ -374,8 +382,62 @@ bool8 MP_EvictRemoteAvatarForGame(void);
 // before the object's sprite is destroyed: drops the avatar's surf blob and own palette.
 void MP_OnObjectEventRemoved(u8 objectEventId);
 
+// PS-041: the remote player whose avatar stands on tile (x, y), or MP_SLOT_NONE. (x, y) are
+// object-event coordinates (ObjectEvent.currentCoords, MAP_OFFSET included), exactly what
+// GetObjectEventIdByPosition takes and what the field input code computes for the tile in
+// front of the player. Only spawned, valid avatars count; only while the overworld runs.
+// This is the ONE place where avatars are "found" by position: GetObjectEventIdByPosition
+// still ignores them, so normal NPC interaction can never pick an avatar.
+u8 MP_GetRemoteAvatarSlotAt(s16 x, s16 y);
+
 // ---------------------------------------------------------------------------
-// Virtual link cable (PS-046, protocol.md 6.11, design.md "As implemented in PS-046")
+// Interaction (PS-041): TRADE / BATTLE requests through the host (protocol.md 6.11)
+// ---------------------------------------------------------------------------
+// One request per requester at a time. The host checks the target (in the table, on the
+// requester's map, not already asked by someone else), forwards it and enforces the
+// timeout. The target answers with MP_RespondInteract(); the requester gets
+// MP_EVENT_INTERACT_RESULT. Nothing here starts a trade or battle (PS-044 / PS-045).
+
+enum
+{
+    MP_INTERACT_NONE,
+    MP_INTERACT_TRADE,
+    MP_INTERACT_BATTLE,
+    MP_INTERACT_KIND_COUNT,
+};
+
+enum
+{
+    MP_INTERACT_RESULT_NONE,
+    MP_INTERACT_RESULT_ACCEPTED,
+    MP_INTERACT_RESULT_DECLINED,
+    MP_INTERACT_RESULT_BUSY,        // target was in a battle / menu / script (or already asked)
+    MP_INTERACT_RESULT_TIMEOUT,     // no answer within MP_INTERACT_TIMEOUT_MS
+    MP_INTERACT_RESULT_UNAVAILABLE, // target gone, not on your map, stale, or you already have a request out
+    MP_INTERACT_RESULT_CANCELLED,   // requester cancelled (only in MP_EVENT_INTERACT_CANCELLED)
+    MP_INTERACT_RESULT_COUNT,
+};
+
+#define MP_INTERACT_TIMEOUT_MS      15000   // the target must answer within this
+#define MP_INTERACT_HOST_GRACE_MS   2000    // host: extra time before it times a request out itself
+#define MP_INTERACT_CLIENT_GRACE_MS 5000    // requester: extra time before it gives up locally
+#define MP_INTERACT_MIN_GAP_MS      1000    // host: minimum time between two requests from one player
+
+// Requester. FALSE (nothing sent) if not IN_SESSION, `targetSlot` is empty or ourselves,
+// `kind` is invalid, or we already have a request out.
+bool8 MP_SendInteractRequest(u8 targetSlot, u8 kind);
+// Requester: withdraw our request (no MP_EVENT_INTERACT_RESULT follows). Safe in any state.
+void MP_CancelInteractRequest(void);
+// TRUE while our own request is out (between MP_SendInteractRequest and its result).
+bool8 MP_IsInteractRequestPending(void);
+// Target: answer the request to us with ACCEPTED, DECLINED or BUSY. Ignored if there is
+// none or `result` is anything else.
+void MP_RespondInteract(u8 result);
+// Target: TRUE while a request to us is waiting for MP_RespondInteract().
+bool8 MP_HasIncomingInteract(void);
+
+// ---------------------------------------------------------------------------
+// Virtual link cable (PS-046, protocol.md 6.12, design.md "As implemented in PS-046")
 // ---------------------------------------------------------------------------
 //
 // Emerald's own cable stack (link.c: OpenLink, SendBlock, the player-data exchange,

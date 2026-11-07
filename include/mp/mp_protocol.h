@@ -32,7 +32,11 @@
 #define MP_MSG_PING             0x08
 #define MP_MSG_PONG             0x09
 #define MP_MSG_PRESENCE         0x10
-// Virtual link cable (PS-046, protocol.md 6.11). All on channel 0 (reliable, ordered).
+// PS-041 player interaction (protocol.md 6.11), channel 0, reliable
+#define MP_MSG_INTERACT_REQUEST     0x40    // requester -> host -> target
+#define MP_MSG_INTERACT_RESPONSE    0x41    // target -> host -> requester (or host -> requester on its own)
+#define MP_MSG_INTERACT_CANCEL      0x42    // requester -> host -> target (or host -> target on its own)
+// Virtual link cable (PS-046, protocol.md 6.12). All on channel 0 (reliable, ordered).
 #define MP_MSG_LINK_JOIN        0x60    // C -> H
 #define MP_MSG_LINK_LEAVE       0x61    // C -> H
 #define MP_MSG_LINK_GROUP       0x62    // H -> C
@@ -66,6 +70,7 @@
 #define MP_LINK_MAX_MEMBERS     4       // == MAX_LINK_PLAYERS in include/link.h
 #define MP_LINK_CMD_SIZE        (4 + 2 * MP_LINK_CMD_WORDS)                 // 20
 #define MP_LINK_ROW_SIZE(n)     (8 + 2 * MP_LINK_CMD_WORDS * (n))           // 8 + 16n
+#define MP_INTERACT_SIZE        8       // all three INTERACT_* messages
 
 // PRESENCE coordinate range (protocol.md 6.8): map-local tiles, a little outside the
 // map is allowed while crossing a seam.
@@ -154,7 +159,20 @@ struct MpMsgPresence
     struct MpPresence presence; // presence.seq is the wire seq
 };
 
-// LINK_* control messages (protocol.md 6.11). One 4-byte layout: groupId, arg1, arg2,
+// INTERACT_REQUEST / _RESPONSE / _CANCEL (PS-041). `slot` is always the OTHER party of the
+// request from the receiver's point of view (see protocol.md 6.11): C -> H the target (REQUEST,
+// CANCEL) or the requester (RESPONSE); H -> C the requester (REQUEST, CANCEL) or the target
+// (RESPONSE). The host overwrites/derives every slot and epoch; it never trusts the client's.
+struct MpMsgInteract
+{
+    u8 slot;
+    u8 epoch;           // epoch of `slot`
+    u8 kind;            // MP_INTERACT_TRADE / BATTLE
+    u8 requestId;       // chosen by the requester, echoed back
+    u8 result;          // RESPONSE only: MP_INTERACT_RESULT_ACCEPTED..UNAVAILABLE; 0 otherwise
+};
+
+// LINK_* control messages (protocol.md 6.12). One 4-byte layout: groupId, arg1, arg2,
 // reserved. What arg1/arg2 mean depends on the type:
 //   JOIN      arg1 = member slot mask (2..4 bits of 0x0F)        groupId ignored
 //   LEAVE     -                                                  groupId ignored
@@ -211,6 +229,10 @@ u8 MpProto_ParsePing(const u8 *payload, u32 len, struct MpMsgPing *out);
 // the ignored fields (x, y, facing, movement) are normalised to 0 / DIR_SOUTH / NONE, and
 // the reserved presenceFlags byte always parses as 0.
 u8 MpProto_ParsePresence(const u8 *payload, u32 len, struct MpMsgPresence *out);
+// INTERACT_* (PS-041): `type` is the header type (one of the three, else BAD_FIELD). Exactly
+// 8 bytes; slot < 4; epoch != 0; kind TRADE or BATTLE; RESPONSE result ACCEPTED..UNAVAILABLE.
+// The result byte of REQUEST / CANCEL and the reserved bytes 5..7 are ignored (parse as 0).
+u8 MpProto_ParseInteract(u8 type, const u8 *payload, u32 len, struct MpMsgInteract *out);
 
 // `headerVersion` is the version byte written in the HELLO header (low 8 bits of the
 // advertised protocol version, so --mp-fake-protocol reaches the header too).
@@ -226,6 +248,9 @@ u16 MpProto_WritePing(u8 *buf, u16 cap, u8 type, const struct MpMsgPing *msg);
 // Writes the fields as given (reserved presenceFlags as 0). The sender sanitises first
 // (MP_SetLocalPresence), so what it writes always passes MpProto_ParsePresence.
 u16 MpProto_WritePresence(u8 *buf, u16 cap, const struct MpMsgPresence *msg);
+// type = MP_MSG_INTERACT_REQUEST / _RESPONSE / _CANCEL (anything else: returns 0). Writes the
+// result byte only for RESPONSE (0 otherwise) and the reserved bytes as 0.
+u16 MpProto_WriteInteract(u8 *buf, u16 cap, u8 type, const struct MpMsgInteract *msg);
 
 // LINK_* (PS-046). MpProto_IsLinkCtlType: one of the 4-byte control types.
 bool8 MpProto_IsLinkCtlType(u8 type);

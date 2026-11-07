@@ -39,6 +39,19 @@ bool8 MpUi_TryShowFieldNotice(void);
 // PLAYERS list window in the field (PS-033), driven by the start menu: Show replaces the
 // start menu window, Update redraws it twice a second, Hide removes it. Safe to call when
 // not shown.
+// Player interaction (PS-041, src/mp/mp_menu_interact.c).
+// MP: hook in ProcessPlayerFieldInput (field_control_avatar.c): A on tile (x, y) in front of
+// the player (object-event coordinates). If a remote avatar stands there, opens the player
+// menu and returns TRUE (the caller then locks field controls); otherwise FALSE.
+bool8 MpInteractUi_TryOpenMenu(s16 x, s16 y);
+// From MpUi_TryShowFieldNotice (free field control): shows a queued incoming request
+// ("NAME wants to trade. Accept?"). TRUE if it started (it locks controls itself).
+bool8 MpInteractUi_TryShowIncoming(void);
+// From MpUi_Update: the INTERACT events, and per-frame busy bookkeeping.
+struct MpEvent;
+void MpInteractUi_OnEvent(const struct MpEvent *ev);
+void MpInteractUi_Update(void);
+
 void MpUi_ShowPlayerList(void);
 void MpUi_UpdatePlayerList(void);
 void MpUi_HidePlayerList(void);

@@ -74,6 +74,7 @@ static void MpServerRemovePlayer(u8 peer, u8 reason)
     left.slot = slot;
     left.epoch = gMpSession->players[slot].epoch;
     left.reason = reason;
+    MpInteract_OnSlotLeaving(slot); // PS-041: cancel / fail its requests while it is still in the table
     MpSession_QueueEvent(MP_EVENT_PLAYER_LEFT, slot, reason); // copies the name first
     MpSession_ClearSlot(slot);
     p->slot = MP_SLOT_NONE;
@@ -333,8 +334,16 @@ static void MpServerHandlePlayerMessage(u8 peer, u8 channel, const struct MpMsgH
         else if (MpPresence_OnHostReceive(peer, payload, len, now) == MP_PRESENCE_INVALID)
             MpServerMalformed(peer, "PRESENCE");
         break;
+    case MP_MSG_INTERACT_REQUEST:   // PS-041 (protocol.md 6.11)
+    case MP_MSG_INTERACT_RESPONSE:
+    case MP_MSG_INTERACT_CANCEL:
+        if (channel != MP_CHANNEL_CONTROL)
+            MpServerMalformed(peer, "INTERACT wrong channel");
+        else if (!MpInteract_OnHostReceive(peer, hdr->type, payload, len, now))
+            MpServerMalformed(peer, "INTERACT");
+        break;
     default:
-        // PS-046: virtual link cable (protocol.md 6.11)
+        // PS-046: virtual link cable (protocol.md 6.12)
         if (hdr->type >= MP_MSG_LINK_FIRST && hdr->type <= MP_MSG_LINK_LAST)
         {
             if (p->slot >= MP_MAX_PLAYERS || !MpLink_OnHostReceive(p->slot, channel, hdr->type, payload, len))

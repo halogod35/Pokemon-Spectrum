@@ -100,6 +100,19 @@ void MpSession_QueueEvent(u8 type, u8 slot, u8 reason)
     s->eventCount++;
 }
 
+void MpSession_QueueInteractEvent(u8 type, u8 slot, u8 kind, u8 result)
+{
+    struct MpSession *s = gMpSession;
+    struct MpEvent *ev;
+
+    MpSession_QueueEvent(type, slot, MP_REASON_NONE);
+    if (s->eventCount == 0)
+        return;
+    ev = &s->events[(s->eventHead + s->eventCount - 1) % MP_EVENT_QUEUE_SIZE];
+    ev->kind = kind;
+    ev->result = result;
+}
+
 bool8 MP_PollEvent(struct MpEvent *out)
 {
     struct MpSession *s = gMpSession;
@@ -349,6 +362,7 @@ void MP_Update(void)
     if (s->state == MP_STATE_IN_SESSION && MpTransport_IsOpen())
     {
         MpPresence_Update(now);
+        MpInteract_Update(now); // PS-041 request timeouts
         MpPresence_DebugReport(now);
     }
 

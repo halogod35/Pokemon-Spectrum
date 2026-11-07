@@ -474,7 +474,60 @@ u16 MpProto_WritePresence(u8 *buf, u16 cap, const struct MpMsgPresence *msg)
 }
 
 // ---------------------------------------------------------------------------
-// LINK_* (PS-046, protocol.md 6.11)
+// INTERACT_* (PS-041, protocol.md 6.11)
+// ---------------------------------------------------------------------------
+
+static bool8 MpIsInteractType(u8 type)
+{
+    return type == MP_MSG_INTERACT_REQUEST || type == MP_MSG_INTERACT_RESPONSE || type == MP_MSG_INTERACT_CANCEL;
+}
+
+u8 MpProto_ParseInteract(u8 type, const u8 *payload, u32 len, struct MpMsgInteract *out)
+{
+    u8 result;
+
+    memset(out, 0, sizeof(*out));
+    if (!MpIsInteractType(type))
+        return MP_PARSE_ERR_BAD_FIELD;
+    result = MpCheckExactSize(payload, len, MP_INTERACT_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+    if (payload[0] >= MP_MAX_PLAYERS || payload[1] == 0)
+        return MP_PARSE_ERR_BAD_FIELD;
+    if (payload[2] != MP_INTERACT_TRADE && payload[2] != MP_INTERACT_BATTLE)
+        return MP_PARSE_ERR_BAD_FIELD;
+    if (type == MP_MSG_INTERACT_RESPONSE
+     && (payload[4] < MP_INTERACT_RESULT_ACCEPTED || payload[4] > MP_INTERACT_RESULT_UNAVAILABLE))
+        return MP_PARSE_ERR_BAD_FIELD;
+    out->slot = payload[0];
+    out->epoch = payload[1];
+    out->kind = payload[2];
+    out->requestId = payload[3];
+    out->result = (type == MP_MSG_INTERACT_RESPONSE) ? payload[4] : 0;
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteInteract(u8 *buf, u16 cap, u8 type, const struct MpMsgInteract *msg)
+{
+    struct MpWriter w;
+
+    if (!MpIsInteractType(type))
+        return 0;
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, type, MP_PROTOCOL_VERSION, MP_INTERACT_SIZE);
+    MpWriteU8(&w, msg->slot);
+    MpWriteU8(&w, msg->epoch);
+    MpWriteU8(&w, msg->kind);
+    MpWriteU8(&w, msg->requestId);
+    MpWriteU8(&w, (type == MP_MSG_INTERACT_RESPONSE) ? msg->result : 0);
+    MpWriteU8(&w, 0);
+    MpWriteU8(&w, 0);
+    MpWriteU8(&w, 0);
+    return MpFinishWrite(&w);
+}
+
+// ---------------------------------------------------------------------------
+// LINK_* (PS-046, protocol.md 6.12)
 // ---------------------------------------------------------------------------
 
 u8 MpProto_LinkMaskCount(u8 mask)

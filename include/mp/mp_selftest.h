@@ -18,6 +18,9 @@ u32 MpSelftest_Presence(void);
 // PS-031: remote-avatar logic (localId mapping, object budget, graphics ids, movement-action
 // translation, the replay plan and snap rule, a replay simulation).
 u32 MpSelftest_Avatar(void);
+// PS-041: INTERACT_* parser fuzzing and an in-process host + 2 clients scenario (request ->
+// accept / decline, busy, timeout, cancel, rate limit, other map, malformed, requester leaving).
+u32 MpSelftest_Interact(void);
 // PS-046: LINK_* parser fuzzing and the virtual link cable on the real link stack (link.c):
 // two game instances in one process (MP_LinkSelftestState), the host as sequencer only and as
 // a member; player-data exchange, SendBlock, stall + catch-up, re-open, disconnect.

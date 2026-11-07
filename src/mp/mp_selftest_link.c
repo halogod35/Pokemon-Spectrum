@@ -254,8 +254,8 @@ static void TestParsers(void)
 // 2. Two game instances on the real link stack
 // ===========================================================================
 
-#define LINK_PORT_FIRST     27560
-#define LINK_PORT_LAST      27569
+#define LINK_PORT_FIRST     27550
+#define LINK_PORT_LAST      27559
 #define LINK_STATE_CAP      16384
 #define LINK_BLOCK_SIZE     200
 #define LINK_FRAME_LIMIT    2000000     // safety cap; waits are bounded by LINK_TIME_LIMIT_MS
@@ -673,7 +673,7 @@ static void ScenarioHostNotMember(void)
 
     InitGame(G_A, S_C1, "ALICE", 0x0001A11Cu);
     InitGame(G_B, S_C2, "BOB", 0x000B0B0Bu);
-    L_CHECK(HostOn(S_HOST, "Host"), "host on a port in 27560..27569");
+    L_CHECK(HostOn(S_HOST, "Host"), "host on a port in 27550..27559");
     L_CHECK(JoinOn(S_C1, "Alice") && WaitSession(S_C1), "client 1 joins");
     L_CHECK(JoinOn(S_C2, "Bob") && WaitSession(S_C2), "client 2 joins");
     PumpNet();
@@ -798,7 +798,7 @@ static void ScenarioHostMember(void)
 
     InitGame(G_A, S_HOST, "HOST", 0x00C0FFEEu);
     InitGame(G_B, S_C1, "CARL", 0x00012345u);
-    L_CHECK(HostOn(S_HOST, "Host"), "host on a port in 27560..27569");
+    L_CHECK(HostOn(S_HOST, "Host"), "host on a port in 27550..27559");
     L_CHECK(JoinOn(S_C1, "Carl") && WaitSession(S_C1), "client joins");
     PumpNet();
     Enter(G_A); L_CHECK(MP_LinkJoin(0x03), "host asks for slots 0+1"); Leave();

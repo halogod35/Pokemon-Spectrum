@@ -383,6 +383,46 @@ static void TestDenyTable(void)
     Report("deny table", failuresBefore);
 }
 
+// --- PS-036: doors and ledges ------------------------------------------------------
+
+static void TestDoorsAndLedges(void)
+{
+    struct MpPresence t;
+    u32 failuresBefore = sFail;
+    s16 x, y;
+    u8 action;
+
+    MpAvatar_StepCoords(DIR_SOUTH, 5, 5, 1, &x, &y);
+    A_CHECK(x == 5 && y == 6, "step south");
+    MpAvatar_StepCoords(DIR_NORTH, 5, 5, 2, &x, &y);
+    A_CHECK(x == 5 && y == 3, "two north");
+    MpAvatar_StepCoords(DIR_WEST, 5, 5, 1, &x, &y);
+    A_CHECK(x == 4 && y == 5, "step west");
+    MpAvatar_StepCoords(DIR_EAST, 5, 5, 1, &x, &y);
+    A_CHECK(x == 6 && y == 5, "step east");
+    MpAvatar_StepCoords(DIR_NONE, 5, 5, 1, &x, &y);
+    A_CHECK(x == 5 && y == 5, "no direction, no move");
+
+    A_CHECK(MpAvatar_DoorTransition(DIR_NORTH, FALSE, TRUE) == MP_AVATAR_DOOR_ENTER, "north into a door: enter");
+    A_CHECK(MpAvatar_DoorTransition(DIR_SOUTH, TRUE, FALSE) == MP_AVATAR_DOOR_EXIT, "south out of a door: exit");
+    A_CHECK(MpAvatar_DoorTransition(DIR_SOUTH, FALSE, TRUE) == MP_AVATAR_DOOR_NONE, "south onto a door: not a door warp");
+    A_CHECK(MpAvatar_DoorTransition(DIR_EAST, FALSE, TRUE) == MP_AVATAR_DOOR_NONE, "sideways onto a door: nothing");
+    A_CHECK(MpAvatar_DoorTransition(DIR_NORTH, TRUE, FALSE) == MP_AVATAR_DOOR_NONE, "north off a door: nothing");
+    A_CHECK(MpAvatar_DoorTransition(DIR_NORTH, FALSE, FALSE) == MP_AVATAR_DOOR_NONE, "ordinary step: nothing");
+    A_CHECK(MpAvatar_DoorTransition(DIR_SOUTH, TRUE, TRUE) == MP_AVATAR_DOOR_NONE, "door to door: nothing");
+
+    // The capture now reports a ledge jump as ONE update with the landing tile (PS-036):
+    // replayed as JUMP_2 (arc + shadow), never as two walks or a snap.
+    P(&t, 5, 7, DIR_SOUTH, MP_MOVE_JUMP, MP_AVATAR_ON_FOOT, 9);
+    A_CHECK(MpAvatar_Plan(5, 5, DIR_SOUTH, &t, TRUE, &action) == MP_AVATAR_PLAN_ACTION && action == MOVEMENT_ACTION_JUMP_2_DOWN,
+            "ledge jump down -> JUMP_2_DOWN");
+    P(&t, 7, 5, DIR_EAST, MP_MOVE_JUMP, MP_AVATAR_ACRO_BIKE, 9);
+    A_CHECK(MpAvatar_Plan(5, 5, DIR_EAST, &t, TRUE, &action) == MP_AVATAR_PLAN_ACTION && action == MOVEMENT_ACTION_JUMP_2_RIGHT,
+            "ledge jump east on a bike -> JUMP_2_RIGHT");
+    A_CHECK(!MpAvatar_IsTooFarBehind(5, 5, &t), "a jump's landing tile never snaps");
+    Report("doors and ledge jumps", failuresBefore);
+}
+
 u32 MpSelftest_Avatar(void)
 {
     sFail = 0;
@@ -392,5 +432,6 @@ u32 MpSelftest_Avatar(void)
     TestReplay();
     TestConnections();
     TestDenyTable();
+    TestDoorsAndLedges();
     return sFail;
 }

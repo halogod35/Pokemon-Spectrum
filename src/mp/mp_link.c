@@ -1,4 +1,4 @@
-// Virtual link cable, session side (PS-046, protocol.md 6.11). No game state here.
+// Virtual link cable, session side (PS-046, protocol.md 6.12). No game state here.
 //
 // Host ("the bus"): link groups of 2..4 slots, formed when every member asked for the same
 // mask (LINK_JOIN). Per group it tracks which members have the cable open (LINK_OPEN /

@@ -165,6 +165,7 @@ static void MpClientHandleSessionMessage(u8 channel, const struct MpMsgHeader *h
         if (reason != MP_REASON_LEFT && reason != MP_REASON_CONNECTION_LOST
          && reason != MP_REASON_KICKED && reason != MP_REASON_PROTOCOL_ERROR)
             reason = MP_REASON_CONNECTION_LOST;
+        MpInteract_OnSlotLeaving(left.slot); // PS-041: end our requests with that player
         MpSession_QueueEvent(MP_EVENT_PLAYER_LEFT, left.slot, reason);
         MpSession_ClearSlot(left.slot);
         MP_SLOG("slot %u left: %s\n", (unsigned)left.slot, MP_GetReasonName(reason));
@@ -219,8 +220,16 @@ static void MpClientHandleSessionMessage(u8 channel, const struct MpMsgHeader *h
         else if (MpPresence_OnClientReceive(payload, len) == MP_PRESENCE_INVALID)
             MpClientMalformed("PRESENCE");
         break;
+    case MP_MSG_INTERACT_REQUEST:   // PS-041 (protocol.md 6.11)
+    case MP_MSG_INTERACT_RESPONSE:
+    case MP_MSG_INTERACT_CANCEL:
+        if (channel != MP_CHANNEL_CONTROL)
+            MpClientMalformed("INTERACT wrong channel");
+        else if (!MpInteract_OnClientReceive(hdr->type, payload, len))
+            MpClientMalformed("INTERACT");
+        break;
     default:
-        // PS-046: virtual link cable (protocol.md 6.11)
+        // PS-046: virtual link cable (protocol.md 6.12)
         if (hdr->type >= MP_MSG_LINK_FIRST && hdr->type <= MP_MSG_LINK_LAST)
         {
             if (!MpLink_OnClientReceive(channel, hdr->type, payload, len))

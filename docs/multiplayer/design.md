@@ -92,7 +92,7 @@ Game code including them is a review failure.
   `gLastRecvQueueCount` (capped at 50) and builds the `gLinkStatus` word. It also holds the
   `--mp-link-test` driver.
 - `src/mp/mp_link.c` (session side, no game state) + `include/mp/mp_link.h`: the host's link
-  groups and row sequencer ("the bus", protocol.md 6.11) and the member side (request, open
+  groups and row sequencer ("the bus", protocol.md 6.12) and the member side (request, open
   sequence, receive queue of 256 rows, 10 s echo watchdog). State is per session instance in
   static arrays, outside `struct MpSession`, so a member's "cable open" survives `MpBeginSession`.
   The host's own member uses direct calls.
