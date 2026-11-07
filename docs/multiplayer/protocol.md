@@ -1,7 +1,7 @@
 # Pokémon Spectrum — Multiplayer Wire Protocol
 
-- **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence)
-- **Protocol version:** `MP_PROTOCOL_VERSION = 1`
+- **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests)
+- **Protocol version:** `MP_PROTOCOL_VERSION = 2` (2 = `INTERACT_*`, PS-041)
 - **Status:** draft for Director approval
 - **Companion docs:** `design.md` (modules, API, build), `include/mp/mp.h` (public API)
 
@@ -101,7 +101,10 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 | `0x10` | `PRESENCE` | C → H, H → C | 1 | 16 | IN_SESSION |
 | `0x11`–`0x1F` | reserved: presence/world | | 1 | | |
 | `0x20`–`0x3F` | reserved: social (chat, emotes) | | | | later |
-| `0x40`–`0x5F` | **reserved: `INTERACT_*`** (Stage 4: interact menu, trainer card, view Pokémon, trade/battle requests) | | 0 | | Stage 4 |
+| `0x40` | `INTERACT_REQUEST` | C → H, H → C | 0 | 8 | IN_SESSION (PS-041, 6.11) |
+| `0x41` | `INTERACT_RESPONSE` | C → H, H → C | 0 | 8 | IN_SESSION (PS-041, 6.11) |
+| `0x42` | `INTERACT_CANCEL` | C → H, H → C | 0 | 8 | IN_SESSION (PS-041, 6.11) |
+| `0x43`–`0x5F` | **reserved: `INTERACT_*`** (Stage 4: trainer card, view Pokémon, …) | | 0 | | Stage 4 |
 | `0x60`–`0x7F` | **reserved: `LINK_*`** (Stage 4: virtual link cable, PS-040) | | 0 (or a new channel) | | Stage 4 |
 | `0x80`–`0xEF` | reserved | | | | |
 | `0xF0` | `DEBUG_ECHO` | both | 0 | 0..64 | only under `--mp-selftest` (PS-011). Session code drops it. |
@@ -418,6 +421,67 @@ loss and reordering in `--mp-debug` logs and counters.
 Payload 0..64 arbitrary bytes, channel 0. Only handled by the PS-011 `--mp-selftest` loopback test.
 In a normal session it is dropped and counted malformed.
 
+### 6.11 `INTERACT_REQUEST` (0x40) / `INTERACT_RESPONSE` (0x41) / `INTERACT_CANCEL` (0x42) — both directions, channel 0, payload 8 bytes
+
+PS-041. A player asks another player to **trade** or **battle**; the host routes everything
+(clients never talk to each other). Implemented in `src/mp/mp_interact.c`; UI in
+`src/mp/mp_menu_interact.c`. These messages only negotiate; PS-044 / PS-045 start the actual
+trade / battle after an `ACCEPTED`.
+
+All three share one layout:
+
+| Offset | Size | Type | Field | Rule |
+|---|---|---|---|---|
+| 0 | 1 | u8 | `slot` | The **other party** from the receiver's point of view (table below). `< 4` |
+| 1 | 1 | u8 | `epoch` | Epoch of `slot`. `!= 0` |
+| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE. Others rejected |
+| 3 | 1 | u8 | `requestId` | Chosen by the requester (any value), echoed in RESPONSE / CANCEL |
+| 4 | 1 | u8 | `result` | RESPONSE only: `1` ACCEPTED, `2` DECLINED, `3` BUSY, `4` TIMEOUT, `5` UNAVAILABLE; others rejected. REQUEST / CANCEL: reserved, sender writes 0, receiver ignores |
+| 5 | 3 | u8[3] | reserved | 0 |
+
+| Message | Sender → receiver | `slot` means |
+|---|---|---|
+| REQUEST | requester → host | the target |
+| REQUEST | host → target | the requester |
+| RESPONSE | target → host | the requester |
+| RESPONSE | host → requester | the target |
+| CANCEL | requester → host | the target |
+| CANCEL | host → target | the requester |
+
+**Host rules.** The sender of a C → H message is always the peer's real slot; `slot`/`epoch` in
+the message only name the other party, and the host checks them against its table.
+
+- One request in flight **per requester** (so also per pair). The host keeps a route per
+  requester slot: `{target, epochs, kind, requestId, start time}`.
+- REQUEST is refused, with a RESPONSE sent straight back to the requester, when:
+  - the requester already has a request in flight, or sent its previous request less than
+    `MP_INTERACT_MIN_GAP_MS` (1000 ms) ago → `UNAVAILABLE` (rate limit, not counted malformed);
+  - the target is the requester, an empty slot, or its epoch does not match → `UNAVAILABLE`;
+  - requester and target are not on the same map by their latest PRESENCE (`mapGroup`,
+    `mapNum`, neither `MP_MAP_NONE`) → `UNAVAILABLE`;
+  - someone else is already asking the target, or the target has its own request in flight →
+    `BUSY`.
+- Otherwise the host stores the route and forwards REQUEST to the target (or handles it itself
+  when the host is the target).
+- RESPONSE from the target is forwarded only if it matches the route (requester, target,
+  `requestId`); anything else is stale and dropped silently. CANCEL likewise.
+- No answer within `MP_INTERACT_TIMEOUT_MS + MP_INTERACT_HOST_GRACE_MS` (15 + 2 s): the host
+  sends CANCEL to the target and RESPONSE `TIMEOUT` to the requester.
+- A player leaving the table (BYE, timeout, kick): its own request is CANCELled at its target,
+  and every requester asking it gets RESPONSE `UNAVAILABLE`.
+
+**Endpoint rules.**
+
+- Target: answers with RESPONSE `ACCEPTED` / `DECLINED` / `BUSY`. Its session answers
+  `TIMEOUT` itself after `MP_INTERACT_TIMEOUT_MS` (15 s). The UI answers `BUSY` when the player
+  stays in a battle, menu or script for ~3 s after the request arrives. A REQUEST naming a
+  requester that is no longer in the table is dropped. A second REQUEST while one is pending
+  is answered `BUSY` (the host never sends one).
+- Requester: gives up locally (`TIMEOUT`) after `MP_INTERACT_TIMEOUT_MS +
+  MP_INTERACT_CLIENT_GRACE_MS` (15 + 5 s) without an answer. A RESPONSE not matching its
+  pending request is dropped. `PLAYER_LEFT` for the target ends the request (`UNAVAILABLE`).
+- A client receiving any INTERACT message whose `slot` is its own slot counts it malformed.
+
 ---
 
 ## 7. Session rules
@@ -489,6 +553,7 @@ or speed-up does not cause timeouts. The network is still pumped while the game 
 | `PRESENCE` | validate, cache, forward to all other clients |
 | `PLAYER_UPDATE` | validate, store, forward to all other clients |
 | `PING` | answer `PONG` (not forwarded) |
+| `INTERACT_*` | route to the other party after the checks of 6.11 (or answer / handle it itself) |
 | `BYE` | remove client, broadcast `PLAYER_LEFT` |
 | anything else | drop, count malformed |
 
@@ -587,6 +652,7 @@ exits with status 0 / 1.
 |---|---|---|
 | `PRESENCE` | Send on change, at most 20 Hz (>= 50 ms apart). A new `stepId` always forces a send as soon as the 50 ms window allows (several steps inside one window merge into the newest state; receivers see the `stepId` gap). Keep-alive every 1000 ms when unchanged. | drop if < 25 ms since the last accepted one from that client (not counted malformed) |
 | `PLAYER_UPDATE` | at most 1 / s, coalesced | drop extras within 1 s |
+| `INTERACT_REQUEST` | one in flight per player (the API refuses a second) | refuse (`UNAVAILABLE`) a second one in flight, or one < 1000 ms after the previous; not counted malformed |
 | `PING` | 1 / s | ignore PINGs < 250 ms apart |
 | `HELLO` | once per connection | a second one → disconnect |
 | ENet events | — | at most 64 processed per `MP_Update()` |
@@ -679,3 +745,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 |---|---|---|
 | 1 | PS-010 | Initial spec |
 | 1 | PS-030 | PRESENCE implemented. No byte change, so no version bump: field semantics pinned down (6.8.1); a CONNECTING client drops PRESENCE silently instead of counting it malformed (a relayed update can overtake a retransmitted WELCOME; it was dropped before too, only the malformed count changes); `MP_IsValidMap` from a compile-time-checked map count table. |
+| 2 | PS-041 | `INTERACT_REQUEST` (0x40), `INTERACT_RESPONSE` (0x41), `INTERACT_CANCEL` (0x42): trade / battle requests routed by the host (6.11), with host-side checks (same map, one request per requester, 1 s gap, busy target) and timeouts. Version bumped to 2: a version-1 peer is rejected (VERSION) instead of meeting unknown message types. |

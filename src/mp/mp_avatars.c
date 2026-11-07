@@ -761,3 +761,25 @@ void MP_OnObjectEventRemoved(u8 objectEventId)
         MpAvatarResetState(av);
     }
 }
+
+// PS-041 (Agent D): A-button interaction. The only lookup of avatars by position; normal NPC
+// interaction (GetObjectEventIdByPosition) still never sees them. Read only.
+u8 MP_GetRemoteAvatarSlotAt(s16 x, s16 y)
+{
+    u32 i;
+
+    if (!sAvatarsInit || !MpInField())
+        return MP_SLOT_NONE;
+    for (i = 0; i < MP_MAX_PLAYERS; i++)
+    {
+        const struct MpAvatar *av = &sAvatars[i];
+        const struct ObjectEvent *obj;
+
+        if (!av->spawned || !MpAvatarObjectValid((u8)i, av))
+            continue;
+        obj = &gObjectEvents[av->objectEventId];
+        if (obj->currentCoords.x == x && obj->currentCoords.y == y && !obj->invisible)
+            return (u8)i;
+    }
+    return MP_SLOT_NONE;
+}

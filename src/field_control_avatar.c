@@ -34,6 +34,7 @@
 #include "constants/map_types.h"
 #include "constants/songs.h"
 #include "constants/trainer_hill.h"
+#include "mp_menu.h" // MP: A on a remote player opens the player menu (PS-041)
 
 static EWRAM_DATA u8 sWildEncounterImmunitySteps = 0;
 static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
@@ -169,6 +170,10 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
 
     GetInFrontOfPlayerPosition(&position);
     metatileBehavior = MapGridGetMetatileBehaviorAt(position.x, position.y);
+    // MP: facing a remote player's avatar, A opens the player menu instead of NPC/sign
+    // interaction (PS-041). Does nothing offline or when no avatar is on that tile.
+    if (input->pressedAButton && MpInteractUi_TryOpenMenu(position.x, position.y) == TRUE)
+        return TRUE;
     if (input->pressedAButton && TryStartInteractionScript(&position, metatileBehavior, playerDirection) == TRUE)
         return TRUE;
 

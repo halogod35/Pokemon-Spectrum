@@ -32,6 +32,10 @@
 #define MP_MSG_PING             0x08
 #define MP_MSG_PONG             0x09
 #define MP_MSG_PRESENCE         0x10
+// PS-041 player interaction (protocol.md 6.11), channel 0, reliable
+#define MP_MSG_INTERACT_REQUEST     0x40    // requester -> host -> target
+#define MP_MSG_INTERACT_RESPONSE    0x41    // target -> host -> requester (or host -> requester on its own)
+#define MP_MSG_INTERACT_CANCEL      0x42    // requester -> host -> target (or host -> target on its own)
 #define MP_MSG_DEBUG_ECHO       0xF0    // --mp-selftest only
 
 #define MP_DEBUG_ECHO_MAX_PAYLOAD 64
@@ -46,6 +50,7 @@
 #define MP_BYE_SIZE             4
 #define MP_PING_SIZE            4
 #define MP_PRESENCE_SIZE        16
+#define MP_INTERACT_SIZE        8       // all three INTERACT_* messages
 
 // PRESENCE coordinate range (protocol.md 6.8): map-local tiles, a little outside the
 // map is allowed while crossing a seam.
@@ -134,6 +139,19 @@ struct MpMsgPresence
     struct MpPresence presence; // presence.seq is the wire seq
 };
 
+// INTERACT_REQUEST / _RESPONSE / _CANCEL (PS-041). `slot` is always the OTHER party of the
+// request from the receiver's point of view (see protocol.md 6.11): C -> H the target (REQUEST,
+// CANCEL) or the requester (RESPONSE); H -> C the requester (REQUEST, CANCEL) or the target
+// (RESPONSE). The host overwrites/derives every slot and epoch; it never trusts the client's.
+struct MpMsgInteract
+{
+    u8 slot;
+    u8 epoch;           // epoch of `slot`
+    u8 kind;            // MP_INTERACT_TRADE / BATTLE
+    u8 requestId;       // chosen by the requester, echoed back
+    u8 result;          // RESPONSE only: MP_INTERACT_RESULT_ACCEPTED..UNAVAILABLE; 0 otherwise
+};
+
 // Header: 4 <= len <= MP_MAX_PACKET_SIZE and length == len - 4. Type/version/state
 // are not checked here.
 bool8 MpProto_ParseHeader(const u8 *buf, u32 len, struct MpMsgHeader *out);
@@ -157,6 +175,10 @@ u8 MpProto_ParsePing(const u8 *payload, u32 len, struct MpMsgPing *out);
 // the ignored fields (x, y, facing, movement) are normalised to 0 / DIR_SOUTH / NONE, and
 // the reserved presenceFlags byte always parses as 0.
 u8 MpProto_ParsePresence(const u8 *payload, u32 len, struct MpMsgPresence *out);
+// INTERACT_* (PS-041): `type` is the header type (one of the three, else BAD_FIELD). Exactly
+// 8 bytes; slot < 4; epoch != 0; kind TRADE or BATTLE; RESPONSE result ACCEPTED..UNAVAILABLE.
+// The result byte of REQUEST / CANCEL and the reserved bytes 5..7 are ignored (parse as 0).
+u8 MpProto_ParseInteract(u8 type, const u8 *payload, u32 len, struct MpMsgInteract *out);
 
 // `headerVersion` is the version byte written in the HELLO header (low 8 bits of the
 // advertised protocol version, so --mp-fake-protocol reaches the header too).
@@ -172,6 +194,9 @@ u16 MpProto_WritePing(u8 *buf, u16 cap, u8 type, const struct MpMsgPing *msg);
 // Writes the fields as given (reserved presenceFlags as 0). The sender sanitises first
 // (MP_SetLocalPresence), so what it writes always passes MpProto_ParsePresence.
 u16 MpProto_WritePresence(u8 *buf, u16 cap, const struct MpMsgPresence *msg);
+// type = MP_MSG_INTERACT_REQUEST / _RESPONSE / _CANCEL (anything else: returns 0). Writes the
+// result byte only for RESPONSE (0 otherwise) and the reserved bytes as 0.
+u16 MpProto_WriteInteract(u8 *buf, u16 cap, u8 type, const struct MpMsgInteract *msg);
 
 // RFC 1982 serial-number "newer than" for u16 sequence numbers (protocol.md 6.8).
 bool8 MpSeqIsNewer(u16 s, u16 last);

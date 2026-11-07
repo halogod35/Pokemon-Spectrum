@@ -95,6 +95,38 @@ struct MpPresenceState
     u32 invalid;
 };
 
+// Interaction (PS-041, mp_interact.c).
+struct MpInteractRequest
+{
+    bool8 active;
+    u8 slot;                // the other party (target for outgoing, requester for incoming)
+    u8 epoch;               // its epoch when the request started
+    u8 kind;                // MP_INTERACT_*
+    u8 requestId;
+    u32 startMs;
+};
+
+// Host only: requests in flight, indexed by REQUESTER slot (so one per requester).
+struct MpInteractRoute
+{
+    bool8 active;
+    u8 fromEpoch;
+    u8 to;
+    u8 toEpoch;
+    u8 kind;
+    u8 requestId;
+    u32 startMs;
+};
+
+struct MpInteractState
+{
+    struct MpInteractRequest outgoing;      // our request (we are the requester)
+    struct MpInteractRequest incoming;      // the request to us (we are the target)
+    u8 nextRequestId;
+    struct MpInteractRoute routes[MP_MAX_PLAYERS];  // host only
+    u32 lastRequestMs[MP_MAX_PLAYERS];              // host only: per requester, for the 1 s gap
+};
+
 struct MpClientState
 {
     bool8 transportConnected;
@@ -137,6 +169,7 @@ struct MpSession
     u32 lastUpdateSentMs;
 
     struct MpPresenceState presence;    // PS-030
+    struct MpInteractState interact;    // PS-041
 
     bool8 flushing;        // MP_Leave / failure: transport kept open to deliver BYE
     u32 flushStartMs;
@@ -186,6 +219,22 @@ u8 MpPresence_OnClientReceive(const u8 *payload, u32 len);
 void MpPresence_SendCachedTo(u8 peer, u8 newSlot);
 // --mp-debug: presence bytes/s per peer every MP_PRESENCE_STATS_MS.
 void MpPresence_DebugReport(u32 now);
+
+// mp_interact.c (PS-041, protocol.md 6.11)
+// The target's answer deadline. MP_INTERACT_TIMEOUT_MS; the selftest shortens it.
+extern u32 gMpInteractTimeoutMs;
+// Like MpSession_QueueEvent, with the interact fields.
+void MpSession_QueueInteractEvent(u8 type, u8 slot, u8 kind, u8 result);
+// Host: an INTERACT_* message from client `peer` (in the player table). Returns FALSE if it
+// was malformed (the caller counts it).
+bool8 MpInteract_OnHostReceive(u8 peer, u8 type, const u8 *payload, u32 len, u32 now);
+// Client: an INTERACT_* message from the host. Returns FALSE if it was malformed.
+bool8 MpInteract_OnClientReceive(u8 type, const u8 *payload, u32 len);
+// Host: `slot` is about to leave the table (before MpSession_ClearSlot): cancel / fail the
+// requests it is part of. Client: the same when PLAYER_LEFT for `slot` arrives.
+void MpInteract_OnSlotLeaving(u8 slot);
+// Timeouts. Call while IN_SESSION, once per MP_Update.
+void MpInteract_Update(u32 now);
 
 #define MP_SLOG(fmt, ...) MP_LOG("%s" fmt, MpSession_Tag(), ##__VA_ARGS__)
 #define MP_SDLOG(fmt, ...) MP_DLOG("%s" fmt, MpSession_Tag(), ##__VA_ARGS__)

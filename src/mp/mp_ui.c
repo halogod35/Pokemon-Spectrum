@@ -236,6 +236,11 @@ void MpUi_Update(void)
         case MP_EVENT_PLAYER_LEFT:
             MpUi_QueueToast(event.name, gText_MpToastLeft);
             break;
+        case MP_EVENT_INTERACT_REQUEST:     // PS-041
+        case MP_EVENT_INTERACT_RESULT:
+        case MP_EVENT_INTERACT_CANCELLED:
+            MpInteractUi_OnEvent(&event);
+            break;
         case MP_EVENT_SESSION_STARTED:
         case MP_EVENT_CONNECT_FAILED:
         case MP_EVENT_DISCONNECTED:
@@ -244,6 +249,7 @@ void MpUi_Update(void)
             break;
         }
     }
+    MpInteractUi_Update(); // PS-041: busy bookkeeping for a waiting incoming request
 }
 
 // ---------------------------------------------------------------------------
@@ -527,7 +533,11 @@ bool8 MpUi_TryShowFieldNotice(void)
      || ScriptContext_IsEnabled()
      || !IsFieldMessageBoxHidden())
     {
-        // Nothing blocking to show: maybe a join/leave toast (non-blocking, PS-033).
+        // No session error to show. An incoming trade/battle request (PS-041) comes next; it
+        // blocks like a message box and locks controls itself.
+        if (MpInteractUi_TryShowIncoming())
+            return TRUE;
+        // Then maybe a join/leave toast (non-blocking, PS-033).
         MpUi_TryShowToast();
         return FALSE;
     }
