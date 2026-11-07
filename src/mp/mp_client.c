@@ -261,8 +261,11 @@ void MpClient_OnTransportEvent(const struct MpTransportEvent *ev)
                 MpClientHandleReject(ev->data + MP_HEADER_SIZE, hdr.length); // any header version (frozen)
             else if (hdr.type == MP_MSG_WELCOME && ev->channel == MP_CHANNEL_CONTROL && hdr.version == MP_PROTOCOL_VERSION)
                 MpClientHandleWelcome(ev->data + MP_HEADER_SIZE, hdr.length);
-            else if (hdr.type == MP_MSG_PRESENCE && ev->channel == MP_CHANNEL_PRESENCE)
-                break; // relayed presence overtook a delayed WELCOME (expected race, protocol.md 6.8)
+            else if ((hdr.type == MP_MSG_PRESENCE || hdr.type == MP_MSG_PING || hdr.type == MP_MSG_PONG)
+                  && ev->channel == MP_CHANNEL_PRESENCE)
+                break; // channel-1 traffic overtook a delayed/retransmitted WELCOME on channel 0:
+                       // an expected race, ignored silently (BUG-001, protocol.md 6.8). Channel-0
+                       // messages are ordered after WELCOME, so they cannot race it.
             else
                 MpClientMalformed("unexpected message while connecting");
         }
