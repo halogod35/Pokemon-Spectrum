@@ -210,6 +210,7 @@ static u16 sPort;
 static u8 sWaitInstance;
 static u8 sWaitSlot;
 static u8 sWaitCount;
+static u16 sWaitMap;     // MAP_* the host must have in sWaitSlot's presence
 
 static void Sel(u8 instance)
 {
@@ -280,7 +281,9 @@ static bool8 CondHostHasPresence(void)
 
     Sel(I_HOST);
     p = MP_GetPlayer(sWaitSlot);
-    return p != NULL && p->hasPresence;
+    // hasPresence alone is not enough: a client that joined before setting its presence
+    // first announces MP_MAP_NONE (PS-030), so wait for the map we set.
+    return p != NULL && p->hasPresence && p->presence.mapGroup == MAP_GROUP(sWaitMap) && p->presence.mapNum == MAP_NUM(sWaitMap);
 }
 
 static bool8 CondSlotGone(void)
@@ -391,6 +394,7 @@ static void TestScenario(void)
     for (i = 0; i < INSTANCES; i++)
     {
         sWaitSlot = i;
+        sWaitMap = sameMap;
         I_CHECK(PumpUntil(CondHostHasPresence, 2000), "host has everyone's presence");
     }
     Sel(I_C1); I_CHECK(MP_GetLocalSlot() == 1, "client 1 is slot 1");
@@ -504,7 +508,9 @@ static void TestScenario(void)
     // --- the target is not on the requester's map ---
     failuresBefore = sFail;
     SetMap(I_C2, otherMap);
-    PumpFor(400);
+    sWaitSlot = 2;
+    sWaitMap = otherMap;
+    I_CHECK(PumpUntil(CondHostHasPresence, 2000), "host sees C2 on the other map");
     WaitGap();
     Sel(I_C1);
     I_CHECK(MP_SendInteractRequest(2, MP_INTERACT_TRADE), "C1 asks C2 on another map");
@@ -512,7 +518,9 @@ static void TestScenario(void)
     I_CHECK(sSeen[I_C1].result == MP_INTERACT_RESULT_UNAVAILABLE, "not on your map: UNAVAILABLE");
     I_CHECK(sSeen[I_C2].requests == 2, "C2 never saw it");
     SetMap(I_C2, sameMap);
-    PumpFor(400);
+    sWaitSlot = 2;
+    sWaitMap = sameMap;
+    I_CHECK(PumpUntil(CondHostHasPresence, 2000), "host sees C2 back on the same map");
     Report("target on another map", failuresBefore);
 
     // --- malformed INTERACT payloads are rejected by the receive paths ---
