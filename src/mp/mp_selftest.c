@@ -343,6 +343,8 @@ s32 MP_RunSelftest(void)
     sFailures += MpSelftest_Avatar();
     // PS-041: INTERACT parsers and the request / accept / decline / timeout scenario.
     sFailures += MpSelftest_Interact();
+    // PS-042: TRAINER_CARD_DATA parser, the card built from a save, and the view scenario.
+    sFailures += MpSelftest_View();
     MpTransport_Shutdown();
 
     if (sFailures == 0)

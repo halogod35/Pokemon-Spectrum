@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      2       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041).
+#define MP_PROTOCOL_VERSION      3       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = trainer card (PS-042).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -397,12 +397,18 @@ u8 MP_GetRemoteAvatarSlotAt(s16 x, s16 y);
 // requester's map, not already asked by someone else), forwards it and enforces the
 // timeout. The target answers with MP_RespondInteract(); the requester gets
 // MP_EVENT_INTERACT_RESULT. Nothing here starts a trade or battle (PS-044 / PS-045).
+//
+// PS-042: kind TRAINER_CARD asks for the target's trainer card. There is no prompt: the
+// target's session answers by itself at once (TRAINER_CARD_DATA, then ACCEPTED), and no
+// MP_EVENT_INTERACT_REQUEST is queued on the target. After MP_EVENT_INTERACT_RESULT with
+// ACCEPTED the validated card is available from MP_GetViewedTrainerCard().
 
 enum
 {
     MP_INTERACT_NONE,
     MP_INTERACT_TRADE,
     MP_INTERACT_BATTLE,
+    MP_INTERACT_TRAINER_CARD,   // PS-042: public info, answered without a prompt
     MP_INTERACT_KIND_COUNT,
 };
 
@@ -415,6 +421,8 @@ enum
     MP_INTERACT_RESULT_TIMEOUT,     // no answer within MP_INTERACT_TIMEOUT_MS
     MP_INTERACT_RESULT_UNAVAILABLE, // target gone, not on your map, stale, or you already have a request out
     MP_INTERACT_RESULT_CANCELLED,   // requester cancelled (only in MP_EVENT_INTERACT_CANCELLED)
+    MP_INTERACT_RESULT_BAD_DATA,    // local only (PS-042): accepted, but the data that came with it
+                                    // was missing or failed validation; nothing is shown
     MP_INTERACT_RESULT_COUNT,
 };
 
@@ -435,5 +443,50 @@ bool8 MP_IsInteractRequestPending(void);
 void MP_RespondInteract(u8 result);
 // Target: TRUE while a request to us is waiting for MP_RespondInteract().
 bool8 MP_HasIncomingInteract(void);
+
+// ---------------------------------------------------------------------------
+// Viewing another player's data (PS-042 trainer card, protocol.md 6.12)
+// ---------------------------------------------------------------------------
+// Remote data lives in session memory only and is NEVER written into the save (AD-10).
+
+#define MP_TRAINER_CARD_PROFILE_WORDS 4 // = TRAINER_CARD_PROFILE_LENGTH (checked in mp_playerdata.c)
+
+// A trainer card as it travels on the wire, already validated and clamped (protocol.md 6.12).
+struct MpTrainerCard
+{
+    u8 gender;                      // MALE / FEMALE
+    u8 stars;                       // 0..4
+    bool8 hasPokedex;
+    bool8 caughtAllHoenn;
+    bool8 hasAllPaintings;
+    bool8 hasAllFrontierSymbols;
+    u16 hofDebutHours;              // <= 999
+    u8 hofDebutMinutes;             // <= 59
+    u8 hofDebutSeconds;             // <= 59
+    u16 caughtMonsCount;            // <= 999
+    u16 trainerId;                  // public 16-bit ID
+    u16 playTimeHours;              // <= 999
+    u8 playTimeMinutes;             // <= 59
+    u16 linkBattleWins;             // <= 9999
+    u16 linkBattleLosses;           // <= 9999
+    u16 battleTowerWins;            // <= 9999
+    u16 battleTowerStraightWins;    // <= 9999
+    u16 contestsWithFriends;        // <= 999
+    u16 pokeblocksWithFriends;
+    u16 pokemonTrades;
+    u16 frontierBP;                 // <= 9999
+    u32 money;                      // <= 999999
+    u16 easyChatProfile[MP_TRAINER_CARD_PROFILE_WORDS]; // EC_EMPTY_WORD or a word in a valid group
+    u8 name[MP_PLAYER_NAME_SIZE];   // protocol.md 5.1.1 rules, EOS padded
+};
+
+// The local player's card, built from the loaded save (read only; src/mp/mp_playerdata.c).
+// Uses the --name override like the player summary. Always passes the receiver's checks.
+void MP_BuildLocalTrainerCard(struct MpTrainerCard *out);
+// Requester: the card that came with the last ACCEPTED TRAINER_CARD request to `slot`.
+// FALSE if there is none (another slot, a newer request, the session ended).
+bool8 MP_GetViewedTrainerCard(u8 slot, struct MpTrainerCard *out);
+// Forget any received view data (call after showing it). Safe in any state.
+void MP_ClearViewedData(void);
 
 #endif // GUARD_MP_MP_H

@@ -1078,7 +1078,9 @@ static void PrintPokedexOnCard(void)
 {
     s32 xOffset;
     u8 top;
-    if (FlagGet(FLAG_SYS_POKEDEX_GET))
+    // MP: PS-042 (PS-040 Q6): a partner's card shows the POKéDEX line by the partner's
+    // hasPokedex, not by our own FLAG_SYS_POKEDEX_GET (vanilla quirk).
+    if (sData->isLink ? sData->trainerCard.hasPokedex : FlagGet(FLAG_SYS_POKEDEX_GET))
     {
         if (!sData->isHoenn)
             AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, 20, 72, sTrainerCardTextColors, TEXT_SKIP_DRAW, gText_TrainerCardPokedex);

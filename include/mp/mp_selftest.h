@@ -21,5 +21,12 @@ u32 MpSelftest_Avatar(void);
 // PS-041: INTERACT_* parser fuzzing and an in-process host + 2 clients scenario (request ->
 // accept / decline, busy, timeout, cancel, rate limit, other map, malformed, requester leaving).
 u32 MpSelftest_Interact(void);
+// PS-042: TRAINER_CARD_DATA parser fuzzing, the game-side card checks
+// (MpPlayerData_SelfTest), and an in-process host + 2 clients scenario (client <-> client,
+// client <-> host, card while the target has a prompt, tampered card, requester leaving).
+u32 MpSelftest_View(void);
+// PS-042 (src/mp/mp_playerdata.c): builds a card from in-memory test save blocks (the save is
+// left untouched, the result passes the parser) and checks the conversion to struct TrainerCard.
+u32 MpPlayerData_SelfTest(void);
 
 #endif // GUARD_MP_MP_SELFTEST_H

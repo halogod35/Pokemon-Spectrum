@@ -118,7 +118,7 @@ static void TestParser(void)
                 {
                     okFlips++;
                     I_CHECK(out.slot < MP_MAX_PLAYERS && out.epoch != 0
-                         && (out.kind == MP_INTERACT_TRADE || out.kind == MP_INTERACT_BATTLE), "INTERACT flip result in range");
+                         && out.kind > MP_INTERACT_NONE && out.kind < MP_INTERACT_KIND_COUNT, "INTERACT flip result in range");
                     if (type == MP_MSG_INTERACT_RESPONSE)
                         I_CHECK(out.result >= MP_INTERACT_RESULT_ACCEPTED && out.result <= MP_INTERACT_RESULT_UNAVAILABLE, "RESPONSE flip result in range");
                     else
@@ -148,7 +148,7 @@ static void TestParser(void)
     copy[2] = MP_INTERACT_NONE;
     I_CHECK(MpProto_ParseInteract(MP_MSG_INTERACT_RESPONSE, copy, MP_INTERACT_SIZE, &out) == MP_PARSE_ERR_BAD_FIELD, "kind 0 rejected");
     copy[2] = MP_INTERACT_KIND_COUNT;
-    I_CHECK(MpProto_ParseInteract(MP_MSG_INTERACT_RESPONSE, copy, MP_INTERACT_SIZE, &out) == MP_PARSE_ERR_BAD_FIELD, "kind 3 rejected");
+    I_CHECK(MpProto_ParseInteract(MP_MSG_INTERACT_RESPONSE, copy, MP_INTERACT_SIZE, &out) == MP_PARSE_ERR_BAD_FIELD, "kind MP_INTERACT_KIND_COUNT rejected");
     memcpy(copy, &buf[MP_HEADER_SIZE], MP_INTERACT_SIZE);
     copy[4] = MP_INTERACT_RESULT_NONE;
     I_CHECK(MpProto_ParseInteract(MP_MSG_INTERACT_RESPONSE, copy, MP_INTERACT_SIZE, &out) == MP_PARSE_ERR_BAD_FIELD, "RESPONSE result 0 rejected");

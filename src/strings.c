@@ -91,6 +91,8 @@ const u8 gText_MpIncomingBattle[] = _("{STR_VAR_1} wants to battle.\nAccept?");
 const u8 gText_MpIncomingWithdrawn[] = _("{STR_VAR_1} withdrew the request.");
 const u8 gText_MpIncomingTimedOut[] = _("The request timed out.");
 const u8 gText_MpPlayerGone[] = _("{STR_VAR_1} isn’t here anymore.");
+// MP: PS-042 view another player's data
+const u8 gText_MpViewBadData[] = _("Couldn’t read {STR_VAR_1}’s data.");
 const u8 gText_WirelessNotConnected[] = _("The Wireless Adapter is not\nconnected.");
 const u8 gText_MysteryGiftCantUse[] = _("MYSTERY GIFT can't be used while\nthe Wireless Adapter is attached.");
 const u8 gText_MysteryEventsCantUse[] = _("MYSTERY EVENTS can't be used while\nthe Wireless Adapter is attached.");

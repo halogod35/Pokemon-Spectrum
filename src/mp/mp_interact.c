@@ -16,6 +16,15 @@
 //  - Anything stale (unknown request id, old epoch, slot gone) is dropped silently. Routing
 //    refusals and rate limits are answered (UNAVAILABLE / BUSY) and are not "malformed"; only
 //    messages that fail to parse count towards the malformed budget (protocol.md 8.2).
+//
+// PS-042 (protocol.md 6.12): kind TRAINER_CARD. The target's session answers by itself, with
+// no prompt: TRAINER_CARD_DATA (the card from gMpLocalTrainerCardFunc), then RESPONSE
+// ACCEPTED, both on the reliable ordered channel, so the data always arrives first. The host
+// forwards the data only along a live route (sender = the route's target, one data message
+// per TRAINER_CARD route) and re-serialises it from the validated parse. The requester keeps
+// it in gMpSession->interact.rx; the RESPONSE then completes it (ACCEPTED) or turns into the
+// local result BAD_DATA if the data was missing or invalid. TRAINER_CARD requests do not
+// make the target "busy" for trade / battle requests and are not refused when it is.
 
 #include <string.h>
 #include "mp/mp_session_internal.h"
@@ -23,14 +32,21 @@
 #define MP_INTERACT_CLIENT_HOST_PEER 0  // a client's only transport peer (as in mp_client.c)
 
 u32 gMpInteractTimeoutMs = MP_INTERACT_TIMEOUT_MS;
+void (*gMpLocalTrainerCardFunc)(struct MpTrainerCard *out) = MP_BuildLocalTrainerCard;
 
 static u8 sInteractBuf[MP_MAX_PACKET_SIZE];
 
-static const char *const sKindNames[MP_INTERACT_KIND_COUNT] = { "none", "trade", "battle" };
+static const char *const sKindNames[MP_INTERACT_KIND_COUNT] = { "none", "trade", "battle", "trainer card" };
 static const char *const sResultNames[MP_INTERACT_RESULT_COUNT] =
 {
-    "none", "accepted", "declined", "busy", "timeout", "unavailable", "cancelled",
+    "none", "accepted", "declined", "busy", "timeout", "unavailable", "cancelled", "bad data",
 };
+
+// Kinds answered by the target's session without a prompt; they never make anyone busy.
+static bool8 MpKindIsSilent(u8 kind)
+{
+    return kind == MP_INTERACT_TRAINER_CARD;
+}
 
 static const char *MpKindName(u8 kind)
 {
@@ -94,12 +110,60 @@ static u8 MpPeerOfSlot(u8 slot)
 static void MpEndpointRespond(u8 result);
 static void MpHostRouteResponse(u8 target, u8 requester, u8 requestId, u8 result);
 
+static void MpSendCardData(u8 peer, u8 slot, u8 epoch, u8 requestId, const struct MpTrainerCard *card)
+{
+    struct MpMsgTrainerCardData msg;
+    u16 len;
+
+    if (peer == MP_PEER_NONE)
+        return;
+    memset(&msg, 0, sizeof(msg));
+    msg.slot = slot;
+    msg.epoch = epoch;
+    msg.requestId = requestId;
+    msg.card = *card;
+    len = MpProto_WriteTrainerCardData(sInteractBuf, sizeof(sInteractBuf), &msg);
+    MpSession_SendTo(peer, sInteractBuf, len, MP_CHANNEL_CONTROL, TRUE);
+}
+
+// Target, kind TRAINER_CARD: no prompt. Send the card, then ACCEPTED.
+static void MpEndpointSendTrainerCard(u8 requester, u8 requesterEpoch, u8 requestId)
+{
+    struct MpSession *s = gMpSession;
+    struct MpTrainerCard card;
+
+    memset(&card, 0, sizeof(card));
+    gMpLocalTrainerCardFunc(&card);
+    MP_SLOG("interact: sending our trainer card to slot %u (request %u)\n", (unsigned)requester, (unsigned)requestId);
+    if (s->isHost)
+    {
+        // We are the target and the router: straight to the requester (never ourselves).
+        if (requester < MP_MAX_PLAYERS)
+            s->interact.routes[requester].dataCount++;
+        MpSendCardData(MpPeerOfSlot(requester), s->localSlot, s->players[s->localSlot].epoch, requestId, &card);
+        MpHostRouteResponse(s->localSlot, requester, requestId, MP_INTERACT_RESULT_ACCEPTED);
+    }
+    else
+    {
+        MpSendCardData(MP_INTERACT_CLIENT_HOST_PEER, requester, requesterEpoch, requestId, &card);
+        MpSendInteract(MP_INTERACT_CLIENT_HOST_PEER, MP_MSG_INTERACT_RESPONSE, requester, requesterEpoch,
+                       MP_INTERACT_TRAINER_CARD, requestId, MP_INTERACT_RESULT_ACCEPTED);
+    }
+}
+
 static void MpDeliverRequest(u8 fromSlot, u8 fromEpoch, u8 kind, u8 requestId, u32 now)
 {
     struct MpInteractRequest *in = &gMpSession->interact.incoming;
 
     if (!MpSlotLive(fromSlot, fromEpoch))
         return; // the requester is already gone: the host cancels / times it out
+    if (kind == MP_INTERACT_TRAINER_CARD)
+    {
+        // Public info (PS-042): answered at once, whatever we are doing, without touching
+        // the incoming-request state that the trade / battle prompt uses.
+        MpEndpointSendTrainerCard(fromSlot, fromEpoch, requestId);
+        return;
+    }
     if (in->active)
     {
         // The host never routes a second request to a target, but answer BUSY rather than
@@ -120,6 +184,48 @@ static void MpDeliverRequest(u8 fromSlot, u8 fromEpoch, u8 kind, u8 requestId, u
     MpSession_QueueInteractEvent(MP_EVENT_INTERACT_REQUEST, fromSlot, kind, MP_INTERACT_RESULT_NONE);
 }
 
+// Requester: the request ended with `result`. For an ACCEPTED request that carries data,
+// check that the data arrived and was valid; returns the result to report.
+static u8 MpFinishRx(u8 kind, u8 result)
+{
+    struct MpInteractRx *rx = &gMpSession->interact.rx;
+    bool8 ok;
+
+    if (kind != MP_INTERACT_TRAINER_CARD)
+        return result;
+    if (result != MP_INTERACT_RESULT_ACCEPTED)
+    {
+        memset(rx, 0, sizeof(*rx));
+        return result;
+    }
+    ok = !rx->bad && rx->kind == kind && rx->hasCard;
+    if (!ok)
+    {
+        MP_SLOG("interact: the %s from slot %u was missing or invalid; rejected\n", MpKindName(kind), (unsigned)rx->slot);
+        memset(rx, 0, sizeof(*rx));
+        return MP_INTERACT_RESULT_BAD_DATA;
+    }
+    rx->complete = TRUE;
+    return result;
+}
+
+// Requester: a TRAINER_CARD_DATA for our request (already parsed and clamped).
+static void MpDeliverCardData(u8 targetSlot, u8 requestId, const struct MpTrainerCard *card)
+{
+    struct MpInteractRequest *out = &gMpSession->interact.outgoing;
+    struct MpInteractRx *rx = &gMpSession->interact.rx;
+
+    if (!out->active || out->slot != targetSlot || out->requestId != requestId)
+        return; // stale
+    if (out->kind != MP_INTERACT_TRAINER_CARD || rx->hasCard)
+    {
+        rx->bad = TRUE; // not what we asked for, or a second copy: reject the transfer
+        return;
+    }
+    rx->card = *card;
+    rx->hasCard = TRUE;
+}
+
 // The answer to our request arrived.
 static void MpDeliverResponse(u8 targetSlot, u8 requestId, u8 result)
 {
@@ -128,6 +234,7 @@ static void MpDeliverResponse(u8 targetSlot, u8 requestId, u8 result)
     if (!out->active || out->slot != targetSlot || out->requestId != requestId)
         return; // stale (cancelled, timed out locally, or an old request)
     out->active = FALSE;
+    result = MpFinishRx(out->kind, result);
     MP_SLOG("interact: our %s request to slot %u: %s\n", MpKindName(out->kind), (unsigned)targetSlot, MpResultName(result));
     MpSession_QueueInteractEvent(MP_EVENT_INTERACT_RESULT, targetSlot, out->kind, result);
 }
@@ -186,13 +293,13 @@ static u8 MpHostRouteRequest(u8 from, u8 to, u8 toEpoch, u8 kind, u8 requestId, 
             result = MP_INTERACT_RESULT_UNAVAILABLE;        // gone / stale / ourselves
         else if (!MpSameMap(from, to))
             result = MP_INTERACT_RESULT_UNAVAILABLE;        // not on the requester's map
-        else if (st->routes[to].active)
-            result = MP_INTERACT_RESULT_BUSY;               // the target is waiting on someone itself
-        else
+        else if (!MpKindIsSilent(kind))                     // PS-042: a TRAINER_CARD request is never busy
         {
+            if (st->routes[to].active && !MpKindIsSilent(st->routes[to].kind))
+                result = MP_INTERACT_RESULT_BUSY;           // the target is waiting on someone itself
             for (i = 0; i < MP_MAX_PLAYERS; i++)
             {
-                if (st->routes[i].active && st->routes[i].to == to)
+                if (st->routes[i].active && st->routes[i].to == to && !MpKindIsSilent(st->routes[i].kind))
                     result = MP_INTERACT_RESULT_BUSY;       // someone else is already asking
             }
         }
@@ -209,6 +316,7 @@ static u8 MpHostRouteRequest(u8 from, u8 to, u8 toEpoch, u8 kind, u8 requestId, 
     route->toEpoch = toEpoch;
     route->kind = kind;
     route->requestId = requestId;
+    route->dataCount = 0;
     route->startMs = now;
     MP_SLOG("interact: routing %s request %u from slot %u to slot %u\n", MpKindName(kind), (unsigned)requestId, (unsigned)from, (unsigned)to);
     if (to == gMpSession->localSlot)
@@ -274,9 +382,29 @@ static void MpEndpointRespond(u8 result)
 // Receive paths
 // ---------------------------------------------------------------------------
 
+// Host: TRAINER_CARD_DATA from the target `from`; msg->slot names the requester. Forwarded only
+// along the matching live route. Returns FALSE (malformed) for data the route does not allow.
+static bool8 MpHostRouteCardData(u8 from, const struct MpMsgTrainerCardData *msg)
+{
+    struct MpInteractRoute *route = &gMpSession->interact.routes[msg->slot]; // slot < 4 (parser)
+    u8 requester = msg->slot;
+
+    if (!route->active || route->to != from || route->requestId != msg->requestId)
+        return TRUE; // stale (cancelled, timed out, requester gone): drop silently
+    if (route->kind != MP_INTERACT_TRAINER_CARD || route->dataCount >= 1)
+        return FALSE; // data the request did not ask for, or a second copy
+    route->dataCount++;
+    if (requester == gMpSession->localSlot)
+        MpDeliverCardData(from, msg->requestId, &msg->card);
+    else if (MpSlotLive(requester, route->fromEpoch))
+        MpSendCardData(MpPeerOfSlot(requester), from, route->toEpoch, msg->requestId, &msg->card);
+    return TRUE;
+}
+
 bool8 MpInteract_OnHostReceive(u8 peer, u8 type, const u8 *payload, u32 len, u32 now)
 {
     struct MpMsgInteract msg;
+    struct MpMsgTrainerCardData card;
     u8 from;
 
     if (peer >= MP_HOST_PEER_COUNT || gMpSession->peers[peer].state != MP_HOST_PEER_PLAYER)
@@ -284,6 +412,12 @@ bool8 MpInteract_OnHostReceive(u8 peer, u8 type, const u8 *payload, u32 len, u32
     from = gMpSession->peers[peer].slot;
     if (from >= MP_MAX_PLAYERS)
         return TRUE;
+    if (type == MP_MSG_TRAINER_CARD_DATA)
+    {
+        if (MpProto_ParseTrainerCardData(payload, len, &card) != MP_PARSE_OK)
+            return FALSE;
+        return MpHostRouteCardData(from, &card);
+    }
     if (MpProto_ParseInteract(type, payload, len, &msg) != MP_PARSE_OK)
         return FALSE;
 
@@ -307,7 +441,20 @@ bool8 MpInteract_OnHostReceive(u8 peer, u8 type, const u8 *payload, u32 len, u32
 bool8 MpInteract_OnClientReceive(u8 type, const u8 *payload, u32 len)
 {
     struct MpMsgInteract msg;
+    struct MpMsgTrainerCardData card;
 
+    if (type == MP_MSG_TRAINER_CARD_DATA)
+    {
+        if (MpProto_ParseTrainerCardData(payload, len, &card) != MP_PARSE_OK)
+        {
+            gMpSession->interact.rx.bad = TRUE; // the RESPONSE that follows becomes BAD_DATA
+            return FALSE;
+        }
+        if (card.slot == gMpSession->localSlot)
+            return FALSE; // the host never names us as the other party
+        MpDeliverCardData(card.slot, card.requestId, &card.card);
+        return TRUE;
+    }
     if (MpProto_ParseInteract(type, payload, len, &msg) != MP_PARSE_OK)
         return FALSE;
     if (msg.slot == gMpSession->localSlot)
@@ -418,7 +565,7 @@ bool8 MP_SendInteractRequest(u8 targetSlot, u8 kind)
 
     if (s->state != MP_STATE_IN_SESSION || s->localSlot >= MP_MAX_PLAYERS)
         return FALSE;
-    if (kind != MP_INTERACT_TRADE && kind != MP_INTERACT_BATTLE)
+    if (kind == MP_INTERACT_NONE || kind >= MP_INTERACT_KIND_COUNT)
         return FALSE;
     if (targetSlot >= MP_MAX_PLAYERS || targetSlot == s->localSlot || !s->slotUsed[targetSlot])
         return FALSE;
@@ -432,6 +579,11 @@ bool8 MP_SendInteractRequest(u8 targetSlot, u8 kind)
     out->kind = kind;
     out->requestId = ++s->interact.nextRequestId;
     out->startMs = now;
+    // PS-042: a new request forgets whatever was viewed before.
+    memset(&s->interact.rx, 0, sizeof(s->interact.rx));
+    s->interact.rx.kind = kind;
+    s->interact.rx.slot = targetSlot;
+    s->interact.rx.requestId = out->requestId;
     MP_SLOG("interact: asking slot %u to %s (request %u)\n", (unsigned)targetSlot, MpKindName(kind), (unsigned)out->requestId);
     if (s->isHost)
         MpHostRouteRequest(s->localSlot, targetSlot, out->epoch, kind, out->requestId, now); // a refusal arrives as an event
@@ -448,6 +600,7 @@ void MP_CancelInteractRequest(void)
     if (!out->active)
         return;
     out->active = FALSE;
+    memset(&s->interact.rx, 0, sizeof(s->interact.rx));
     if (s->state != MP_STATE_IN_SESSION)
         return;
     MP_SLOG("interact: we withdraw request %u to slot %u\n", (unsigned)out->requestId, (unsigned)out->slot);
@@ -474,4 +627,22 @@ void MP_RespondInteract(u8 result)
 bool8 MP_HasIncomingInteract(void)
 {
     return gMpSession->state == MP_STATE_IN_SESSION && gMpSession->interact.incoming.active;
+}
+
+bool8 MP_GetViewedTrainerCard(u8 slot, struct MpTrainerCard *out)
+{
+    const struct MpInteractRx *rx = &gMpSession->interact.rx;
+
+    if (out == NULL)
+        return FALSE;
+    if (gMpSession->state != MP_STATE_IN_SESSION || !rx->complete || rx->kind != MP_INTERACT_TRAINER_CARD
+     || !rx->hasCard || rx->slot != slot)
+        return FALSE;
+    *out = rx->card;
+    return TRUE;
+}
+
+void MP_ClearViewedData(void)
+{
+    memset(&gMpSession->interact.rx, 0, sizeof(gMpSession->interact.rx));
 }

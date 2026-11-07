@@ -115,7 +115,21 @@ struct MpInteractRoute
     u8 toEpoch;
     u8 kind;
     u8 requestId;
+    u8 dataCount;           // PS-042: data messages forwarded for this route (limit per kind)
     u32 startMs;
+};
+
+// Requester (PS-042): data that arrived for our outgoing request, held until the RESPONSE.
+// Session memory only, never the save (AD-10).
+struct MpInteractRx
+{
+    u8 kind;                // kind of the request it belongs to (MP_INTERACT_NONE: empty)
+    u8 slot;                // the target
+    u8 requestId;
+    bool8 bad;              // something arrived that failed validation / was unexpected
+    bool8 complete;         // ACCEPTED with valid data: MP_GetViewed* may return it
+    bool8 hasCard;
+    struct MpTrainerCard card;
 };
 
 struct MpInteractState
@@ -125,6 +139,7 @@ struct MpInteractState
     u8 nextRequestId;
     struct MpInteractRoute routes[MP_MAX_PLAYERS];  // host only
     u32 lastRequestMs[MP_MAX_PLAYERS];              // host only: per requester, for the 1 s gap
+    struct MpInteractRx rx;                         // PS-042: requester side
 };
 
 struct MpClientState
@@ -235,6 +250,10 @@ bool8 MpInteract_OnClientReceive(u8 type, const u8 *payload, u32 len);
 void MpInteract_OnSlotLeaving(u8 slot);
 // Timeouts. Call while IN_SESSION, once per MP_Update.
 void MpInteract_Update(u32 now);
+// PS-042: where the target's session gets the card it sends. MP_BuildLocalTrainerCard
+// (the save) by default; the selftest points it at fixtures. Called on the main thread at
+// the moment the request arrives.
+extern void (*gMpLocalTrainerCardFunc)(struct MpTrainerCard *out);
 
 #define MP_SLOG(fmt, ...) MP_LOG("%s" fmt, MpSession_Tag(), ##__VA_ARGS__)
 #define MP_SDLOG(fmt, ...) MP_DLOG("%s" fmt, MpSession_Tag(), ##__VA_ARGS__)

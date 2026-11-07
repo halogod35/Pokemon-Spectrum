@@ -5,9 +5,11 @@
 #include "gba/types.h"
 #include "gba/defines.h"
 #include "mp/mp.h"
+#include "mp/mp_internal.h"
 #include "mp/mp_protocol.h"
 #include "mp/mp_summary.h"
 #include "mp/mp_wire.h"
+#include "constants/easy_chat.h" // PS-042: EC_GROUP, EC_NUM_GROUPS (plain #defines)
 
 static const u8 sHelloMagic[4] = { 0x50, 0x53, 0x4D, 0x50 }; // "PSMP"
 
@@ -494,7 +496,7 @@ u8 MpProto_ParseInteract(u8 type, const u8 *payload, u32 len, struct MpMsgIntera
         return result;
     if (payload[0] >= MP_MAX_PLAYERS || payload[1] == 0)
         return MP_PARSE_ERR_BAD_FIELD;
-    if (payload[2] != MP_INTERACT_TRADE && payload[2] != MP_INTERACT_BATTLE)
+    if (payload[2] == MP_INTERACT_NONE || payload[2] >= MP_INTERACT_KIND_COUNT)
         return MP_PARSE_ERR_BAD_FIELD;
     if (type == MP_MSG_INTERACT_RESPONSE
      && (payload[4] < MP_INTERACT_RESULT_ACCEPTED || payload[4] > MP_INTERACT_RESULT_UNAVAILABLE))
@@ -523,5 +525,153 @@ u16 MpProto_WriteInteract(u8 *buf, u16 cap, u8 type, const struct MpMsgInteract 
     MpWriteU8(&w, 0);
     MpWriteU8(&w, 0);
     MpWriteU8(&w, 0);
+    return MpFinishWrite(&w);
+}
+
+// ---------------------------------------------------------------------------
+// TRAINER_CARD_DATA (PS-042, protocol.md 6.12)
+// ---------------------------------------------------------------------------
+
+static u16 MpClampU16(u16 value, u16 max)
+{
+    return (value > max) ? max : value;
+}
+
+static u8 MpClampU8(u8 value, u8 max)
+{
+    return (value > max) ? max : value;
+}
+
+// EC_EMPTY_WORD, or a word whose group exists. The game itself prints "???" for an unknown
+// index inside a valid group (CopyEasyChatWord), so only the group needs checking here.
+static u16 MpSanitizeEasyChatWord(u16 word)
+{
+    if (word == MP_CARD_EC_EMPTY_WORD || EC_GROUP(word) < EC_NUM_GROUPS)
+        return word;
+    return MP_CARD_EC_EMPTY_WORD;
+}
+
+u8 MpProto_ParseTrainerCardData(const u8 *payload, u32 len, struct MpMsgTrainerCardData *out)
+{
+    struct MpReader r;
+    struct MpTrainerCard *c = &out->card;
+    u8 result;
+    u8 flags;
+    u32 i;
+    bool8 afterEos;
+
+    memset(out, 0, sizeof(*out));
+    result = MpCheckExactSize(payload, len, MP_TRAINER_CARD_DATA_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+
+    MpReader_Init(&r, payload, len);
+    out->slot = MpReadU8(&r);
+    out->epoch = MpReadU8(&r);
+    out->requestId = MpReadU8(&r);
+    MpReadU8(&r);                                   // reserved
+    c->gender = MpReadU8(&r);
+    c->stars = MpReadU8(&r);
+    flags = MpReadU8(&r);
+    MpReadU8(&r);                                   // reserved
+    c->hofDebutHours = MpClampU16(MpReadU16(&r), MP_CARD_MAX_HOURS);
+    c->hofDebutMinutes = MpClampU8(MpReadU8(&r), MP_CARD_MAX_MINUTES);
+    c->hofDebutSeconds = MpClampU8(MpReadU8(&r), MP_CARD_MAX_MINUTES);
+    c->caughtMonsCount = MpClampU16(MpReadU16(&r), MP_CARD_MAX_COUNT_3);
+    c->trainerId = MpReadU16(&r);
+    c->playTimeHours = MpClampU16(MpReadU16(&r), MP_CARD_MAX_HOURS);
+    c->playTimeMinutes = MpClampU8(MpReadU8(&r), MP_CARD_MAX_MINUTES);
+    MpReadU8(&r);                                   // reserved
+    c->linkBattleWins = MpClampU16(MpReadU16(&r), MP_CARD_MAX_COUNT_4);
+    c->linkBattleLosses = MpClampU16(MpReadU16(&r), MP_CARD_MAX_COUNT_4);
+    c->battleTowerWins = MpClampU16(MpReadU16(&r), MP_CARD_MAX_COUNT_4);
+    c->battleTowerStraightWins = MpClampU16(MpReadU16(&r), MP_CARD_MAX_COUNT_4);
+    c->contestsWithFriends = MpClampU16(MpReadU16(&r), MP_CARD_MAX_COUNT_3);
+    c->pokeblocksWithFriends = MpReadU16(&r);
+    c->pokemonTrades = MpReadU16(&r);
+    c->frontierBP = MpClampU16(MpReadU16(&r), MP_CARD_MAX_COUNT_4);
+    c->money = MpReadU32(&r);
+    if (c->money > MP_CARD_MAX_MONEY)
+        c->money = MP_CARD_MAX_MONEY;
+    for (i = 0; i < MP_TRAINER_CARD_PROFILE_WORDS; i++)
+        c->easyChatProfile[i] = MpSanitizeEasyChatWord(MpReadU16(&r));
+    MpReadBytes(&r, c->name, MP_PLAYER_NAME_SIZE);
+
+    if (r.error || MpReader_Remaining(&r) != 0)
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_TRUNCATED; // cannot happen after the exact size check
+    }
+    if (out->slot >= MP_MAX_PLAYERS || out->epoch == 0 || c->gender > 1 || c->stars > MP_CARD_MAX_STARS)
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_BAD_FIELD;
+    }
+    if (!MP_IsValidPlayerName(c->name))
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_BAD_SUMMARY;
+    }
+    // Bytes after the first EOS are ignored and stored as EOS (5.1.1).
+    for (i = 0, afterEos = FALSE; i < MP_PLAYER_NAME_SIZE; i++)
+    {
+        if (afterEos)
+            c->name[i] = MP_EOS;
+        else if (c->name[i] == MP_EOS)
+            afterEos = TRUE;
+    }
+    c->hasPokedex = (flags & MP_CARD_FLAG_POKEDEX) ? TRUE : FALSE;
+    c->caughtAllHoenn = (flags & MP_CARD_FLAG_ALL_HOENN) ? TRUE : FALSE;
+    c->hasAllPaintings = (flags & MP_CARD_FLAG_ALL_PAINTINGS) ? TRUE : FALSE;
+    c->hasAllFrontierSymbols = (flags & MP_CARD_FLAG_FRONTIER_SYMBOLS) ? TRUE : FALSE;
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteTrainerCardData(u8 *buf, u16 cap, const struct MpMsgTrainerCardData *msg)
+{
+    struct MpWriter w;
+    const struct MpTrainerCard *c = &msg->card;
+    u8 flags = 0;
+    u32 i;
+
+    if (c->hasPokedex)
+        flags |= MP_CARD_FLAG_POKEDEX;
+    if (c->caughtAllHoenn)
+        flags |= MP_CARD_FLAG_ALL_HOENN;
+    if (c->hasAllPaintings)
+        flags |= MP_CARD_FLAG_ALL_PAINTINGS;
+    if (c->hasAllFrontierSymbols)
+        flags |= MP_CARD_FLAG_FRONTIER_SYMBOLS;
+
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_TRAINER_CARD_DATA, MP_PROTOCOL_VERSION, MP_TRAINER_CARD_DATA_SIZE);
+    MpWriteU8(&w, msg->slot);
+    MpWriteU8(&w, msg->epoch);
+    MpWriteU8(&w, msg->requestId);
+    MpWriteU8(&w, 0);
+    MpWriteU8(&w, c->gender);
+    MpWriteU8(&w, c->stars);
+    MpWriteU8(&w, flags);
+    MpWriteU8(&w, 0);
+    MpWriteU16(&w, c->hofDebutHours);
+    MpWriteU8(&w, c->hofDebutMinutes);
+    MpWriteU8(&w, c->hofDebutSeconds);
+    MpWriteU16(&w, c->caughtMonsCount);
+    MpWriteU16(&w, c->trainerId);
+    MpWriteU16(&w, c->playTimeHours);
+    MpWriteU8(&w, c->playTimeMinutes);
+    MpWriteU8(&w, 0);
+    MpWriteU16(&w, c->linkBattleWins);
+    MpWriteU16(&w, c->linkBattleLosses);
+    MpWriteU16(&w, c->battleTowerWins);
+    MpWriteU16(&w, c->battleTowerStraightWins);
+    MpWriteU16(&w, c->contestsWithFriends);
+    MpWriteU16(&w, c->pokeblocksWithFriends);
+    MpWriteU16(&w, c->pokemonTrades);
+    MpWriteU16(&w, c->frontierBP);
+    MpWriteU32(&w, c->money);
+    for (i = 0; i < MP_TRAINER_CARD_PROFILE_WORDS; i++)
+        MpWriteU16(&w, c->easyChatProfile[i]);
+    MpWriteBytes(&w, c->name, MP_PLAYER_NAME_SIZE);
     return MpFinishWrite(&w);
 }

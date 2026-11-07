@@ -222,6 +222,7 @@ static void MpClientHandleSessionMessage(u8 channel, const struct MpMsgHeader *h
     case MP_MSG_INTERACT_REQUEST:   // PS-041 (protocol.md 6.11)
     case MP_MSG_INTERACT_RESPONSE:
     case MP_MSG_INTERACT_CANCEL:
+    case MP_MSG_TRAINER_CARD_DATA:  // PS-042 (protocol.md 6.12)
         if (channel != MP_CHANNEL_CONTROL)
             MpClientMalformed("INTERACT wrong channel");
         else if (!MpInteract_OnClientReceive(hdr->type, payload, len))

@@ -6,8 +6,12 @@
 //       TRAINER CARD / POKEMON / TRADE / BATTLE / EXIT
 //   Field controls stay locked while it is open (ProcessPlayerFieldInput returned TRUE); our
 //   own NPCs are frozen like for the start menu, the remote player is not affected.
-//   - TRAINER CARD / POKEMON: "That isn't available yet." (PS-042 / PS-043 plug in at
-//     MpInteractUi_OpenTrainerCard / MpInteractUi_OpenPokemon), then back to the menu.
+//   - TRAINER CARD (PS-042): a TRAINER_CARD request (no prompt on the other side). On
+//     ACCEPTED with a valid card the screen fades out and trainer_card.c's link-partner mode
+//     shows it (A flips, B closes); it returns to the field through CB2_ReturnToField with
+//     FieldCB_ReturnToFieldNoScript, which unlocks controls and unfreezes the NPCs.
+//   - POKEMON: "That isn't available yet." (PS-043 plugs in at MpInteractUi_OpenPokemon),
+//     then back to the menu.
 //   - TRADE / BATTLE: MP_SendInteractRequest, "Waiting for NAME... (B) CANCEL", then the
 //     outcome (accepted / declined / busy / timed out / unavailable). On ACCEPTED, for now
 //     "Trading/Battling isn't available yet." (PS-044 / PS-045 plug in at MpInteractUi_OnAccepted).
@@ -27,9 +31,12 @@
 #include "event_object_movement.h"
 #include "field_message_box.h"
 #include "field_player_avatar.h"
+#include "field_screen_effect.h"
+#include "field_weather.h"
 #include "main.h"
 #include "menu.h"
 #include "overworld.h"
+#include "palette.h"
 #include "script.h"
 #include "sound.h"
 #include "string_util.h"
@@ -37,8 +44,10 @@
 #include "task.h"
 #include "text.h"
 #include "window.h"
+#include "constants/field_weather.h"
 #include "constants/songs.h"
 #include "mp/mp.h"
+#include "mp/mp_playerdata.h"
 #include "mp_menu.h"
 
 #define MP_INTERACT_UI_BUSY_GRACE_FRAMES    180     // ~3 s: still busy -> answer BUSY
@@ -105,6 +114,11 @@ static EWRAM_DATA u8 sIncomingWithdrawn = 0;  // MP_INTERACT_RESULT_CANCELLED / 
 
 static EWRAM_DATA u8 sText[MP_INTERACT_UI_TEXT_SIZE] = {0};
 
+// PS-042: the received card, copied out of the session before the screen fades, so it
+// cannot vanish (player leaving, session ending) between the fade and the card screen.
+// Never written to the save (AD-10).
+static EWRAM_DATA struct MpTrainerCard sViewCard = {0};
+
 static void Task_MpInteractMenu(u8 taskId);
 static void Task_MpIncomingPrompt(u8 taskId);
 
@@ -142,15 +156,39 @@ static void UnfreezeAfterUi(void)
 // Plug-in points for later cards
 // ---------------------------------------------------------------------------
 
-// PS-042 / PS-043 replace these. They return the message to show (NULL = they took over).
-static const u8 *MpInteractUi_OpenTrainerCard(u8 slot)
+// PS-043 replaces this. It returns the message to show.
+static const u8 *MpInteractUi_OpenPokemon(u8 slot)
 {
     return gText_MpNotAvailableYet;
 }
 
-static const u8 *MpInteractUi_OpenPokemon(u8 slot)
+// PS-042: copies the data of an ACCEPTED view request out of the session. FALSE if there is
+// none (then nothing will be shown).
+static bool8 MpInteractUi_TakeViewData(u8 kind, u8 slot)
 {
-    return gText_MpNotAvailableYet;
+    bool8 ok = FALSE;
+
+    if (kind == MP_INTERACT_TRAINER_CARD)
+        ok = MP_GetViewedTrainerCard(slot, &sViewCard);
+    MP_ClearViewedData();
+    return ok;
+}
+
+// PS-042: leaves the field for the view screen. The screen is black, the menu task is gone
+// and the overworld windows are cleaned up. The screen returns through CB2_ReturnToField;
+// gFieldCallback (FieldCB_ReturnToFieldNoScript) then unlocks controls and unfreezes NPCs.
+static void MpInteractUi_OpenView(u8 kind)
+{
+    gFieldCallback = FieldCB_ReturnToFieldNoScript;
+    if (kind == MP_INTERACT_TRAINER_CARD)
+        MpPlayerData_ShowTrainerCard(&sViewCard, CB2_ReturnToField);
+    else
+        SetMainCallback2(CB2_ReturnToField); // nothing to show: straight back (cannot happen)
+}
+
+static bool8 IsViewKind(u8 kind)
+{
+    return kind == MP_INTERACT_TRAINER_CARD;
 }
 
 // PS-044 / PS-045: both sides agreed. Returns the message shown after "NAME accepted!" on the
@@ -171,6 +209,7 @@ enum
     MENU_STATE_WAITING,         // request out, "Waiting for NAME..."
     MENU_STATE_MESSAGE_CLOSE,   // a message; A/B closes everything
     MENU_STATE_MESSAGE_REOPEN,  // a message; A/B goes back to the menu
+    MENU_STATE_FADE_TO_VIEW,    // PS-042: fading out to the trainer card / summary screen
 };
 
 #define tState data[0]
@@ -251,15 +290,16 @@ static void HandleMenuInput(u8 taskId)
     RemoveMenuWindow();
     switch (choice)
     {
-    case MENU_ITEM_TRAINER_CARD:
-        ShowMenuMessage(taskId, MpInteractUi_OpenTrainerCard(sMenuSlot), MENU_STATE_MESSAGE_REOPEN);
-        break;
     case MENU_ITEM_POKEMON:
         ShowMenuMessage(taskId, MpInteractUi_OpenPokemon(sMenuSlot), MENU_STATE_MESSAGE_REOPEN);
         break;
+    case MENU_ITEM_TRAINER_CARD:    // PS-042: no prompt on their side, the card comes back at once
     case MENU_ITEM_TRADE:
     case MENU_ITEM_BATTLE:
-        sMenuKind = (choice == MENU_ITEM_TRADE) ? MP_INTERACT_TRADE : MP_INTERACT_BATTLE;
+        if (choice == MENU_ITEM_TRAINER_CARD)
+            sMenuKind = MP_INTERACT_TRAINER_CARD;
+        else
+            sMenuKind = (choice == MENU_ITEM_TRADE) ? MP_INTERACT_TRADE : MP_INTERACT_BATTLE;
         sMenuResult = MP_INTERACT_RESULT_NONE;
         if (!MP_SendInteractRequest(sMenuSlot, sMenuKind))
             ShowMenuMessage(taskId, gText_MpRequestFailed, MENU_STATE_MESSAGE_CLOSE);
@@ -276,6 +316,19 @@ static void ShowResult(u8 taskId)
     switch (sMenuResult)
     {
     case MP_INTERACT_RESULT_ACCEPTED:
+        if (IsViewKind(sMenuKind))
+        {
+            // PS-042: show their data. Copy it out now; then fade out to the screen.
+            if (!MpInteractUi_TakeViewData(sMenuKind, sMenuSlot))
+            {
+                ShowMenuMessage(taskId, gText_MpViewBadData, MENU_STATE_MESSAGE_CLOSE);
+                break;
+            }
+            HideFieldMessageBox();
+            FadeScreen(FADE_TO_BLACK, 0);
+            gTasks[taskId].tState = MENU_STATE_FADE_TO_VIEW;
+            break;
+        }
         end = StringCopy(sText, gText_MpResultAccepted);
         StringCopy(end, MpInteractUi_OnAccepted(sMenuKind, sMenuSlot));
         ShowMenuMessage(taskId, sText, MENU_STATE_MESSAGE_CLOSE);
@@ -288,6 +341,9 @@ static void ShowResult(u8 taskId)
         break;
     case MP_INTERACT_RESULT_TIMEOUT:
         ShowMenuMessage(taskId, gText_MpResultTimeout, MENU_STATE_MESSAGE_CLOSE);
+        break;
+    case MP_INTERACT_RESULT_BAD_DATA:   // PS-042: their data failed validation
+        ShowMenuMessage(taskId, gText_MpViewBadData, MENU_STATE_MESSAGE_CLOSE);
         break;
     default:
         ShowMenuMessage(taskId, gText_MpResultUnavailable, MENU_STATE_MESSAGE_CLOSE);
@@ -349,6 +405,22 @@ static void Task_MpInteractMenu(u8 taskId)
             {
                 CloseMenu(taskId);
             }
+        }
+        break;
+    case MENU_STATE_FADE_TO_VIEW:   // PS-042
+        if (gPaletteFade.active)
+            break;
+        {
+            u8 kind = sMenuKind;
+
+            // Like the start menu does before opening a screen. Controls stay locked and the
+            // NPCs frozen until the field callback set by MpInteractUi_OpenView runs.
+            PlayRainStoppingSoundEffect();
+            CleanupOverworldWindowsAndTilemaps();
+            sMenuWindowId = WINDOW_NONE;
+            sMenuActive = FALSE;
+            DestroyTask(taskId);
+            MpInteractUi_OpenView(kind);
         }
         break;
     }

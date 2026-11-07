@@ -398,6 +398,7 @@ extern const u8 gText_MpIncomingBattle[];
 extern const u8 gText_MpIncomingWithdrawn[];
 extern const u8 gText_MpIncomingTimedOut[];
 extern const u8 gText_MpPlayerGone[];
+extern const u8 gText_MpViewBadData[]; // MP: PS-042
 extern const u8 gText_WirelessNotConnected[];
 extern const u8 gText_MysteryGiftCantUse[];
 extern const u8 gText_MysteryEventsCantUse[];

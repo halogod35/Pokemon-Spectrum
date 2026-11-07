@@ -1,7 +1,7 @@
 # Pokémon Spectrum — Multiplayer Wire Protocol
 
-- **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests)
-- **Protocol version:** `MP_PROTOCOL_VERSION = 2` (2 = `INTERACT_*`, PS-041)
+- **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests), PS-042 (trainer card)
+- **Protocol version:** `MP_PROTOCOL_VERSION = 3` (2 = `INTERACT_*`, PS-041; 3 = `TRAINER_CARD_DATA`, PS-042)
 - **Status:** draft for Director approval
 - **Companion docs:** `design.md` (modules, API, build), `include/mp/mp.h` (public API)
 
@@ -104,7 +104,8 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 | `0x40` | `INTERACT_REQUEST` | C → H, H → C | 0 | 8 | IN_SESSION (PS-041, 6.11) |
 | `0x41` | `INTERACT_RESPONSE` | C → H, H → C | 0 | 8 | IN_SESSION (PS-041, 6.11) |
 | `0x42` | `INTERACT_CANCEL` | C → H, H → C | 0 | 8 | IN_SESSION (PS-041, 6.11) |
-| `0x43`–`0x5F` | **reserved: `INTERACT_*`** (Stage 4: trainer card, view Pokémon, …) | | 0 | | Stage 4 |
+| `0x43` | `TRAINER_CARD_DATA` | C → H, H → C | 0 | 56 | IN_SESSION (PS-042, 6.12) |
+| `0x44`–`0x5F` | **reserved: `INTERACT_*`** (Stage 4: view Pokémon, …) | | 0 | | Stage 4 |
 | `0x60`–`0x7F` | **reserved: `LINK_*`** (Stage 4: virtual link cable, PS-040) | | 0 (or a new channel) | | Stage 4 |
 | `0x80`–`0xEF` | reserved | | | | |
 | `0xF0` | `DEBUG_ECHO` | both | 0 | 0..64 | only under `--mp-selftest` (PS-011). Session code drops it. |
@@ -434,7 +435,7 @@ All three share one layout:
 |---|---|---|---|---|
 | 0 | 1 | u8 | `slot` | The **other party** from the receiver's point of view (table below). `< 4` |
 | 1 | 1 | u8 | `epoch` | Epoch of `slot`. `!= 0` |
-| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE. Others rejected |
+| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE, `3` TRAINER_CARD (PS-042, 6.12). Others rejected |
 | 3 | 1 | u8 | `requestId` | Chosen by the requester (any value), echoed in RESPONSE / CANCEL |
 | 4 | 1 | u8 | `result` | RESPONSE only: `1` ACCEPTED, `2` DECLINED, `3` BUSY, `4` TIMEOUT, `5` UNAVAILABLE; others rejected. REQUEST / CANCEL: reserved, sender writes 0, receiver ignores |
 | 5 | 3 | u8[3] | reserved | 0 |
@@ -481,6 +482,86 @@ the message only name the other party, and the host checks them against its tabl
   MP_INTERACT_CLIENT_GRACE_MS` (15 + 5 s) without an answer. A RESPONSE not matching its
   pending request is dropped. `PLAYER_LEFT` for the target ends the request (`UNAVAILABLE`).
 - A client receiving any INTERACT message whose `slot` is its own slot counts it malformed.
+
+### 6.12 `TRAINER_CARD_DATA` (0x43) — both directions, channel 0, payload 56 bytes
+
+PS-042. Viewing another player's trainer card reuses the 6.11 request flow with
+`kind = 3` TRAINER_CARD, so it gets the same host checks (same map, one request in flight per
+requester, 1 s gap), timeouts and leave handling. What is different:
+
+- **No prompt.** A trainer card is public: the target's *session* answers by itself the moment
+  the REQUEST arrives, whatever the player is doing (battle, menu, script), and queues no
+  `MP_EVENT_INTERACT_REQUEST`. It sends `TRAINER_CARD_DATA`, then `INTERACT_RESPONSE`
+  `ACCEPTED`. Both are on reliable channel 0, which ENet keeps in order, so the data always
+  arrives before the RESPONSE, also after the host relays them.
+- **Never busy.** A TRAINER_CARD request is not refused with `BUSY` (it does not touch the
+  target's trade / battle prompt), and a TRAINER_CARD route does not make its target or its
+  requester busy for trade / battle requests.
+- **The data is routed exactly like the RESPONSE it precedes** (6.11 table): `slot` is the
+  other party from the receiver's point of view (C → H: the requester; H → C: the target),
+  `epoch` that slot's epoch, `requestId` the request's id.
+
+| Offset | Size | Type | Field | Rule on receive |
+|---|---|---|---|---|
+| 0 | 1 | u8 | `slot` | `< 4` |
+| 1 | 1 | u8 | `epoch` | `!= 0` |
+| 2 | 1 | u8 | `requestId` | any |
+| 3 | 1 | u8 | reserved | 0, ignored |
+| 4 | 1 | u8 | `gender` | `0` MALE or `1` FEMALE, else rejected (indexes the trainer pic tables) |
+| 5 | 1 | u8 | `stars` | `0..4`, else rejected (indexes the 5 card palettes, and is a tilemap width) |
+| 6 | 1 | u8 | `flags` | bit 0 hasPokedex, bit 1 caughtAllHoenn, bit 2 hasAllPaintings, bit 3 hasAllFrontierSymbols; bits 4–7 reserved, ignored |
+| 7 | 1 | u8 | reserved | 0, ignored |
+| 8 | 2 | u16 | `hofDebutHours` | clamped to 999 |
+| 10 | 1 | u8 | `hofDebutMinutes` | clamped to 59 |
+| 11 | 1 | u8 | `hofDebutSeconds` | clamped to 59 |
+| 12 | 2 | u16 | `caughtMonsCount` | clamped to 999 |
+| 14 | 2 | u16 | `trainerId` | public 16-bit ID, any |
+| 16 | 2 | u16 | `playTimeHours` | clamped to 999 |
+| 18 | 1 | u8 | `playTimeMinutes` | clamped to 59 |
+| 19 | 1 | u8 | reserved | 0, ignored |
+| 20 | 2 | u16 | `linkBattleWins` | clamped to 9999 |
+| 22 | 2 | u16 | `linkBattleLosses` | clamped to 9999 |
+| 24 | 2 | u16 | `battleTowerWins` | clamped to 9999 |
+| 26 | 2 | u16 | `battleTowerStraightWins` | clamped to 9999 |
+| 28 | 2 | u16 | `contestsWithFriends` | clamped to 999 |
+| 30 | 2 | u16 | `pokeblocksWithFriends` | any |
+| 32 | 2 | u16 | `pokemonTrades` | any |
+| 34 | 2 | u16 | `frontierBP` | clamped to 9999 |
+| 36 | 4 | u32 | `money` | clamped to 999999 |
+| 40 | 8 | u16[4] | `easyChatProfile` | each word: `0xFFFF` (empty) or `group = word >> 9` `< EC_NUM_GROUPS` (22); any other word becomes `0xFFFF`. An unknown index inside a valid group is safe: the game prints "???" (`CopyEasyChatWord`). |
+| 48 | 8 | u8[8] | `name` | the 5.1.1 rules (else rejected); bytes after the first EOS stored as EOS |
+
+**Sender.** `MP_BuildLocalTrainerCard` (`src/mp/mp_playerdata.c`) reads the save through the
+game's own code (`TrainerCard_GenerateCardForLinkPlayer` + `CopyTrainerCardData(…,
+VERSION_EMERALD)`, the same data the cable and Union Room exchange) and copies it field by field
+(never a raw struct; `struct TrainerCard` has padding). It takes the name, gender and trainer ID
+from the player summary (so the `--name` override and the summary's name sanitising apply) and
+applies the clamps above itself, so what it sends always parses unchanged. The card has no badge
+field: in link mode the card screen shows no badges (vanilla behaviour, PS-040 Q6).
+
+**Host.** Parses (a parse failure counts malformed against the sender), then forwards only along
+the live route of the requester named by `slot`: the sender must be that route's target, the
+`requestId` must match and the route's kind must be TRAINER_CARD; at most **one** data message
+per route. No matching route (cancelled, timed out, requester gone) → dropped silently. A route
+of another kind, or a second data message → malformed. The forwarded copy is re-serialised from
+the parse (clamped values, reserved bytes 0) with `slot` / `epoch` rewritten to the target's. When
+the host is the requester it keeps the data itself; when it is the target it sends its card to
+the requester directly.
+
+**Requester.** Accepts the data only while its own TRAINER_CARD request to that `slot` with that
+`requestId` is pending (else stale, silent; a `slot` equal to its own slot is malformed). A
+second copy, or data for a request of another kind, marks the transfer bad. When the RESPONSE
+arrives: `ACCEPTED` with exactly one valid card → `MP_EVENT_INTERACT_RESULT` `ACCEPTED` and the
+card is available from `MP_GetViewedTrainerCard()`; `ACCEPTED` with the card missing, invalid
+or duplicated → the local result `MP_INTERACT_RESULT_BAD_DATA` (7, never on the wire) and
+nothing is shown. Any other result discards the data. The card lives in session memory only and
+is never written to the save (AD-10).
+
+**Display** (`src/mp/mp_menu_interact.c`, `mp_playerdata.c`). The UI copies the card out of
+the session, fades out and shows it with `trainer_card.c`'s link-partner mode
+(`ShowTrainerCardInLink(1, CB2_ReturnToField)`; front and back, A flips, B closes). It borrows
+`gTrainerCards[1]` and `gLinkPlayers[1].language` only for that call, which copies them at once,
+and restores them right after. The conversion clamps `stars` and `gender` once more.
 
 ---
 
@@ -554,6 +635,7 @@ or speed-up does not cause timeouts. The network is still pumped while the game 
 | `PLAYER_UPDATE` | validate, store, forward to all other clients |
 | `PING` | answer `PONG` (not forwarded) |
 | `INTERACT_*` | route to the other party after the checks of 6.11 (or answer / handle it itself) |
+| `TRAINER_CARD_DATA` | forward to the requester along the matching TRAINER_CARD route (6.12), at most one per route |
 | `BYE` | remove client, broadcast `PLAYER_LEFT` |
 | anything else | drop, count malformed |
 
@@ -653,6 +735,7 @@ exits with status 0 / 1.
 | `PRESENCE` | Send on change, at most 20 Hz (>= 50 ms apart). A new `stepId` always forces a send as soon as the 50 ms window allows (several steps inside one window merge into the newest state; receivers see the `stepId` gap). Keep-alive every 1000 ms when unchanged. | drop if < 25 ms since the last accepted one from that client (not counted malformed) |
 | `PLAYER_UPDATE` | at most 1 / s, coalesced | drop extras within 1 s |
 | `INTERACT_REQUEST` | one in flight per player (the API refuses a second) | refuse (`UNAVAILABLE`) a second one in flight, or one < 1000 ms after the previous; not counted malformed |
+| `TRAINER_CARD_DATA` | one per TRAINER_CARD request it answers | one per route; a second one (or one on a route of another kind) is malformed |
 | `PING` | 1 / s | ignore PINGs < 250 ms apart |
 | `HELLO` | once per connection | a second one → disconnect |
 | ENet events | — | at most 64 processed per `MP_Update()` |
@@ -746,3 +829,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 1 | PS-010 | Initial spec |
 | 1 | PS-030 | PRESENCE implemented. No byte change, so no version bump: field semantics pinned down (6.8.1); a CONNECTING client drops PRESENCE silently instead of counting it malformed (a relayed update can overtake a retransmitted WELCOME; it was dropped before too, only the malformed count changes); `MP_IsValidMap` from a compile-time-checked map count table. |
 | 2 | PS-041 | `INTERACT_REQUEST` (0x40), `INTERACT_RESPONSE` (0x41), `INTERACT_CANCEL` (0x42): trade / battle requests routed by the host (6.11), with host-side checks (same map, one request per requester, 1 s gap, busy target) and timeouts. Version bumped to 2: a version-1 peer is rejected (VERSION) instead of meeting unknown message types. |
+| 3 | PS-042 | INTERACT `kind` 3 TRAINER_CARD (answered by the target's session, no prompt, never busy) and `TRAINER_CARD_DATA` (0x43, 56 bytes, field by field, validated and clamped; 6.12), routed like the RESPONSE it precedes, one per route. Local result `MP_INTERACT_RESULT_BAD_DATA`. Version bumped to 3: a version-2 peer would reject kind 3 as malformed. *(If PS-046's `LINK_*` change lands first and takes 3, this becomes the next number.)* |
