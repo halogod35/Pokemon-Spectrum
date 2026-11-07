@@ -339,6 +339,8 @@ s32 MP_RunSelftest(void)
     sFailures += MpSelftest_Session();
     // PS-030: presence parser, receive paths and the host + clients presence scenario.
     sFailures += MpSelftest_Presence();
+    // PS-031: remote-avatar decision logic (pure functions).
+    sFailures += MpSelftest_Avatar();
     MpTransport_Shutdown();
 
     if (sFailures == 0)
