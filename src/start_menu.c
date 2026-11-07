@@ -47,6 +47,7 @@
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "mp/mp.h" // MP: LEAVE GAME while in a multiplayer session (PS-022)
+#include "mp_menu.h" // MP: PLAYERS list (PS-033)
 
 // Menu actions
 enum
@@ -64,7 +65,7 @@ enum
     MENU_ACTION_REST_FRONTIER,
     MENU_ACTION_RETIRE_FRONTIER,
     MENU_ACTION_PYRAMID_BAG,
-    MENU_ACTION_MP_LEAVE, // MP: LEAVE GAME (PS-022)
+    MENU_ACTION_MP_PLAYERS, // MP: PLAYERS list, with LEAVE GAME inside it (PS-033)
 };
 
 // Save status
@@ -105,7 +106,8 @@ static bool8 StartMenuSafariZoneRetireCallback(void);
 static bool8 StartMenuLinkModePlayerNameCallback(void);
 static bool8 StartMenuBattlePyramidRetireCallback(void);
 // MP: LEAVE GAME (PS-022)
-static bool8 StartMenuMpLeaveCallback(void);
+static bool8 StartMenuMpPlayersCallback(void);
+static bool8 MpPlayersCallback(void);
 static bool8 MpLeaveCallback(void);
 static u8 MpLeaveConfirmCallback(void);
 static u8 MpLeaveYesNoCallback(void);
@@ -203,7 +205,7 @@ static const struct MenuAction sStartMenuItems[] =
     [MENU_ACTION_REST_FRONTIER]   = {gText_MenuRest,    {.u8_void = StartMenuSaveCallback}},
     [MENU_ACTION_RETIRE_FRONTIER] = {gText_MenuRetire,  {.u8_void = StartMenuBattlePyramidRetireCallback}},
     [MENU_ACTION_PYRAMID_BAG]     = {gText_MenuBag,     {.u8_void = StartMenuBattlePyramidBagCallback}},
-    [MENU_ACTION_MP_LEAVE]        = {gText_MenuMpLeave, {.u8_void = StartMenuMpLeaveCallback}}, // MP:
+    [MENU_ACTION_MP_PLAYERS]      = {gText_MenuMpPlayers, {.u8_void = StartMenuMpPlayersCallback}}, // MP:
 };
 
 static const struct BgTemplate sBgTemplates_LinkBattleSave[] =
@@ -343,12 +345,12 @@ static void BuildNormalStartMenu(void)
     AddStartMenuAction(MENU_ACTION_PLAYER);
     AddStartMenuAction(MENU_ACTION_SAVE);
     AddStartMenuAction(MENU_ACTION_OPTION);
-    // MP: LEAVE GAME while in a session (PS-022). The menu window fits 8 entries on screen
-    // (2 tiles each + frame), so with all 7 normal entries EXIT is left out; B and START
-    // still close the menu.
+    // MP: one PLAYERS entry while in a session (PS-033); LEAVE GAME is inside the list (A),
+    // so multiplayer costs a single line. The menu window fits 8 entries on screen (2 tiles
+    // each + frame), so with all 7 normal entries EXIT is left out; B and START still close it.
     if (MP_IsActive())
     {
-        AddStartMenuAction(MENU_ACTION_MP_LEAVE);
+        AddStartMenuAction(MENU_ACTION_MP_PLAYERS);
         if (sNumStartMenuActions < 8)
             AddStartMenuAction(MENU_ACTION_EXIT);
         return;
@@ -528,6 +530,10 @@ static bool32 InitStartMenuStep(void)
             sInitStartMenuData[0]++;
         break;
     case 5:
+        // MP: the entry count can shrink between openings (PLAYERS disappears when a session
+        // ends, EXIT may come back), so keep the remembered cursor inside the list (PS-033).
+        if (sStartMenuCursorPos >= sNumStartMenuActions)
+            sStartMenuCursorPos = sNumStartMenuActions - 1;
         sStartMenuCursorPos = InitMenuNormal(GetStartMenuWindowId(), FONT_NORMAL, 0, 9, 16, sNumStartMenuActions, sStartMenuCursorPos);
         CopyWindowToVram(GetStartMenuWindowId(), COPYWIN_MAP);
         return TRUE;
@@ -639,7 +645,7 @@ static bool8 HandleStartMenuInput(void)
             && gMenuCallback != StartMenuExitCallback
             && gMenuCallback != StartMenuSafariZoneRetireCallback
             && gMenuCallback != StartMenuBattlePyramidRetireCallback
-            && gMenuCallback != StartMenuMpLeaveCallback) // MP: LEAVE GAME stays in the field
+            && gMenuCallback != StartMenuMpPlayersCallback) // MP: the PLAYERS list stays in the field
         {
            FadeScreen(FADE_TO_BLACK, 0);
         }
@@ -858,16 +864,45 @@ static bool8 SaveCallback(void)
     return FALSE;
 }
 
-// MP: LEAVE GAME (PS-022). Reuses the save dialog machinery (ShowSaveMessage /
-// RunSaveCallback): "Leave the multiplayer game?" YES/NO (default NO). YES -> MP_Leave(),
-// "You left the multiplayer game." and the menu closes; the game continues offline.
-// NO/B -> back to the start menu.
-static bool8 StartMenuMpLeaveCallback(void)
+// MP: PLAYERS (PS-033). The start menu window is replaced by the player list (name,
+// location, badges, HOST/YOU), refreshed twice a second. B goes back to the start menu;
+// A starts LEAVE GAME below. If the session ends while the list is open, it closes.
+static bool8 StartMenuMpPlayersCallback(void)
 {
-    sSaveDialogCallback = MpLeaveConfirmCallback;
-    gMenuCallback = MpLeaveCallback;
+    ClearStdWindowAndFrame(GetStartMenuWindowId(), FALSE);
+    RemoveStartMenuWindow();
+    MpUi_ShowPlayerList();
+    gMenuCallback = MpPlayersCallback;
     return FALSE;
 }
+
+static bool8 MpPlayersCallback(void)
+{
+    if (!MP_IsActive() || JOY_NEW(B_BUTTON))
+    {
+        if (JOY_NEW(B_BUTTON))
+            PlaySE(SE_SELECT);
+        MpUi_HidePlayerList();
+        InitStartMenu(); // rebuilt: PLAYERS is gone if the session ended
+        gMenuCallback = HandleStartMenuInput;
+        return FALSE;
+    }
+    if (JOY_NEW(A_BUTTON))
+    {
+        PlaySE(SE_SELECT);
+        MpUi_HidePlayerList();
+        sSaveDialogCallback = MpLeaveConfirmCallback;
+        gMenuCallback = MpLeaveCallback;
+        return FALSE;
+    }
+    MpUi_UpdatePlayerList();
+    return FALSE;
+}
+
+// MP: LEAVE GAME (PS-022; reached from the PLAYERS list since PS-033). Reuses the save dialog
+// machinery (ShowSaveMessage / RunSaveCallback): "Leave the multiplayer game?" YES/NO
+// (default NO). YES -> MP_Leave(), "You left the multiplayer game." and the menu closes;
+// the game continues offline. NO/B -> back to the start menu.
 
 static bool8 MpLeaveCallback(void)
 {
@@ -890,8 +925,11 @@ static bool8 MpLeaveCallback(void)
 
 static u8 MpLeaveConfirmCallback(void)
 {
-    ClearStdWindowAndFrame(GetStartMenuWindowId(), FALSE);
-    RemoveStartMenuWindow();
+    if (GetStartMenuWindowId() != WINDOW_NONE) // already removed when coming from PLAYERS
+    {
+        ClearStdWindowAndFrame(GetStartMenuWindowId(), FALSE);
+        RemoveStartMenuWindow();
+    }
     ShowSaveMessage(gText_MpLeaveConfirm, MpLeaveYesNoCallback);
     return SAVE_IN_PROGRESS;
 }

@@ -32,6 +32,15 @@ void MpUi_Update(void);
 // Called from DoCB1_Overworld while field controls are unlocked. Shows a queued session
 // error ("Disconnected from host", ...) when the player stands still, then MP_Leave().
 // Returns TRUE if it started showing a notice (controls are then locked by it).
+// It also starts the non-blocking "X joined/left the game." toast (PS-033) and returns FALSE
+// for that, so the player keeps control.
 bool8 MpUi_TryShowFieldNotice(void);
+
+// PLAYERS list window in the field (PS-033), driven by the start menu: Show replaces the
+// start menu window, Update redraws it twice a second, Hide removes it. Safe to call when
+// not shown.
+void MpUi_ShowPlayerList(void);
+void MpUi_UpdatePlayerList(void);
+void MpUi_HidePlayerList(void);
 
 #endif // GUARD_MP_MENU_H
