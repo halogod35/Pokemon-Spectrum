@@ -23,6 +23,7 @@
 #include "trainer_hill.h"
 #include "util.h"
 #include "constants/event_object_movement.h"
+#include "mp/mp.h" // MP: PS-031 remote avatars (MP_IsRemoteAvatarLocalId)
 #include "constants/event_objects.h"
 #include "constants/field_effects.h"
 #include "constants/items.h"
@@ -1386,6 +1387,14 @@ static void RemoveObjectEvent(struct ObjectEvent *objectEvent)
     RemoveObjectEventInternal(objectEvent);
 }
 
+// MP: PS-031. Remote avatars have no template and no flag, so they are removed by object
+// event id (never with RemoveObjectEventByLocalIdAndMap, which would FlagSet a flag).
+void RemoveObjectEventById(u8 objectEventId)
+{
+    if (objectEventId < OBJECT_EVENTS_COUNT && gObjectEvents[objectEventId].active && !gObjectEvents[objectEventId].isPlayer)
+        RemoveObjectEvent(&gObjectEvents[objectEventId]);
+}
+
 void RemoveObjectEventByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
 {
     u8 objectEventId;
@@ -2195,7 +2204,8 @@ u8 GetObjectEventIdByPosition(u16 x, u16 y, u8 elevation)
 
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
-        if (gObjectEvents[i].active)
+        // MP: PS-031 remote avatars are not interactive (they have no template / script).
+        if (gObjectEvents[i].active && !MP_IsRemoteAvatarLocalId(gObjectEvents[i].localId))
         {
             if (gObjectEvents[i].currentCoords.x == x
              && gObjectEvents[i].currentCoords.y == y
@@ -4729,7 +4739,8 @@ static bool8 DoesObjectCollideWithObjectAt(struct ObjectEvent *objectEvent, s16 
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
         curObject = &gObjectEvents[i];
-        if (curObject->active && curObject != objectEvent)
+        // MP: PS-031 remote avatars are not solid: the player and NPCs walk through them.
+        if (curObject->active && curObject != objectEvent && !MP_IsRemoteAvatarLocalId(curObject->localId))
         {
             if ((curObject->currentCoords.x == x && curObject->currentCoords.y == y) || (curObject->previousCoords.x == x && curObject->previousCoords.y == y))
             {

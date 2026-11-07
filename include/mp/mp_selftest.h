@@ -15,5 +15,8 @@ u32 MpSelftest_Session(void);
 // (stale / duplicate / foreign epoch / overflow), and an in-process host + clients scenario
 // with relay order, cached presence for a late joiner and the < 2 KB/s walking budget.
 u32 MpSelftest_Presence(void);
+// PS-031: remote-avatar logic (localId mapping, object budget, graphics ids, movement-action
+// translation, the replay plan and snap rule, a replay simulation).
+u32 MpSelftest_Avatar(void);
 
 #endif // GUARD_MP_MP_SELFTEST_H

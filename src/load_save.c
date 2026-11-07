@@ -13,12 +13,12 @@
 #include "gba/flash_internal.h"
 #include "decoration_inventory.h"
 #include "agb_flash.h"
-#include "mp/mp.h" // MP: MP_MAX_PLAYERS for the remote-avatar save filter (PS-014)
+#include "mp/mp.h" // MP: remote-avatar save filter (PS-014) and removal hook (PS-031)
 
-// MP: PS-014 (AD-10). localIds reserved for remote player avatars: 0xE0 + slot
-// (design.md section 10, PS-031). No map object uses them (maps stay far below 0xE0;
-// the special ids are 127 camera, 236-240 Berry Blender, 255 player).
-#define MP_REMOTE_AVATAR_LOCALID_FIRST 0xE0
+// MP: PS-014 (AD-10). localIds reserved for remote player avatars: MP_AVATAR_LOCAL_ID_BASE
+// + slot (mp.h, PS-031). No map object uses them (maps stay far below 0xE0; the special
+// ids are 127 camera, 236-240 Berry Blender, 255 player).
+#define MP_REMOTE_AVATAR_LOCALID_FIRST MP_AVATAR_LOCAL_ID_BASE
 #define MP_REMOTE_AVATAR_LOCALID_LAST  (MP_REMOTE_AVATAR_LOCALID_FIRST + MP_MAX_PLAYERS - 1)
 
 static void ApplyNewEncryptionKeyToAllEncryptedData(u32 encryptionKey);
@@ -200,6 +200,10 @@ void SaveObjectEvents(void)
 {
     int i;
 
+    // MP: PS-031. Every copy of gObjectEvents into the save passes here (START > SAVE,
+    // battle / frontier saves, DoMossdeepGymWarp): remove the remote avatars first. They are
+    // re-created on the next field tick. The filter below stays as the PS-014 backstop.
+    MP_RemoveRemoteAvatars();
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
         gSaveBlock1Ptr->objectEvents[i] = gObjectEvents[i];

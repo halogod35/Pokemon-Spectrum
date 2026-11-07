@@ -126,6 +126,7 @@ void MainLoop()
     }
 
     MP_CaptureLocalPresence(); // MP: PS-030 presence capture, once per game tick (read only)
+    MP_UpdateRemoteAvatars();  // MP: PS-031 remote player avatars (field only)
 
     PlayTimeCounter_Update();
     MapMusicMain();

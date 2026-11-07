@@ -344,4 +344,27 @@ void MP_ClearPresenceOverflow(u8 slot);
 // Get_MapHeader() with values from the network without this check.
 bool8 MP_IsValidMap(u8 mapGroup, u8 mapNum);
 
+// ---------------------------------------------------------------------------
+// Remote avatars (PS-031): other players drawn as object events on your map
+// ---------------------------------------------------------------------------
+
+// Object event localIds reserved for remote avatars: MP_AVATAR_LOCAL_ID_BASE + slot
+// (0xE0..0xE3). No map object uses them (the special ids are 127 camera, 236-240 Berry
+// Blender, 255 player). Avatars have no object template, flagId 0 and are never saved.
+#define MP_AVATAR_LOCAL_ID_BASE  0xE0
+
+// TRUE if `localId` is a remote avatar's (MP_AVATAR_LOCAL_ID_BASE .. + MP_MAX_PLAYERS - 1).
+// Used by the "// MP:" hooks that make avatars non-solid, non-interactive and unsaved.
+bool8 MP_IsRemoteAvatarLocalId(u8 localId);
+// MP: hook, once per game tick at the end of MainLoop() (after MP_CaptureLocalPresence).
+// Only acts while the overworld callback runs: spawns / despawns / animates the avatars of
+// remote players on the current map from MP_GetPlayer() and MP_PopRemotePresence().
+// Implemented in src/mp/mp_avatars.c. Does nothing in single-player beyond a state check.
+void MP_UpdateRemoteAvatars(void);
+// MP: hook at the start of SaveObjectEvents() (load_save.c), i.e. before every copy of
+// gObjectEvents into the save. Removes all remote avatars (they are re-created on the next
+// field tick). Safe in any callback: outside the overworld only the object event is
+// deactivated, because the sprite system then belongs to another screen.
+void MP_RemoveRemoteAvatars(void);
+
 #endif // GUARD_MP_MP_H

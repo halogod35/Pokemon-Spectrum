@@ -61,6 +61,25 @@ Game code including them is a review failure.
 - Field semantics: `protocol.md` 6.8.1.
 - `--mp-selftest` group `src/mp/mp_selftest_presence.c` (`MpSelftest_Presence`).
 
+**As implemented in PS-031 (remote avatars):**
+- `src/mp/mp_avatars.c` (game side): `MP_UpdateRemoteAvatars()`, called by a `// MP:` line in
+  `MainLoop()` right after the capture hook. It acts only while `CB2_Overworld` runs. Each tick it
+  re-validates its avatars by localId + map (map loads wipe object events, while battle/menu returns
+  re-create their sprites), despawns avatars whose player left, got a new epoch, changed map or is
+  outside the layout, enforces the object budget, spawns missing avatars that are in view, and
+  replays the presence FIFO with held movements (snapping per `MpAvatar_IsTooFarBehind`, a WARP or a
+  queue overflow). Surf blobs are owned per avatar and validated before every destroy.
+- `src/mp/mp_avatar_logic.c` + `include/mp/mp_avatar.h`: the pure decisions (localId mapping, budget,
+  graphics id, movement-action translation, plan, snap rule), tested by
+  `src/mp/mp_selftest_avatar.c`.
+- Avatars: localId `MP_AVATAR_LOCAL_ID_BASE` (0xE0) + slot, no object template, flagId 0, movement
+  type NONE, trainer type NONE. Budget: at most 3, and always 2 object slots plus one per unspawned
+  NPC template within 6 tiles of the view are left free, so NPCs are never evicted.
+- Hooks: `event_object_movement.c` (avatars skipped by `DoesObjectCollideWithObjectAt` and
+  `GetObjectEventIdByPosition`, plus a public `RemoveObjectEventById`), and `load_save.c`
+  (`MP_RemoveRemoteAvatars()` at the start of `SaveObjectEvents`, with PS-014's filter kept as a
+  backstop on `MP_AVATAR_LOCAL_ID_BASE`).
+
 ### 2.1 Internal interfaces (contract for PS-011 / PS-013)
 
 **Transport** (`mp_transport.h`, PS-011). No ENet types leak out. Peers are small integer ids.

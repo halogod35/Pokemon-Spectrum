@@ -143,6 +143,7 @@ void AllowObjectAtPosTriggerGroundEffects(s16 x, s16 y);
 void ObjectEventGetLocalIdAndMap(struct ObjectEvent *objectEvent, void *localId, void *mapNum, void *mapGroup);
 void ShiftObjectEventCoords(struct ObjectEvent *objectEvent, s16 x, s16 y);
 void MoveObjectEventToMapCoords(struct ObjectEvent *objectEvent, s16 x, s16 y);
+void RemoveObjectEventById(u8 objectEventId); // MP: PS-031 remote avatars (no template, no flag)
 void TryOverrideObjectEventTemplateCoords(u8 localId, u8 mapNum, u8 mapGroup);
 void InitObjectEventPalettes(u8 reflectionType);
 void UpdateObjectEventCurrentMovement(struct ObjectEvent *objectEvent, struct Sprite *sprite, bool8 (*callback)(struct ObjectEvent *, struct Sprite *));
