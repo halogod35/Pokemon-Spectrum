@@ -870,6 +870,56 @@ u32 MpSelftest_Session(void)
     MP_LOG("selftest: session: dead host noticed after %u ms\n", (unsigned)elapsed);
     Report("silent host death gives DISCONNECTED(CONNECTION_LOST) within 15 s", failuresBefore);
 
+    // --- BUG-001: PING/PONG before WELCOME is ignored, not counted as malformed ---
+    // The raw instance plays a host that sends channel-1 PINGs before its WELCOME.
+    failuresBefore = sFail;
+    PumpUntil(CondAllClosed, 3000);
+    memset(&sRaw, 0, sizeof(sRaw));
+    sRaw.byeReason = 0xFF;
+    Sel(I_RAW);
+    T_CHECK(MpTransport_Listen(sPort, 2), "raw host listens");
+    T_CHECK(JoinAs(I_C2, "Cli2"), "client joins the raw host");
+    T_CHECK(PumpUntil(CondRawConnected, 5000), "raw host sees the client");
+    PumpFor(200); // let the HELLO arrive (the raw host ignores it)
+    {
+        struct MpMsgPing ping;
+        struct MpMsgWelcome welcome;
+        u8 pkt[MP_MAX_PACKET_SIZE];
+        u16 len;
+
+        ping.timeMs = 1234;
+        len = MpProto_WritePing(pkt, sizeof(pkt), MP_MSG_PING, &ping);
+        for (i = 0; i < MP_MALFORMED_LIMIT + 1; i++)
+            RawSend(MP_MSG_PING, MP_CHANNEL_PRESENCE, &pkt[MP_HEADER_SIZE], (u16)(len - MP_HEADER_SIZE), FALSE);
+        len = MpProto_WritePing(pkt, sizeof(pkt), MP_MSG_PONG, &ping);
+        RawSend(MP_MSG_PONG, MP_CHANNEL_PRESENCE, &pkt[MP_HEADER_SIZE], (u16)(len - MP_HEADER_SIZE), FALSE);
+        PumpFor(300);
+        T_CHECK(StateOf(I_C2) == MP_STATE_CONNECTING, "client still connecting after early PINGs");
+        Sel(I_C2);
+        T_CHECK(gMpSession->client.malformed == 0, "early PING/PONG not counted as malformed");
+
+        memset(&welcome, 0, sizeof(welcome));
+        welcome.yourSlot = 1;
+        welcome.yourEpoch = 2;
+        welcome.playerCount = 2;
+        welcome.players[0].slot = 0;
+        welcome.players[0].epoch = 1;
+        welcome.players[0].entryFlags = MP_ENTRY_FLAG_HOST;
+        MP_BuildPlayerSummary(&welcome.players[0].summary);
+        welcome.players[1].slot = 1;
+        welcome.players[1].epoch = 2;
+        MP_BuildPlayerSummary(&welcome.players[1].summary);
+        len = MpProto_WriteWelcome(pkt, sizeof(pkt), &welcome);
+        T_CHECK(len > MP_HEADER_SIZE, "raw WELCOME built");
+        RawSend(MP_MSG_WELCOME, MP_CHANNEL_CONTROL, &pkt[MP_HEADER_SIZE], (u16)(len - MP_HEADER_SIZE), FALSE);
+    }
+    T_CHECK(WaitFor(CondInSession, I_C2, 0, 3000), "client connects after the late WELCOME");
+    Sel(I_C2);
+    T_CHECK(MP_GetLocalSlot() == 1 && gMpSession->client.malformed == 0, "connected as slot 1 with malformed count 0");
+    MP_Leave();
+    RawClose();
+    Report("PING/PONG before WELCOME is ignored (BUG-001)", failuresBefore);
+
     // Clean up every instance
     for (i = 0; i < SESSION_INSTANCES; i++)
     {
