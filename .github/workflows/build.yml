@@ -86,6 +86,19 @@ jobs:
           fi
           echo "boot smoke test: still running after 40 s, OK"
 
+      # BUG-002 (temporary): same boot test on a -g -O0 build, for file:line in the backtrace.
+      - name: Boot smoke test (debug build)
+        if: always() && matrix.bits == 64
+        continue-on-error: true
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          make -s tidyportable > /dev/null 2>&1 || true
+          make -j"$(nproc)" linux DINFO=1 > /dev/null
+          rm -f ci_boot.sav
+          timeout -s INT 40 gdb -q -batch -ex "handle SIGINT stop" -ex run -ex "bt full 8" --args ./pokeemerald64 --save ci_boot.sav 2>&1 | tail -80
+
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
