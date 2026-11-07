@@ -9,6 +9,7 @@
 #include "mp/mp_session_internal.h"
 #include "mp/mp_summary.h"
 #include "mp/mp_transport.h"
+#include "mp/mp_link.h"
 
 bool8 gMpDebugLogging = FALSE;
 
@@ -45,6 +46,7 @@ void MpSession_ResetInstance(u8 instance)
     sSessions[instance].instance = instance;
     sSessions[instance].localSlot = MP_SLOT_NONE;
     MpPresence_ResetLocal(instance);
+    MpLink_ResetInstance(instance); // PS-046
 }
 
 u8 MpSession_DebugHostPeerCount(void)
@@ -214,6 +216,7 @@ void MpSession_Fail(u8 event, u8 reason)
     s->state = MP_STATE_ERROR;
     s->errorReason = reason;
     s->localSlot = MP_SLOT_NONE;
+    MpLink_OnSessionEnd(); // PS-046: before the table is cleared
     MpClearTable();
     MpSession_QueueEvent(event, MP_SLOT_NONE, reason);
     if (MpTransport_IsOpen())
@@ -406,6 +409,7 @@ static void MpBeginSession(void)
     s->buildHash = MP_GetBuildHash();
     s->buildFlags = MpBuild_IsDirty() ? MP_BUILD_FLAG_DIRTY : 0;
     MP_BuildPlayerSummary(&s->localSummary);
+    MpLink_OnSessionStart(); // PS-046
 }
 
 static void MpSetError(u8 reason)
@@ -493,6 +497,7 @@ void MP_Leave(void)
             MpTransport_Flush();
             MpSession_StartFlush();
         }
+        MpLink_OnSessionEnd(); // PS-046
     }
     s->state = MP_STATE_OFFLINE;
     s->errorReason = MP_REASON_NONE;

@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      1       // Wire protocol version. Bump on ANY wire change. Max 255.
+#define MP_PROTOCOL_VERSION      2       // Wire protocol version (2: PS-046 LINK_*). Bump on ANY wire change. Max 255.
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -373,5 +373,68 @@ bool8 MP_EvictRemoteAvatarForGame(void);
 // MP: hook in RemoveObjectEvent (event_object_movement.c, PS-032), for avatar localIds only,
 // before the object's sprite is destroyed: drops the avatar's surf blob and own palette.
 void MP_OnObjectEventRemoved(u8 objectEventId);
+
+// ---------------------------------------------------------------------------
+// Virtual link cable (PS-046, protocol.md 6.11, design.md "As implemented in PS-046")
+// ---------------------------------------------------------------------------
+//
+// Emerald's own cable stack (link.c: OpenLink, SendBlock, the player-data exchange,
+// standby, close-link, trade, link battle) runs over the session. The host sequences
+// "rows" of one 8-word link command per member and sends every row to all members,
+// the sender included, exactly as the SIO multi-mode cable does.
+//
+// Usage (PS-041 / PS-044 / PS-045): once the players have agreed, every member calls
+// MP_LinkJoin() with the same slot mask. When MP_LinkGetState() == MP_LINK_STATE_GROUPED on
+// this instance, the normal game code can call OpenLink() and everything above it. Link ids
+// (GetMultiplayerId()) follow slot order: the lowest slot in the mask is link id 0, the
+// link master. If the group ends while the cable is open (a member left the link or the
+// session, a queue overflowed, the watchdog fired) the game's own link-error path runs
+// (LINK_STAT_ERROR_HARDWARE -> CB2_LinkError). Without a group, the cable behaves like an
+// unplugged one: nothing is ever received, as in single-player.
+
+enum
+{
+    MP_LINK_STATE_NONE,         // Not in a link group.
+    MP_LINK_STATE_REQUESTED,    // MP_LinkJoin sent; waiting for the other members.
+    MP_LINK_STATE_GROUPED,      // In a link group: the cable is plugged in.
+};
+
+enum
+{
+    MP_LINK_END_NONE            = 0,
+    // --- Wire reasons (LINK_END from the host) ---
+    MP_LINK_END_LEFT            = 1,  // A member called MP_LinkLeave (or joined another group).
+    MP_LINK_END_LOST            = 2,  // A member left the session.
+    MP_LINK_END_OVERFLOW        = 3,  // A member sent link commands faster than the bus can carry.
+    MP_LINK_END_REFUSED         = 4,  // MP_LinkJoin: bad mask, or a slot in it is empty.
+    // 5..31 reserved for future wire reasons.
+    // --- Local reasons ---
+    MP_LINK_END_SESSION         = 32, // Our own session ended (left, lost, kicked).
+    MP_LINK_END_WATCHDOG        = 33, // Our link commands were not echoed for MP_LINK_WATCHDOG_MS.
+    MP_LINK_END_RX_OVERFLOW     = 34, // More than MP_LINK_RX_QUEUE_SIZE rows waiting (game stalled).
+};
+
+#define MP_LINK_WATCHDOG_MS     10000
+#define MP_LINK_RX_QUEUE_SIZE   256     // Rows buffered per member (about 4 s at 60 rows/s).
+
+// Asks the host to form a link group of the slots in `slotMask` (bit i = slot i). The mask
+// must contain our own slot and 2..4 occupied slots; every member must call it with the same
+// mask. Leaves any previous group first. FALSE if not IN_SESSION or the mask is invalid.
+bool8 MP_LinkJoin(u8 slotMask);
+// Leaves the link group (or cancels a request). The other members get MP_LINK_END_LEFT.
+void MP_LinkLeave(void);
+u8 MP_LinkGetState(void);       // MP_LINK_STATE_*.
+u8 MP_LinkGetLinkId(void);      // 0..members-1 while GROUPED, else MP_SLOT_NONE.
+u8 MP_LinkGetEndReason(void);   // Why the last group or request ended (MP_LINK_END_*).
+
+// MP: called by HandleLinkConnection() (link.c, PC build) once per game tick in place of the
+// SIO LinkMain1(). Same contract: fills recvCmds[0..3] with one row (or zeros), queues
+// sendCmd (and clears it), advances gLink.state and returns the gLinkStatus word.
+// recvCmds has CMD_LENGTH (8) words per player (checked at compile time).
+u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[8]);
+// --mp-link-test (dev harness): slots 0 and 1 link up, run the player-data exchange and
+// SendBlock rounds, close, and repeat, logging each step. Ticked from HandleLinkConnection().
+void MP_SetLinkTest(bool8 enabled);
+void MP_LinkTestTick(void);
 
 #endif // GUARD_MP_MP_H

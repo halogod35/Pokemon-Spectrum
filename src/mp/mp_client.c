@@ -4,6 +4,7 @@
 #include <string.h>
 #include "mp/mp_session_internal.h"
 #include "mp/mp_summary.h"
+#include "mp/mp_link.h"
 
 #define MP_HOST_PEER_ID 0   // a client's only transport peer
 
@@ -219,6 +220,13 @@ static void MpClientHandleSessionMessage(u8 channel, const struct MpMsgHeader *h
             MpClientMalformed("PRESENCE");
         break;
     default:
+        // PS-046: virtual link cable (protocol.md 6.11)
+        if (hdr->type >= MP_MSG_LINK_FIRST && hdr->type <= MP_MSG_LINK_LAST)
+        {
+            if (!MpLink_OnClientReceive(channel, hdr->type, payload, len))
+                MpClientMalformed("LINK message");
+            break;
+        }
         MpClientMalformed("unexpected message type");
         break;
     }

@@ -32,6 +32,21 @@
 #define MP_MSG_PING             0x08
 #define MP_MSG_PONG             0x09
 #define MP_MSG_PRESENCE         0x10
+// Virtual link cable (PS-046, protocol.md 6.11). All on channel 0 (reliable, ordered).
+#define MP_MSG_LINK_JOIN        0x60    // C -> H
+#define MP_MSG_LINK_LEAVE       0x61    // C -> H
+#define MP_MSG_LINK_GROUP       0x62    // H -> C
+#define MP_MSG_LINK_END         0x63    // H -> C
+#define MP_MSG_LINK_OPEN        0x64    // C -> H
+#define MP_MSG_LINK_CLOSE       0x65    // C -> H
+#define MP_MSG_LINK_START       0x66    // C -> H (link id 0 only)
+#define MP_MSG_LINK_STATUS      0x67    // H -> C
+#define MP_MSG_LINK_BUS_START   0x68    // H -> C
+#define MP_MSG_LINK_BUS_END     0x69    // H -> C
+#define MP_MSG_LINK_CMD         0x6A    // C -> H
+#define MP_MSG_LINK_ROW         0x6B    // H -> C
+#define MP_MSG_LINK_FIRST       0x60    // reserved LINK_* range (protocol.md 4)
+#define MP_MSG_LINK_LAST        0x7F
 #define MP_MSG_DEBUG_ECHO       0xF0    // --mp-selftest only
 
 #define MP_DEBUG_ECHO_MAX_PAYLOAD 64
@@ -46,6 +61,11 @@
 #define MP_BYE_SIZE             4
 #define MP_PING_SIZE            4
 #define MP_PRESENCE_SIZE        16
+#define MP_LINK_CTL_SIZE        4       // every LINK_* control message
+#define MP_LINK_CMD_WORDS       8       // == CMD_LENGTH in include/link.h
+#define MP_LINK_MAX_MEMBERS     4       // == MAX_LINK_PLAYERS in include/link.h
+#define MP_LINK_CMD_SIZE        (4 + 2 * MP_LINK_CMD_WORDS)                 // 20
+#define MP_LINK_ROW_SIZE(n)     (8 + 2 * MP_LINK_CMD_WORDS * (n))           // 8 + 16n
 
 // PRESENCE coordinate range (protocol.md 6.8): map-local tiles, a little outside the
 // map is allowed while crossing a seam.
@@ -134,6 +154,40 @@ struct MpMsgPresence
     struct MpPresence presence; // presence.seq is the wire seq
 };
 
+// LINK_* control messages (protocol.md 6.11). One 4-byte layout: groupId, arg1, arg2,
+// reserved. What arg1/arg2 mean depends on the type:
+//   JOIN      arg1 = member slot mask (2..4 bits of 0x0F)        groupId ignored
+//   LEAVE     -                                                  groupId ignored
+//   GROUP     arg1 = member slot mask, arg2 = recipient link id  groupId != 0
+//   END       arg1 = reason (MP_LINK_END_*, != 0)                groupId 0 = request refused
+//   OPEN / CLOSE / START   arg1 = the member's open sequence     groupId != 0
+//   STATUS    arg1 = open mask by link id (< 0x10)               groupId != 0
+//   BUS_START arg1 = bus epoch (!= 0), arg2 = recipient's open sequence
+//   BUS_END   arg1 = bus epoch (!= 0)
+// Ignored fields parse as 0.
+struct MpMsgLinkCtl
+{
+    u8 groupId;
+    u8 arg1;
+    u8 arg2;
+};
+
+struct MpMsgLinkCmd
+{
+    u8 groupId;
+    u8 busEpoch;
+    u16 cmd[MP_LINK_CMD_WORDS];     // never all zero
+};
+
+struct MpMsgLinkRow
+{
+    u8 groupId;
+    u8 busEpoch;
+    u8 count;                       // link members, 2..4
+    u16 rowSeq;
+    u16 cmds[MP_LINK_MAX_MEMBERS][MP_LINK_CMD_WORDS]; // [link id]; rows >= count are 0
+};
+
 // Header: 4 <= len <= MP_MAX_PACKET_SIZE and length == len - 4. Type/version/state
 // are not checked here.
 bool8 MpProto_ParseHeader(const u8 *buf, u32 len, struct MpMsgHeader *out);
@@ -172,6 +226,17 @@ u16 MpProto_WritePing(u8 *buf, u16 cap, u8 type, const struct MpMsgPing *msg);
 // Writes the fields as given (reserved presenceFlags as 0). The sender sanitises first
 // (MP_SetLocalPresence), so what it writes always passes MpProto_ParsePresence.
 u16 MpProto_WritePresence(u8 *buf, u16 cap, const struct MpMsgPresence *msg);
+
+// LINK_* (PS-046). MpProto_IsLinkCtlType: one of the 4-byte control types.
+bool8 MpProto_IsLinkCtlType(u8 type);
+u8 MpProto_ParseLinkCtl(u8 type, const u8 *payload, u32 len, struct MpMsgLinkCtl *out);
+u16 MpProto_WriteLinkCtl(u8 *buf, u16 cap, u8 type, const struct MpMsgLinkCtl *msg);
+u8 MpProto_ParseLinkCmd(const u8 *payload, u32 len, struct MpMsgLinkCmd *out);
+u16 MpProto_WriteLinkCmd(u8 *buf, u16 cap, const struct MpMsgLinkCmd *msg);
+u8 MpProto_ParseLinkRow(const u8 *payload, u32 len, struct MpMsgLinkRow *out);
+u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg);
+// Number of set bits in the low 4 bits (link masks).
+u8 MpProto_LinkMaskCount(u8 mask);
 
 // RFC 1982 serial-number "newer than" for u16 sequence numbers (protocol.md 6.8).
 bool8 MpSeqIsNewer(u16 s, u16 last);

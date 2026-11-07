@@ -9,7 +9,7 @@
 #define STUB_FUNC_QUIET(func) func {}
 #define STUB_FUNC_QUIET_BLOCK(func, block) func { block }
 
-STUB_FUNC_QUIET_BLOCK(bool8 HandleLinkConnection(), return 0;)
+// MP: PS-046: HandleLinkConnection is now real on PC (link.c, the virtual link cable).
 STUB_FUNC_QUIET(void Task_InitUnionRoom())
 STUB_FUNC(int MultiBoot(struct MultiBootParam *mp))
 STUB_FUNC(void RegisterRamReset(u32 resetFlags))
