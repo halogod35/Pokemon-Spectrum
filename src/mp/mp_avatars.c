@@ -467,7 +467,7 @@ static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
         return;
     }
     if (obj->frozen)
-        return; // a script froze all objects; continue when it is over
+        return; // defensive: FreezeObjectEvent never freezes avatars since PS-035
     if (obj->heldMovementActive)
     {
         if (!obj->heldMovementFinished)

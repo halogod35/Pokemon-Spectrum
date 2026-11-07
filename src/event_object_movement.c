@@ -8176,6 +8176,13 @@ static void DoGroundEffects_OnFinishStep(struct ObjectEvent *objEvent, struct Sp
 
 bool8 FreezeObjectEvent(struct ObjectEvent *objectEvent)
 {
+    // MP: PS-035. Remote avatars belong to another player's game: a local lock / lockall /
+    // faceplayer / trainer approach must not stop them. Every freeze path (FreezeObjectEvents,
+    // ...ExceptOne/Two, event_object_lock.c, script_movement.c) goes through here, and
+    // UnfreezeObjectEvent has nothing to undo for an object that was never frozen. Reported as
+    // "frozen" (FALSE) so no caller waits on it.
+    if (MP_IsRemoteAvatarLocalId(objectEvent->localId) && !objectEvent->isPlayer)
+        return FALSE;
     if (objectEvent->heldMovementActive || objectEvent->frozen)
     {
         return TRUE;
