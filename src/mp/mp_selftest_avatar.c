@@ -15,6 +15,7 @@
 #include "constants/global.h"
 #include "constants/event_objects.h"
 #include "constants/event_object_movement.h"
+#include "constants/maps.h"
 
 static u32 sFail;
 
@@ -307,6 +308,81 @@ static void TestReplay(void)
     Report("replay simulation (clean, merged steps, gap + warp)", failuresBefore);
 }
 
+// --- PS-032: connected maps and the deny table ---------------------------------
+
+static void TestConnections(void)
+{
+    struct MpPresence t;
+    u32 failuresBefore = sFail;
+    s16 x, y, x2, y2;
+    u8 action;
+
+    // Current map 20 x 20. Connected maps: 30 x 10 (north / south), 12 x 25 (west / east).
+    A_CHECK(MpAvatar_TranslateConnection(CONNECTION_SOUTH, 5, 20, 20, 30, 10, 3, 0, &x, &y) && x == 8 && y == 20, "south: (3,0) -> (8,20)");
+    A_CHECK(MpAvatar_TranslateConnection(CONNECTION_NORTH, 5, 20, 20, 30, 10, 3, 9, &x, &y) && x == 8 && y == -1, "north: bottom row -> y -1");
+    A_CHECK(MpAvatar_TranslateConnection(CONNECTION_NORTH, -4, 20, 20, 30, 10, 0, 0, &x, &y) && x == -4 && y == -10, "north, negative offset");
+    A_CHECK(MpAvatar_TranslateConnection(CONNECTION_WEST, -4, 20, 20, 12, 25, 11, 2, &x, &y) && x == -1 && y == -2, "west: right column -> x -1");
+    A_CHECK(MpAvatar_TranslateConnection(CONNECTION_EAST, 3, 20, 20, 12, 25, 0, 0, &x, &y) && x == 20 && y == 3, "east: (0,0) -> (20,3)");
+    A_CHECK(!MpAvatar_TranslateConnection(CONNECTION_DIVE, 0, 20, 20, 20, 20, 1, 1, &x, &y), "dive is not side by side");
+    A_CHECK(!MpAvatar_TranslateConnection(CONNECTION_EMERGE, 0, 20, 20, 20, 20, 1, 1, &x, &y), "emerge is not side by side");
+    A_CHECK(!MpAvatar_TranslateConnection(CONNECTION_NONE, 0, 20, 20, 20, 20, 1, 1, &x, &y), "no connection");
+    A_CHECK(!MpAvatar_TranslateConnection(CONNECTION_EAST, 0x100000, 20, 20, 20, 20, 1, 1, &x, &y), "absurd offset rejected");
+
+    // Seam continuity: the last tile of the north map and the first tile of the current map
+    // are one step apart, so a player walking across is replayed as one walk, not a snap.
+    MpAvatar_TranslateConnection(CONNECTION_NORTH, 5, 20, 20, 30, 10, 3, 9, &x, &y);
+    P(&t, 8, 0, DIR_SOUTH, MP_MOVE_WALK, MP_AVATAR_ON_FOOT, 2);
+    A_CHECK(MpAvatar_Plan(x, y, DIR_SOUTH, &t, TRUE, &action) == MP_AVATAR_PLAN_ACTION && action == MOVEMENT_ACTION_WALK_NORMAL_DOWN,
+            "walking south across a seam is one step");
+    // East seam the other way round.
+    MpAvatar_TranslateConnection(CONNECTION_EAST, 3, 20, 20, 12, 25, 0, 4, &x2, &y2);
+    P(&t, 19, 7, DIR_WEST, MP_MOVE_WALK_FAST, MP_AVATAR_ON_FOOT, 3);
+    A_CHECK(x2 == 20 && y2 == 7 && MpAvatar_Plan(x2, y2, DIR_WEST, &t, TRUE, &action) == MP_AVATAR_PLAN_ACTION
+         && action == MOVEMENT_ACTION_PLAYER_RUN_LEFT, "running west out of the east map is one step");
+    Report("connected-map coordinate translation", failuresBefore);
+}
+
+static void TestDenyTable(void)
+{
+    u32 failuresBefore = sFail;
+    u32 i, j, n = MpAvatar_DeniedMapCount();
+    bool8 allValid = TRUE, unique = TRUE;
+
+    A_CHECK(n >= 40, "deny table is populated");
+    for (i = 0; i < n; i++)
+    {
+        u16 id = MpAvatar_DeniedMapAt(i);
+
+        if (!MP_IsValidMap((u8)(id >> 8), (u8)(id & 0xFF)))
+            allValid = FALSE;
+        for (j = 0; j < i; j++)
+        {
+            if (MpAvatar_DeniedMapAt(j) == id)
+                unique = FALSE;
+        }
+    }
+    A_CHECK(allValid, "every denied map is a valid map of this build");
+    A_CHECK(unique, "no duplicate in the deny table");
+    A_CHECK(MpAvatar_DeniedMapAt(n) == 0xFFFF, "deny table index past the end");
+
+#define DENIED(map) MpAvatar_IsMapDenied(MAP_GROUP(map), MAP_NUM(map))
+    A_CHECK(DENIED(MAP_UNION_ROOM) && DENIED(MAP_TRADE_CENTER) && DENIED(MAP_RECORD_CORNER)
+         && DENIED(MAP_BATTLE_COLOSSEUM_2P) && DENIED(MAP_BATTLE_COLOSSEUM_4P), "link rooms denied");
+    A_CHECK(DENIED(MAP_BATTLE_FRONTIER_BATTLE_TOWER_BATTLE_ROOM) && DENIED(MAP_BATTLE_FRONTIER_BATTLE_PIKE_THREE_PATH_ROOM)
+         && DENIED(MAP_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR) && DENIED(MAP_SLATEPORT_CITY_BATTLE_TENT_BATTLE_ROOM), "challenge rooms denied");
+    A_CHECK(DENIED(MAP_TRAINER_HILL_1F) && DENIED(MAP_SECRET_BASE_RED_CAVE1) && DENIED(MAP_SECRET_BASE_SHRUB4), "per-save layouts denied");
+    A_CHECK(DENIED(MAP_CONTEST_HALL) && DENIED(MAP_LILYCOVE_CITY_CONTEST_HALL) && DENIED(MAP_INSIDE_OF_TRUCK), "contest stages and the truck denied");
+    A_CHECK(!DENIED(MAP_LITTLEROOT_TOWN) && !DENIED(MAP_OLDALE_TOWN_POKEMON_CENTER_1F) && !DENIED(MAP_LILYCOVE_CITY),
+            "ordinary maps allowed");
+    A_CHECK(!DENIED(MAP_SAFARI_ZONE_SOUTH) && !DENIED(MAP_SAFARI_ZONE_NORTHEAST), "Safari Zone allowed (decision)");
+    A_CHECK(!DENIED(MAP_BATTLE_FRONTIER_OUTSIDE_WEST) && !DENIED(MAP_BATTLE_FRONTIER_BATTLE_TOWER_LOBBY)
+         && !DENIED(MAP_LILYCOVE_CITY_CONTEST_LOBBY) && !DENIED(MAP_ROUTE112_CABLE_CAR_STATION)
+         && !DENIED(MAP_TRAINER_HILL_ENTRANCE), "lobbies, outside areas and stations allowed");
+#undef DENIED
+    A_CHECK(!MpAvatar_IsMapDenied(MP_MAP_NONE, MP_MAP_NONE), "MP_MAP_NONE is not in the table");
+    Report("deny table", failuresBefore);
+}
+
 u32 MpSelftest_Avatar(void)
 {
     sFail = 0;
@@ -314,5 +390,7 @@ u32 MpSelftest_Avatar(void)
     TestGraphicsAndActions();
     TestPlan();
     TestReplay();
+    TestConnections();
+    TestDenyTable();
     return sFail;
 }

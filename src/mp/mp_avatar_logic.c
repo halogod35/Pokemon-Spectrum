@@ -8,6 +8,7 @@
 #include "constants/global.h"
 #include "constants/event_objects.h"
 #include "constants/event_object_movement.h"
+#include "constants/maps.h"
 
 static s16 MpAbs(s16 v)
 {
@@ -136,4 +137,157 @@ bool8 MpAvatar_IsTooFarBehind(s16 x, s16 y, const struct MpPresence *latest)
     if (latest->movement == MP_MOVE_JUMP)
         return dist > MP_AVATAR_SNAP_TILES + 1;
     return dist > MP_AVATAR_SNAP_TILES;
+}
+
+// ---------------------------------------------------------------------------
+// PS-032: connected maps
+// ---------------------------------------------------------------------------
+
+bool8 MpAvatar_TranslateConnection(u8 direction, s32 offset, s32 curWidth, s32 curHeight,
+                                   s32 connWidth, s32 connHeight, s16 x, s16 y, s16 *outX, s16 *outY)
+{
+    s32 tx, ty;
+
+    // Same layout as fieldmap.c Fill*Connection: the connected map's (0,0) sits at
+    // south (offset, curHeight), north (offset, -connHeight), west (-connWidth, offset)
+    // and east (curWidth, offset) in current-map coordinates.
+    switch (direction)
+    {
+    case CONNECTION_SOUTH:
+        tx = x + offset;
+        ty = y + curHeight;
+        break;
+    case CONNECTION_NORTH:
+        tx = x + offset;
+        ty = y - connHeight;
+        break;
+    case CONNECTION_WEST:
+        tx = x - connWidth;
+        ty = y + offset;
+        break;
+    case CONNECTION_EAST:
+        tx = x + curWidth;
+        ty = y + offset;
+        break;
+    default:
+        return FALSE; // CONNECTION_DIVE / EMERGE / NONE / INVALID: not side by side
+    }
+    if (tx < -0x4000 || tx > 0x4000 || ty < -0x4000 || ty > 0x4000)
+        return FALSE;
+    *outX = (s16)tx;
+    *outY = (s16)ty;
+    return TRUE;
+}
+
+// ---------------------------------------------------------------------------
+// PS-032: maps where remote avatars are never shown (and from which a player is never
+// shown on a connected map). Each block says why.
+// ---------------------------------------------------------------------------
+
+static const u16 sDeniedMaps[] =
+{
+    // Link rooms (Cable Club / Union Room). They use the GBA link player objects, which the
+    // PC port stubs, and their scripts assume only link partners stand there.
+    MAP_UNION_ROOM,
+    MAP_TRADE_CENTER,
+    MAP_RECORD_CORNER,
+    MAP_BATTLE_COLOSSEUM_2P,
+    MAP_BATTLE_COLOSSEUM_4P,
+
+    // Battle Frontier facility interiors and Battle Tent challenge rooms. Fixed-camera,
+    // fully scripted challenge sequences (the player is walked from room to room, with warps
+    // between battles), so another player's position means nothing to you. The lobbies,
+    // lounges, Pokemon Center, mart and the outside areas stay allowed.
+    MAP_BATTLE_FRONTIER_BATTLE_TOWER_ELEVATOR,
+    MAP_BATTLE_FRONTIER_BATTLE_TOWER_CORRIDOR,
+    MAP_BATTLE_FRONTIER_BATTLE_TOWER_BATTLE_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_TOWER_MULTI_PARTNER_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_TOWER_MULTI_CORRIDOR,
+    MAP_BATTLE_FRONTIER_BATTLE_TOWER_MULTI_BATTLE_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_DOME_CORRIDOR,
+    MAP_BATTLE_FRONTIER_BATTLE_DOME_PRE_BATTLE_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_DOME_BATTLE_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_PALACE_CORRIDOR,
+    MAP_BATTLE_FRONTIER_BATTLE_PALACE_BATTLE_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_ARENA_CORRIDOR,
+    MAP_BATTLE_FRONTIER_BATTLE_ARENA_BATTLE_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_FACTORY_PRE_BATTLE_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_FACTORY_BATTLE_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_PIKE_CORRIDOR,
+    MAP_BATTLE_FRONTIER_BATTLE_PIKE_THREE_PATH_ROOM,
+    MAP_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_NORMAL,
+    MAP_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_FINAL,
+    MAP_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS,
+    MAP_SLATEPORT_CITY_BATTLE_TENT_CORRIDOR,
+    MAP_SLATEPORT_CITY_BATTLE_TENT_BATTLE_ROOM,
+    MAP_VERDANTURF_TOWN_BATTLE_TENT_CORRIDOR,
+    MAP_VERDANTURF_TOWN_BATTLE_TENT_BATTLE_ROOM,
+    MAP_FALLARBOR_TOWN_BATTLE_TENT_CORRIDOR,
+    MAP_FALLARBOR_TOWN_BATTLE_TENT_BATTLE_ROOM,
+
+    // Per-save generated layouts: the Battle Pyramid floors and Trainer Hill floors are built
+    // from each save's own challenge data, and secret bases from each save's own base and
+    // decorations. The same map id shows different rooms in different games.
+    MAP_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR,
+    MAP_BATTLE_FRONTIER_BATTLE_PYRAMID_TOP,
+    MAP_TRAINER_HILL_1F,
+    MAP_TRAINER_HILL_2F,
+    MAP_TRAINER_HILL_3F,
+    MAP_TRAINER_HILL_4F,
+    MAP_TRAINER_HILL_ROOF,
+    MAP_TRAINER_HILL_ELEVATOR,
+    MAP_SECRET_BASE_RED_CAVE1, MAP_SECRET_BASE_BROWN_CAVE1, MAP_SECRET_BASE_BLUE_CAVE1,
+    MAP_SECRET_BASE_YELLOW_CAVE1, MAP_SECRET_BASE_TREE1, MAP_SECRET_BASE_SHRUB1,
+    MAP_SECRET_BASE_RED_CAVE2, MAP_SECRET_BASE_BROWN_CAVE2, MAP_SECRET_BASE_BLUE_CAVE2,
+    MAP_SECRET_BASE_YELLOW_CAVE2, MAP_SECRET_BASE_TREE2, MAP_SECRET_BASE_SHRUB2,
+    MAP_SECRET_BASE_RED_CAVE3, MAP_SECRET_BASE_BROWN_CAVE3, MAP_SECRET_BASE_BLUE_CAVE3,
+    MAP_SECRET_BASE_YELLOW_CAVE3, MAP_SECRET_BASE_TREE3, MAP_SECRET_BASE_SHRUB3,
+    MAP_SECRET_BASE_RED_CAVE4, MAP_SECRET_BASE_BROWN_CAVE4, MAP_SECRET_BASE_BLUE_CAVE4,
+    MAP_SECRET_BASE_YELLOW_CAVE4, MAP_SECRET_BASE_TREE4, MAP_SECRET_BASE_SHRUB4,
+
+    // Contest stages: the contest runs as a fixed-camera cutscene with scripted
+    // contestants on the stage. The Lilycove contest lobby stays allowed.
+    MAP_LILYCOVE_CITY_CONTEST_HALL,
+    MAP_CONTEST_HALL,
+    MAP_CONTEST_HALL_BEAUTY,
+    MAP_CONTEST_HALL_COOL,
+    MAP_CONTEST_HALL_CUTE,
+    MAP_CONTEST_HALL_SMART,
+    MAP_CONTEST_HALL_TOUGH,
+    MAP_UNUSED_CONTEST_HALL1,
+    MAP_UNUSED_CONTEST_HALL2,
+    MAP_UNUSED_CONTEST_HALL3,
+    MAP_UNUSED_CONTEST_HALL4,
+    MAP_UNUSED_CONTEST_HALL5,
+    MAP_UNUSED_CONTEST_HALL6,
+
+    // The intro truck: fixed camera, scripted, before the player has a real position.
+    MAP_INSIDE_OF_TRUCK,
+
+    // Not denied, on purpose: the Safari Zone (ordinary walking areas; seeing each other
+    // there is fun and harmless), the cable car stations (the ride itself is a separate
+    // screen, not the overworld), the Battle Frontier outside areas and lobbies.
+};
+
+bool8 MpAvatar_IsMapDenied(u8 mapGroup, u8 mapNum)
+{
+    u16 id = (u16)(mapNum | (mapGroup << 8));
+    u32 i;
+
+    for (i = 0; i < sizeof(sDeniedMaps) / sizeof(sDeniedMaps[0]); i++)
+    {
+        if (sDeniedMaps[i] == id)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+u32 MpAvatar_DeniedMapCount(void)
+{
+    return sizeof(sDeniedMaps) / sizeof(sDeniedMaps[0]);
+}
+
+u16 MpAvatar_DeniedMapAt(u32 index)
+{
+    return (index < MpAvatar_DeniedMapCount()) ? sDeniedMaps[index] : 0xFFFF;
 }

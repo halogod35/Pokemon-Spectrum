@@ -366,5 +366,12 @@ void MP_UpdateRemoteAvatars(void);
 // field tick). Safe in any callback: outside the overworld only the object event is
 // deactivated, because the sprite system then belongs to another screen.
 void MP_RemoveRemoteAvatars(void);
+// MP: hook in InitObjectEventStateFromTemplate (event_object_movement.c, PS-032): every object
+// slot is taken and the game needs one. Removes the remote avatar of the highest slot (it may
+// come back later if the budget allows). Returns TRUE if a slot was freed.
+bool8 MP_EvictRemoteAvatarForGame(void);
+// MP: hook in RemoveObjectEvent (event_object_movement.c, PS-032), for avatar localIds only,
+// before the object's sprite is destroyed: drops the avatar's surf blob and own palette.
+void MP_OnObjectEventRemoved(u8 objectEventId);
 
 #endif // GUARD_MP_MP_H

@@ -52,4 +52,17 @@ u8 MpAvatar_Plan(s16 fromX, s16 fromY, u8 facing, const struct MpPresence *targe
 // TRUE if the avatar on (x, y) is so far from the latest presence that it should snap.
 bool8 MpAvatar_IsTooFarBehind(s16 x, s16 y, const struct MpPresence *latest);
 
+// PS-032. Map-local (x, y) on a map connected to the current one in `direction`
+// (CONNECTION_SOUTH/NORTH/WEST/EAST) with the connection's `offset`, translated into
+// current-map coordinates, exactly as fieldmap.c lays connected maps out. FALSE for any
+// other direction (dive / emerge are not side by side).
+bool8 MpAvatar_TranslateConnection(u8 direction, s32 offset, s32 curWidth, s32 curHeight,
+                                   s32 connWidth, s32 connHeight, s16 x, s16 y, s16 *outX, s16 *outY);
+
+// PS-032. TRUE for maps where remote avatars are never shown (link rooms, Frontier / Tent
+// challenge rooms, per-save generated layouts, contest stages, the intro truck).
+bool8 MpAvatar_IsMapDenied(u8 mapGroup, u8 mapNum);
+u32 MpAvatar_DeniedMapCount(void);      // selftest
+u16 MpAvatar_DeniedMapAt(u32 index);    // selftest: MAP_* id, 0xFFFF past the end
+
 #endif // GUARD_MP_MP_AVATAR_H

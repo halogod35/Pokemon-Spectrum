@@ -1,5 +1,5 @@
-// Remote player avatars (PS-031): other session players drawn as object events on the
-// local player's map, animated from their PRESENCE stream (PS-030).
+// Remote player avatars (PS-031, edge cases PS-032): other session players drawn as object
+// events on the local player's map, animated from their PRESENCE stream (PS-030).
 //
 // Called once per game tick from MainLoop() (src/main.c, "// MP:"), after the capture hook.
 // It only touches object events while the overworld callback (CB2_Overworld) runs; outside
@@ -12,16 +12,25 @@
 //    RemoveObjectEvent). Never Overworld_SetObjEventTemplate*, RemoveObjectEventByLocalIdAndMap
 //    or FlagSet.
 //  - Budget: at most MP_MAX_REMOTE_AVATARS, and only while MpAvatar_Budget() allows it, so
-//    map NPCs near the view and scripts always find a free slot. Never evict an NPC.
-//  - Not solid, not interactive: hooks in event_object_movement.c skip avatars in the object
-//    collision check and in GetObjectEventIdByPosition (A button, counters).
+//    map NPCs near the view and scripts always find a free slot. Never evict an NPC; if the
+//    game still runs out of slots, MP_EvictRemoteAvatarForGame() gives one avatar's slot back
+//    (hook in InitObjectEventStateFromTemplate, PS-032).
+//  - Not solid, not interactive, no reflection, never repaints the player's palette: hooks in
+//    event_object_movement.c. Avatars whose palette differs from the local player's (Brendan
+//    seen by May, underwater...) get their own sprite palette (MpEnsurePalette).
 //  - Never saved: MP_RemoveRemoteAvatars() runs at the start of SaveObjectEvents().
 //  - Lifetimes: object events are wiped by every map load (ResetObjectEvents) and keep their
 //    data across battles / menus (SpawnObjectEventsOnReturnToField re-creates their sprites).
 //    So on every field entry each tracked avatar is re-validated by localId + map, then
 //    re-spawned or snapped. The game may also remove an avatar that walked out of view
-//    (RemoveObjectEventsOutsideView); it is re-spawned when its player is back in view.
-//  - AD-1: nothing here changes world state; only our own object events and sprites.
+//    (RemoveObjectEventsOutsideView); MP_OnObjectEventRemoved() then drops its surf blob and
+//    palette in the same frame, and it is re-spawned when its player is back in view.
+//  - PS-032 connected maps: a player on the current map or on a map directly connected to it
+//    (N/S/E/W) is shown, with coordinates translated into the current map's frame; when the
+//    local player crosses a seam the game shifts all object coordinates into the new map's
+//    frame, so the translated targets stay continuous. Denied maps (MpAvatar_IsMapDenied)
+//    show nobody and are never shown from.
+//  - AD-1: nothing here changes world state; only our own object events, sprites, palettes.
 
 #include "global.h"
 #include "battle_pyramid.h"
@@ -29,6 +38,8 @@
 #include "event_object_movement.h"
 #include "field_effect.h"
 #include "field_effect_helpers.h"
+#include "field_player_avatar.h"
+#include "field_weather.h"
 #include "fieldmap.h"
 #include "main.h"
 #include "overworld.h"
@@ -46,26 +57,31 @@
 #include "mp/mp_avatar.h"
 #include "mp/mp_internal.h"
 
-#define MP_BLOB_NONE MAX_SPRITES
+#define MP_BLOB_NONE            MAX_SPRITES
+#define MP_PAL_NONE             0xFFFF                      // no palette tag loaded
+#define MP_AVATAR_PAL_TAG(slot) (0x7AE0 + (slot))           // our sprite-palette tags
+#define MP_EVICT_COOLDOWN_TICKS 120                         // no re-spawn for 2 s after an eviction
 
 struct MpAvatar
 {
     bool8 spawned;
     u8 objectEventId;
     u8 epoch;               // epoch of the player it was spawned for
-    u8 mapGroup;
+    u8 mapGroup;            // map the object event belongs to (the local map at spawn time)
     u8 mapNum;
     u8 avatarState;         // MP_AVATAR_* currently shown
     u8 gender;
     u8 blobSpriteId;        // surf blob, MP_BLOB_NONE if none
     u8 lastStepId;          // stepId of the last update the avatar finished
     bool8 hasPending;
-    struct MpPresence pending;
+    u16 palTag;             // object palette tag loaded into our own sprite palette, MP_PAL_NONE if none
+    struct MpPresence pending;  // already translated into the current map's frame
 };
 
 static struct MpAvatar sAvatars[MP_MAX_PLAYERS];
 static bool8 sAvatarsInit;
 static bool8 sFieldLastTick;
+static u8 sEvictCooldown;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,6 +92,7 @@ static void MpAvatarResetState(struct MpAvatar *av)
     memset(av, 0, sizeof(*av));
     av->objectEventId = OBJECT_EVENTS_COUNT;
     av->blobSpriteId = MP_BLOB_NONE;
+    av->palTag = MP_PAL_NONE;
 }
 
 static void MpAvatarsInit(void)
@@ -94,7 +111,7 @@ static bool8 MpInField(void)
     return gMain.callback2 == CB2_Overworld && gSaveBlock1Ptr != NULL;
 }
 
-// Maps where avatars are never shown in M1 (PS-032 owns the full deny table).
+// Avatars are never shown while the local player is on one of these maps.
 static bool8 MpAvatarsAllowedHere(void)
 {
     if (gMapHeader.events == NULL || gMapHeader.mapLayout == NULL)
@@ -103,7 +120,7 @@ static bool8 MpAvatarsAllowedHere(void)
         return FALSE;
     if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE || InTrainerHill())
         return FALSE;
-    return TRUE;
+    return !MpAvatar_IsMapDenied((u8)gSaveBlock1Ptr->location.mapGroup, (u8)gSaveBlock1Ptr->location.mapNum);
 }
 
 // TRUE if the object event is still the avatar of slot `slot` on the tracked map.
@@ -156,6 +173,56 @@ static void MpCreateBlob(struct MpAvatar *av)
     }
 }
 
+static void MpFreePalette(u8 slot, struct MpAvatar *av)
+{
+    if (IndexOfSpritePaletteTag(MP_AVATAR_PAL_TAG(slot)) != 0xFF)
+        FreeSpritePaletteByTag(MP_AVATAR_PAL_TAG(slot));
+    av->palTag = MP_PAL_NONE;
+}
+
+// PS-032: an avatar shares the player palette slot only if it needs the same colours as the
+// local player; otherwise it gets its own sprite palette (the hooks in event_object_movement.c
+// make sure the game never repaints the player slot for an avatar).
+static void MpEnsurePalette(u8 slot, struct MpAvatar *av)
+{
+    struct ObjectEvent *obj = &gObjectEvents[av->objectEventId];
+    struct Sprite *sprite = &gSprites[obj->spriteId];
+    const struct ObjectEventGraphicsInfo *info = GetObjectEventGraphicsInfo(obj->graphicsId);
+    u16 localTag = MP_PAL_NONE;
+    u8 index;
+
+    if (info->paletteSlot != PALSLOT_PLAYER)
+        return; // not a player sprite: the game's own palette handling applies
+    if (gPlayerAvatar.objectEventId < OBJECT_EVENTS_COUNT && gObjectEvents[gPlayerAvatar.objectEventId].active)
+        localTag = GetObjectEventGraphicsInfo(gObjectEvents[gPlayerAvatar.objectEventId].graphicsId)->paletteTag;
+    if (info->paletteTag == localTag)
+    {
+        sprite->oam.paletteNum = PALSLOT_PLAYER;
+        if (av->palTag != MP_PAL_NONE)
+            MpFreePalette(slot, av);
+        return;
+    }
+    index = IndexOfSpritePaletteTag(MP_AVATAR_PAL_TAG(slot));
+    if (index == 0xFF)
+    {
+        index = AllocSpritePalette(MP_AVATAR_PAL_TAG(slot));
+        av->palTag = MP_PAL_NONE; // fresh slot: must be filled
+    }
+    if (index == 0xFF)
+    {
+        // No free sprite palette: wrong colours, but never anyone else's palette touched.
+        sprite->oam.paletteNum = PALSLOT_PLAYER;
+        return;
+    }
+    if (av->palTag != info->paletteTag)
+    {
+        PatchObjectPalette(info->paletteTag, index);
+        UpdateSpritePaletteWithWeather(index);
+        av->palTag = info->paletteTag;
+    }
+    sprite->oam.paletteNum = index;
+}
+
 // In view = inside the rectangle RemoveObjectEventsOutsideView keeps (map coords with offset).
 static bool8 MpInView(s16 x, s16 y)
 {
@@ -167,14 +234,48 @@ static bool8 MpInView(s16 x, s16 y)
     return x >= left && x <= right && y >= top && y <= bottom;
 }
 
-static bool8 MpOnLayout(s16 x, s16 y)
-{
-    return x >= 0 && y >= 0 && x < gMapHeader.mapLayout->width && y < gMapHeader.mapLayout->height;
-}
-
 static u8 MpElevationAt(s16 x, s16 y)
 {
     return MapGridGetElevationAt(x + MAP_OFFSET, y + MAP_OFFSET);
+}
+
+// PS-032: `in` translated into the current map's frame in `out` (map set to the current map).
+// FALSE if the player is on a denied map or on a map that is neither the current one nor
+// directly connected to it.
+static bool8 MpTranslate(const struct MpPresence *in, struct MpPresence *out)
+{
+    u8 curGroup = (u8)gSaveBlock1Ptr->location.mapGroup;
+    u8 curNum = (u8)gSaveBlock1Ptr->location.mapNum;
+    const struct MapConnections *connections = gMapHeader.connections;
+    s32 i;
+
+    if (in->busy == MP_BUSY_NOT_IN_FIELD || !MP_IsValidMap(in->mapGroup, in->mapNum)
+     || MpAvatar_IsMapDenied(in->mapGroup, in->mapNum))
+        return FALSE;
+    *out = *in;
+    out->mapGroup = curGroup;
+    out->mapNum = curNum;
+    if (in->mapGroup == curGroup && in->mapNum == curNum)
+        return TRUE;
+    if (connections == NULL || connections->connections == NULL)
+        return FALSE;
+    for (i = 0; i < connections->count && i < 16; i++)
+    {
+        const struct MapConnection *c = &connections->connections[i];
+        const struct MapHeader *header;
+
+        if (c->mapGroup != in->mapGroup || c->mapNum != in->mapNum)
+            continue;
+        header = GetMapHeaderFromConnection(c);
+        if (header == NULL || header->mapLayout == NULL)
+            continue;
+        if (MpAvatar_TranslateConnection(c->direction, (s32)c->offset,
+                                         gMapHeader.mapLayout->width, gMapHeader.mapLayout->height,
+                                         header->mapLayout->width, header->mapLayout->height,
+                                         in->x, in->y, &out->x, &out->y))
+            return TRUE;
+    }
+    return FALSE;
 }
 
 // Unhidden NPC templates near the view that are not spawned yet: they may claim a slot soon.
@@ -251,6 +352,11 @@ static void MpDrainQueue(u8 slot)
     MP_ClearPresenceOverflow(slot);
 }
 
+static u8 MpFacingOf(const struct MpPresence *p)
+{
+    return (p->facing >= DIR_SOUTH && p->facing <= DIR_EAST) ? p->facing : DIR_SOUTH;
+}
+
 // ---------------------------------------------------------------------------
 // Spawn / despawn / snap
 // ---------------------------------------------------------------------------
@@ -260,6 +366,7 @@ static void MpDespawn(u8 slot, struct MpAvatar *av, const char *why)
     if (av->spawned && MpAvatarObjectValid(slot, av))
     {
         MpDestroyBlob(av);
+        MpFreePalette(slot, av);
         RemoveObjectEventById(av->objectEventId);
         MP_DLOG("avatar slot %u removed (%s)\n", (unsigned)slot, why);
     }
@@ -274,12 +381,12 @@ static void MpSnap(struct MpAvatar *av, const struct MpPresence *to)
     MoveObjectEventToMapCoords(obj, to->x + MAP_OFFSET, to->y + MAP_OFFSET);
     obj->currentElevation = elevation;
     obj->previousElevation = elevation;
-    ObjectEventTurn(obj, (to->facing >= DIR_SOUTH && to->facing <= DIR_EAST) ? to->facing : DIR_SOUTH);
+    ObjectEventTurn(obj, MpFacingOf(to));
     av->hasPending = FALSE;
     av->lastStepId = to->stepId;
 }
 
-static void MpSetAvatarState(struct MpAvatar *av, u8 avatarState)
+static void MpSetAvatarState(u8 slot, struct MpAvatar *av, u8 avatarState)
 {
     struct ObjectEvent *obj = &gObjectEvents[av->objectEventId];
 
@@ -295,11 +402,12 @@ static void MpSetAvatarState(struct MpAvatar *av, u8 avatarState)
         MpCreateBlob(av);
     else
         MpDestroyBlob(av);
+    MpEnsurePalette(slot, av);
 }
 
-static bool8 MpSpawn(u8 slot, struct MpAvatar *av, const struct MpPlayer *player)
+// `p` is the player's latest presence, already translated into the current map's frame.
+static bool8 MpSpawn(u8 slot, struct MpAvatar *av, const struct MpPlayer *player, const struct MpPresence *p)
 {
-    const struct MpPresence *p = &player->presence;
     struct ObjectEventTemplate template;
     u8 avatarState = (p->avatarState < MP_AVATAR_STATE_COUNT) ? p->avatarState : MP_AVATAR_ON_FOOT;
     u8 id;
@@ -328,10 +436,10 @@ static bool8 MpSpawn(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
     av->gender = player->summary.gender;
     av->avatarState = avatarState;
     av->lastStepId = p->stepId;
-    ObjectEventTurn(&gObjectEvents[id], (p->facing >= DIR_SOUTH && p->facing <= DIR_EAST) ? p->facing : DIR_SOUTH);
-    MpSetAvatarState(av, avatarState);
+    ObjectEventTurn(&gObjectEvents[id], MpFacingOf(p));
+    MpSetAvatarState(slot, av, avatarState);
     MpDrainQueue(slot); // it starts at the latest position
-    MP_DLOG("avatar slot %u spawned as object %u at (%d,%d) map %u.%u\n", (unsigned)slot, (unsigned)id,
+    MP_DLOG("avatar slot %u spawned as object %u at (%d,%d) on map %u.%u\n", (unsigned)slot, (unsigned)id,
             (int)p->x, (int)p->y, (unsigned)av->mapGroup, (unsigned)av->mapNum);
     return TRUE;
 }
@@ -340,20 +448,22 @@ static bool8 MpSpawn(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
 // Replay
 // ---------------------------------------------------------------------------
 
-static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player)
+// `latest` is the player's latest presence translated into the current map's frame.
+static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player, const struct MpPresence *latest)
 {
     struct ObjectEvent *obj = &gObjectEvents[av->objectEventId];
     s16 x = obj->currentCoords.x - MAP_OFFSET;
     s16 y = obj->currentCoords.y - MAP_OFFSET;
+    struct MpPresence raw;
     u8 plan, action;
     u32 guard;
 
-    if (player->presenceOverflow || MpAvatar_IsTooFarBehind(x, y, &player->presence))
+    if (player->presenceOverflow || MpAvatar_IsTooFarBehind(x, y, latest))
     {
         MpDrainQueue(slot);
-        MpSnap(av, &player->presence);
-        MpSetAvatarState(av, player->presence.avatarState);
-        MP_DLOG("avatar slot %u snapped to (%d,%d)\n", (unsigned)slot, (int)player->presence.x, (int)player->presence.y);
+        MpSnap(av, latest);
+        MpSetAvatarState(slot, av, latest->avatarState);
+        MP_DLOG("avatar slot %u snapped to (%d,%d)\n", (unsigned)slot, (int)latest->x, (int)latest->y);
         return;
     }
     if (obj->frozen)
@@ -369,16 +479,15 @@ static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
     {
         if (!av->hasPending)
         {
-            if (!MP_PopRemotePresence(slot, &av->pending))
+            if (!MP_PopRemotePresence(slot, &raw))
                 return;
+            // Queued on a map that is not visible from here (before / after a visit
+            // elsewhere): not replayable, skip it.
+            if (!MpTranslate(&raw, &av->pending))
+                continue;
             av->hasPending = TRUE;
         }
-        if (av->pending.mapGroup != av->mapGroup || av->pending.mapNum != av->mapNum)
-        {
-            av->hasPending = FALSE; // queued before / after a visit elsewhere: not replayable here
-            continue;
-        }
-        MpSetAvatarState(av, av->pending.avatarState);
+        MpSetAvatarState(slot, av, av->pending.avatarState);
         plan = MpAvatar_Plan(x, y, obj->facingDirection, &av->pending, av->pending.stepId != av->lastStepId, &action);
         if (plan == MP_AVATAR_PLAN_SNAP)
         {
@@ -418,13 +527,15 @@ static void MpOnFieldEntry(void)
             MpAvatarResetState(av);
             continue;
         }
-        // Return from battle / menu: the sprite was re-created, the surf blob was not
-        // (unless the sprite system survived, which MpBlobValid detects).
+        // Return from battle / menu: the sprite was re-created (with the player palette
+        // slot), the surf blob and our sprite palette were not, unless the sprite system
+        // survived, which MpBlobValid / IndexOfSpritePaletteTag detect.
         if (!MpBlobValid(av->blobSpriteId, av->objectEventId))
             av->blobSpriteId = MP_BLOB_NONE;
+        if (IndexOfSpritePaletteTag(MP_AVATAR_PAL_TAG(i)) == 0xFF)
+            av->palTag = MP_PAL_NONE;
         av->hasPending = FALSE;
-        if (av->avatarState == MP_AVATAR_SURFING)
-            MpCreateBlob(av);
+        MpSetAvatarState((u8)i, av, av->avatarState);
     }
 
     if (!gMpDebugLogging)
@@ -460,7 +571,9 @@ static void MpOnFieldEntry(void)
 
 void MP_UpdateRemoteAvatars(void)
 {
-    u8 mapGroup, mapNum, budget, spawned, slot;
+    struct MpPresence latest[MP_MAX_PLAYERS];
+    bool8 visible[MP_MAX_PLAYERS];
+    u8 budget, spawned, slot;
     bool8 allowed, scriptRunning;
     s32 i;
 
@@ -475,6 +588,8 @@ void MP_UpdateRemoteAvatars(void)
         sFieldLastTick = TRUE;
         MpOnFieldEntry();
     }
+    if (sEvictCooldown != 0)
+        sEvictCooldown--;
 
     allowed = MP_IsActive() && MpAvatarsAllowedHere();
     if (!allowed)
@@ -488,40 +603,40 @@ void MP_UpdateRemoteAvatars(void)
         }
         return;
     }
-
-    mapGroup = (u8)gSaveBlock1Ptr->location.mapGroup;
-    mapNum = (u8)gSaveBlock1Ptr->location.mapNum;
     scriptRunning = ArePlayerFieldControlsLocked();
 
-    // 1. Drop avatars whose player is gone, re-joined (new epoch), elsewhere or unplaceable,
-    //    and forget the ones the game removed (walked out of view).
+    // Where every remote player is, seen from the current map (PS-032: same or connected).
+    for (slot = 0; slot < MP_MAX_PLAYERS; slot++)
+    {
+        const struct MpPlayer *player = MP_GetPlayer(slot);
+
+        visible[slot] = player != NULL && !player->isLocal && player->hasPresence
+                     && MpTranslate(&player->presence, &latest[slot]);
+    }
+
+    // 1. Drop avatars whose player is gone, re-joined (new epoch) or no longer visible from
+    //    here, and forget the ones the game removed (walked out of view).
     for (slot = 0; slot < MP_MAX_PLAYERS; slot++)
     {
         struct MpAvatar *av = &sAvatars[slot];
         const struct MpPlayer *player = MP_GetPlayer(slot);
-        const struct MpPresence *p;
 
         if (!av->spawned)
             continue;
         if (!MpAvatarObjectValid(slot, av))
         {
-            MpDestroyBlob(av); // the blob would otherwise follow whatever reuses the slot
+            MpDestroyBlob(av); // normally already done by MP_OnObjectEventRemoved
+            MpFreePalette(slot, av);
             MpAvatarResetState(av);
             MP_DLOG("avatar slot %u was removed by the game (out of view)\n", (unsigned)slot);
             continue;
         }
         if (player == NULL || player->isLocal)
-        {
             MpDespawn(slot, av, "player left");
-            continue;
-        }
-        p = &player->presence;
-        if (player->epoch != av->epoch)
+        else if (player->epoch != av->epoch)
             MpDespawn(slot, av, "slot reassigned");
-        else if (!player->hasPresence || p->mapGroup != mapGroup || p->mapNum != mapNum || p->busy == MP_BUSY_NOT_IN_FIELD)
-            MpDespawn(slot, av, "player left this map");
-        else if (!MpOnLayout(p->x, p->y))
-            MpDespawn(slot, av, "outside the map layout");
+        else if (!visible[slot])
+            MpDespawn(slot, av, "player not on this or a connected map");
     }
 
     // 2. Budget: shrink first (highest slots go first), never touch NPCs.
@@ -541,27 +656,26 @@ void MP_UpdateRemoteAvatars(void)
     {
         struct MpAvatar *av = &sAvatars[slot];
         const struct MpPlayer *player = MP_GetPlayer(slot);
-        const struct MpPresence *p;
 
         if (player == NULL || player->isLocal)
             continue;
-        p = &player->presence;
-        if (!player->hasPresence || p->mapGroup != mapGroup || p->mapNum != mapNum
-         || p->busy == MP_BUSY_NOT_IN_FIELD || !MpOnLayout(p->x, p->y))
+        if (!visible[slot])
         {
             MpDrainQueue(slot); // not shown here: keep the queue from overflowing
             continue;
         }
         if (!av->spawned)
         {
-            if (spawned < budget && !scriptRunning && MpInView(p->x + MAP_OFFSET, p->y + MAP_OFFSET)
-             && MpSpawn(slot, av, player))
+            if (spawned < budget && !scriptRunning && sEvictCooldown == 0
+             && MpInView(latest[slot].x + MAP_OFFSET, latest[slot].y + MAP_OFFSET)
+             && MpSpawn(slot, av, player, &latest[slot]))
                 spawned++;
             else
                 MpDrainQueue(slot);
             continue;
         }
-        MpReplay(slot, av, player);
+        MpReplay(slot, av, player, &latest[slot]);
+        MpEnsurePalette(slot, av); // the local player may have changed palette (e.g. underwater)
     }
 }
 
@@ -577,7 +691,10 @@ void MP_RemoveRemoteAvatars(void)
 
         // Outside the field another screen owns the sprites: never destroy one there.
         if (inField && av->spawned && MpAvatarObjectValid((u8)i, av))
+        {
             MpDestroyBlob(av);
+            MpFreePalette((u8)i, av);
+        }
         MpAvatarResetState(av);
     }
     // Every object event with an avatar localId, tracked or not.
@@ -595,5 +712,52 @@ void MP_RemoveRemoteAvatars(void)
         obj->mapNum = MAP_NUM(MAP_UNDEFINED);
         obj->mapGroup = MAP_GROUP(MAP_UNDEFINED);
         obj->movementActionId = MOVEMENT_ACTION_NONE;
+    }
+}
+
+bool8 MP_EvictRemoteAvatarForGame(void)
+{
+    s32 i;
+
+    MpAvatarsInit();
+    for (i = MP_MAX_PLAYERS - 1; i >= 0; i--)
+    {
+        struct MpAvatar *av = &sAvatars[i];
+
+        if (!av->spawned || !MpAvatarObjectValid((u8)i, av))
+            continue;
+        if (MpInField())
+        {
+            MpDespawn((u8)i, av, "the game needed the object slot");
+        }
+        else
+        {
+            gObjectEvents[av->objectEventId].active = FALSE;
+            MpAvatarResetState(av);
+        }
+        sEvictCooldown = MP_EVICT_COOLDOWN_TICKS;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// MP: called from RemoveObjectEvent (event_object_movement.c) for avatar localIds, before the
+// object's sprite is destroyed: whoever removes an avatar (us, or RemoveObjectEventsOutsideView),
+// its surf blob and palette go in the same frame, so the blob never follows a reused slot.
+void MP_OnObjectEventRemoved(u8 objectEventId)
+{
+    u32 i;
+
+    MpAvatarsInit();
+    for (i = 0; i < MP_MAX_PLAYERS; i++)
+    {
+        struct MpAvatar *av = &sAvatars[i];
+
+        if (!av->spawned || av->objectEventId != objectEventId)
+            continue;
+        MpDestroyBlob(av);
+        if (MpInField())
+            MpFreePalette((u8)i, av);
+        MpAvatarResetState(av);
     }
 }

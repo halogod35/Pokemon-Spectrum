@@ -1293,7 +1293,15 @@ static u8 InitObjectEventStateFromTemplate(const struct ObjectEventTemplate *tem
     s16 y;
 
     if (GetAvailableObjectEventId(template->localId, mapNum, mapGroup, &objectEventId))
-        return OBJECT_EVENTS_COUNT;
+    {
+        // MP: PS-032. The game always wins an object slot over a remote avatar: if every slot
+        // is taken, free one avatar and retry (a script's addobject, an NPC entering view).
+        if (GetFirstInactiveObjectEventId() < OBJECT_EVENTS_COUNT
+         || MP_IsRemoteAvatarLocalId(template->localId)
+         || !MP_EvictRemoteAvatarForGame()
+         || GetAvailableObjectEventId(template->localId, mapNum, mapGroup, &objectEventId))
+            return OBJECT_EVENTS_COUNT;
+    }
     objectEvent = &gObjectEvents[objectEventId];
     ClearObjectEvent(objectEvent);
     x = template->x + MAP_OFFSET;
@@ -1383,6 +1391,10 @@ static bool8 GetAvailableObjectEventId(u16 localId, u8 mapNum, u8 mapGroup, u8 *
 
 static void RemoveObjectEvent(struct ObjectEvent *objectEvent)
 {
+    // MP: PS-032. A remote avatar's surf blob and palette go in the same frame, whoever
+    // removes it (e.g. RemoveObjectEventsOutsideView), so the blob never follows a reused slot.
+    if (MP_IsRemoteAvatarLocalId(objectEvent->localId) && !objectEvent->isPlayer)
+        MP_OnObjectEventRemoved((u8)(objectEvent - gObjectEvents));
     objectEvent->active = FALSE;
     RemoveObjectEventInternal(objectEvent);
 }
@@ -1442,7 +1454,10 @@ static u8 TrySetupObjectEventSprite(const struct ObjectEventTemplate *objectEven
     paletteSlot = graphicsInfo->paletteSlot;
     if (paletteSlot == PALSLOT_PLAYER)
     {
-        LoadPlayerObjectReflectionPalette(graphicsInfo->paletteTag, paletteSlot);
+        // MP: PS-032. A remote avatar must not repaint the local player's palette slot
+        // (a May avatar would recolour Brendan); mp_avatars.c gives it its own palette.
+        if (!MP_IsRemoteAvatarLocalId(objectEvent->localId))
+            LoadPlayerObjectReflectionPalette(graphicsInfo->paletteTag, paletteSlot);
     }
     else if (paletteSlot == PALSLOT_NPC_SPECIAL)
     {
@@ -1762,7 +1777,9 @@ static void SpawnObjectEventOnReturnToField(u8 objectEventId, s16 x, s16 y)
     paletteSlot = graphicsInfo->paletteSlot;
     if (paletteSlot == PALSLOT_PLAYER)
     {
-        LoadPlayerObjectReflectionPalette(graphicsInfo->paletteTag, graphicsInfo->paletteSlot);
+        // MP: PS-032. See TrySetupObjectEventSprite: never repaint the player slot for an avatar.
+        if (!MP_IsRemoteAvatarLocalId(objectEvent->localId))
+            LoadPlayerObjectReflectionPalette(graphicsInfo->paletteTag, graphicsInfo->paletteSlot);
     }
     else if (paletteSlot == PALSLOT_NPC_SPECIAL)
     {
@@ -1837,7 +1854,9 @@ void ObjectEventSetGraphicsId(struct ObjectEvent *objectEvent, u8 graphicsId)
     paletteSlot = graphicsInfo->paletteSlot;
     if (paletteSlot == PALSLOT_PLAYER)
     {
-        PatchObjectPalette(graphicsInfo->paletteTag, graphicsInfo->paletteSlot);
+        // MP: PS-032. See TrySetupObjectEventSprite: never repaint the player slot for an avatar.
+        if (!MP_IsRemoteAvatarLocalId(objectEvent->localId))
+            PatchObjectPalette(graphicsInfo->paletteTag, graphicsInfo->paletteSlot);
     }
     else if (paletteSlot == PALSLOT_NPC_SPECIAL)
     {
@@ -7450,6 +7469,13 @@ static void GetGroundEffectFlags_Reflection(struct ObjectEvent *objEvent, u32 *f
     };
     u8 reflType = ObjectEventGetNearbyReflectionType(objEvent);
 
+    // MP: PS-032. Remote avatars have no reflection: the reflection palette setup assumes the
+    // player's palette slots and would repaint the local player's (an avatar may use its own).
+    if (MP_IsRemoteAvatarLocalId(objEvent->localId))
+    {
+        objEvent->hasReflection = FALSE;
+        return;
+    }
     if (reflType)
     {
         if (objEvent->hasReflection == 0)
