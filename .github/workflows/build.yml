@@ -67,6 +67,25 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: timeout 60 ./pokeemerald${{ matrix.bits }} --save-selftest
 
+      # BUG-002: boot smoke test. Runs the real game (no flags, fresh save) for 40 s under gdb with
+      # dummy SDL drivers: boot, copyright screen, intro, title. A crash prints a backtrace and
+      # fails the job. A clean timeout (the game is still running) passes.
+      - name: Boot smoke test
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          sudo apt-get install -y -qq gdb > /dev/null
+          rm -f ci_boot.sav
+          set +e
+          timeout -s INT 40 gdb -q -batch -ex "handle SIGINT stop" -ex run -ex bt -ex "info registers rip" --args ./pokeemerald${{ matrix.bits }} --save ci_boot.sav 2>&1 | tee boot.log
+          set -e
+          if grep -qE "SIGSEGV|SIGABRT|SIGBUS|SIGFPE|SIGILL|exited with code [0-9]|exited normally" boot.log; then
+            echo "::error::game crashed or quit during boot (see log above)"
+            exit 1
+          fi
+          echo "boot smoke test: still running after 40 s, OK"
+
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
