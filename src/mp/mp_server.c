@@ -221,7 +221,8 @@ static void MpServerHandleHello(u8 peer, const struct MpMsgHeader *hdr, const u8
     MpServerEntryForSlot(slot, &entry);
     outLen = MpProto_WritePlayerEntry(sServerBuf, sizeof(sServerBuf), MP_MSG_PLAYER_JOINED, &entry);
     MpServerBroadcast(sServerBuf, outLen, MP_CHANNEL_CONTROL, TRUE, peer);
-    // PS-030: send the cached PRESENCE of every other player to the new client here.
+    // protocol.md 6.1 step 8.3: the cached PRESENCE of every other player (host included).
+    MpPresence_SendCachedTo(peer, slot);
 
     MP_NameToAscii(hello.summary.name, name, sizeof(name));
     MP_SLOG("player %s joined: slot %u, epoch %u, peer %u%s\n", name, (unsigned)slot,
@@ -325,7 +326,10 @@ static void MpServerHandlePlayerMessage(u8 peer, u8 channel, const struct MpMsgH
             gMpSession->players[p->slot].pingMs = (u16)rtt;
         break;
     case MP_MSG_PRESENCE:
-        // PS-030 implements presence; until then it is ignored (not malformed).
+        if (channel != MP_CHANNEL_PRESENCE)
+            MpServerMalformed(peer, "PRESENCE wrong channel");
+        else if (MpPresence_OnHostReceive(peer, payload, len, now) == MP_PRESENCE_INVALID)
+            MpServerMalformed(peer, "PRESENCE");
         break;
     default:
         MpServerMalformed(peer, "unexpected message type");

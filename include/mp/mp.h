@@ -314,12 +314,22 @@ bool8 MP_PollEvent(struct MpEvent *out);
 // Presence (PS-030 capture hook / PS-031 avatars)
 // ---------------------------------------------------------------------------
 
+#define MP_PRESENCE_QUEUE_SIZE   8       // Per-slot FIFO of accepted remote presence updates.
+
+// MP: hook, once per game tick at the end of MainLoop()'s callbacks (src/main.c).
+// Reads (never writes) the local player state: gSaveBlock1Ptr->location, the player
+// object event, gPlayerAvatar.flags, gMain.callback2 / inBattle, the start menu task
+// and the field-controls lock, and passes the result to MP_SetLocalPresence().
+// Implemented in src/mp/mp_presence_capture.c. Cheap; does nothing to the game (AD-1).
+void MP_CaptureLocalPresence(void);
 // Called by the capture hook, typically once per game tick. Cheap: it only stores the
 // value (always, so the current presence can be sent the moment a session starts).
-// MP_Update() sends it while IN_SESSION when it differs from the last sent value
-// (at most 20 Hz) or as a 1 s keep-alive. A stepId change always forces a send as soon
-// as the 50 ms window allows; several steps inside one window merge into the newest
-// state, and receivers see the stepId gap.
+// Out-of-range fields are sanitised (invalid map -> MP_MAP_NONE / NOT_IN_FIELD, coords
+// clamped to -16..1023, bad facing -> DIR_SOUTH, bad enums -> 0), so what is sent always
+// passes the receiver's checks. MP_Update() sends it while IN_SESSION when it differs from
+// the last sent value (at most 20 Hz) or as a 1 s keep-alive. A stepId change always
+// forces a send as soon as the 50 ms window allows; several steps inside one window merge
+// into the newest state, and receivers see the stepId gap.
 void MP_SetLocalPresence(const struct MpPresence *presence);
 // Pops the next accepted presence update for a remote slot, in arrival order
 // (per-slot FIFO of 8; on overflow the oldest is dropped and presenceOverflow is set).
@@ -327,5 +337,11 @@ void MP_SetLocalPresence(const struct MpPresence *presence);
 bool8 MP_PopRemotePresence(u8 slot, struct MpPresence *out);
 // Clears MpPlayer.presenceOverflow for `slot` after the consumer has snapped.
 void MP_ClearPresenceOverflow(u8 slot);
+// TRUE if (mapGroup, mapNum) names a map of this build: mapGroup < MAP_GROUPS_COUNT and
+// mapNum < the number of maps in that group (a constant table built from the last map id of
+// each group in the generated constants/map_groups.h, checked at compile time against
+// MAP_GROUPS_COUNT). Pure. Never index gMapGroups or call
+// Get_MapHeader() with values from the network without this check.
+bool8 MP_IsValidMap(u8 mapGroup, u8 mapNum);
 
 #endif // GUARD_MP_MP_H

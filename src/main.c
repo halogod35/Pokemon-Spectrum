@@ -24,6 +24,7 @@
 #include "main.h"
 #include "trainer_hill.h"
 #include "platform.h"
+#include "mp/mp.h" // MP:
 #include "constants/rgb.h"
 
 static void VBlankIntr(void);
@@ -123,6 +124,8 @@ void MainLoop()
             gLinkTransferringData = FALSE;
         }
     }
+
+    MP_CaptureLocalPresence(); // MP: PS-030 presence capture, once per game tick (read only)
 
     PlayTimeCounter_Update();
     MapMusicMain();

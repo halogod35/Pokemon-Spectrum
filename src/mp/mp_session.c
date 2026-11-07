@@ -44,6 +44,7 @@ void MpSession_ResetInstance(u8 instance)
     memset(&sSessions[instance], 0, sizeof(sSessions[instance]));
     sSessions[instance].instance = instance;
     sSessions[instance].localSlot = MP_SLOT_NONE;
+    MpPresence_ResetLocal(instance);
 }
 
 u8 MpSession_DebugHostPeerCount(void)
@@ -136,8 +137,10 @@ void MpSession_SetSlot(u8 slot, u8 epoch, const struct MpPlayerSummary *summary,
     p->summary = *summary;
     p->presence.mapGroup = MP_MAP_NONE;
     p->presence.mapNum = MP_MAP_NONE;
+    p->presence.facing = DIR_SOUTH;
     p->presence.busy = MP_BUSY_NOT_IN_FIELD;
     gMpSession->slotUsed[slot] = TRUE;
+    MpPresence_ResetSlot(slot);
 }
 
 void MpSession_ClearSlot(u8 slot)
@@ -147,6 +150,7 @@ void MpSession_ClearSlot(u8 slot)
     memset(&gMpSession->players[slot], 0, sizeof(gMpSession->players[slot]));
     gMpSession->slotUsed[slot] = FALSE;
     gMpSession->slotPeer[slot] = MP_PEER_NONE;
+    MpPresence_ResetSlot(slot);
 }
 
 static void MpClearTable(void)
@@ -339,6 +343,11 @@ void MP_Update(void)
         MpServer_Update(now);
     else
         MpClient_Update(now);
+    if (s->state == MP_STATE_IN_SESSION && MpTransport_IsOpen())
+    {
+        MpPresence_Update(now);
+        MpPresence_DebugReport(now);
+    }
 
     if (MpTransport_IsOpen())
         MpTransport_Flush();
@@ -633,34 +642,3 @@ void MP_OnNewGame(void)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Presence (PS-030 implements the real thing; until then local presence is stored
-// and nothing is sent or received).
-// ---------------------------------------------------------------------------
-
-void MP_SetLocalPresence(const struct MpPresence *presence)
-{
-    struct MpSession *s = gMpSession;
-
-    if (presence == NULL)
-        return;
-    if (s->state == MP_STATE_IN_SESSION && s->localSlot < MP_MAX_PLAYERS && s->slotUsed[s->localSlot])
-    {
-        s->players[s->localSlot].presence = *presence;
-        s->players[s->localSlot].hasPresence = TRUE;
-    }
-}
-
-bool8 MP_PopRemotePresence(u8 slot, struct MpPresence *out)
-{
-    (void)slot;
-    if (out != NULL)
-        memset(out, 0, sizeof(*out));
-    return FALSE;
-}
-
-void MP_ClearPresenceOverflow(u8 slot)
-{
-    if (slot < MP_MAX_PLAYERS)
-        gMpSession->players[slot].presenceOverflow = 0;
-}

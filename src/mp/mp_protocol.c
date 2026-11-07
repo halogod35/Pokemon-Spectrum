@@ -385,3 +385,90 @@ u16 MpProto_WritePing(u8 *buf, u16 cap, u8 type, const struct MpMsgPing *msg)
     MpWriteU32(&w, msg->timeMs);
     return MpFinishWrite(&w);
 }
+
+// ---------------------------------------------------------------------------
+// PRESENCE (protocol.md 6.8, PS-030)
+// ---------------------------------------------------------------------------
+
+u8 MpProto_ParsePresence(const u8 *payload, u32 len, struct MpMsgPresence *out)
+{
+    struct MpReader r;
+    struct MpPresence *p = &out->presence;
+    u8 result;
+
+    memset(out, 0, sizeof(*out));
+    result = MpCheckExactSize(payload, len, MP_PRESENCE_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+    MpReader_Init(&r, payload, len);
+    out->slot = MpReadU8(&r);
+    out->epoch = MpReadU8(&r);
+    p->seq = MpReadU16(&r);
+    p->mapGroup = MpReadU8(&r);
+    p->mapNum = MpReadU8(&r);
+    p->x = MpReadS16(&r);
+    p->y = MpReadS16(&r);
+    p->facing = MpReadU8(&r);
+    p->movement = MpReadU8(&r);
+    p->avatarState = MpReadU8(&r);
+    p->busy = MpReadU8(&r);
+    p->stepId = MpReadU8(&r);
+    MpReadU8(&r); // presenceFlags: reserved, ignored
+    p->presenceFlags = 0;
+    if (r.error)
+        goto truncated;
+
+    if (out->slot >= MP_MAX_PLAYERS || out->epoch == 0)
+        goto bad_field;
+    if (p->avatarState >= MP_AVATAR_STATE_COUNT || p->busy >= MP_BUSY_COUNT)
+        goto bad_field;
+    if (p->mapGroup == MP_MAP_NONE || p->mapNum == MP_MAP_NONE)
+    {
+        // Map rule: both or neither. Not in the field: position fields are ignored.
+        if (p->mapGroup != p->mapNum || p->busy != MP_BUSY_NOT_IN_FIELD)
+            goto bad_field;
+        p->x = 0;
+        p->y = 0;
+        p->facing = DIR_SOUTH;
+        p->movement = MP_MOVE_NONE;
+        return MP_PARSE_OK;
+    }
+    if (!MP_IsValidMap(p->mapGroup, p->mapNum))
+        goto bad_field;
+    if (p->x < MP_PRESENCE_COORD_MIN || p->x > MP_PRESENCE_COORD_MAX
+     || p->y < MP_PRESENCE_COORD_MIN || p->y > MP_PRESENCE_COORD_MAX)
+        goto bad_field;
+    if (p->facing < DIR_SOUTH || p->facing > DIR_EAST || p->movement >= MP_MOVE_COUNT)
+        goto bad_field;
+    return MP_PARSE_OK;
+
+truncated:
+    memset(out, 0, sizeof(*out));
+    return MP_PARSE_ERR_TRUNCATED;
+bad_field:
+    memset(out, 0, sizeof(*out));
+    return MP_PARSE_ERR_BAD_FIELD;
+}
+
+u16 MpProto_WritePresence(u8 *buf, u16 cap, const struct MpMsgPresence *msg)
+{
+    struct MpWriter w;
+    const struct MpPresence *p = &msg->presence;
+
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_PRESENCE, MP_PROTOCOL_VERSION, MP_PRESENCE_SIZE);
+    MpWriteU8(&w, msg->slot);
+    MpWriteU8(&w, msg->epoch);
+    MpWriteU16(&w, p->seq);
+    MpWriteU8(&w, p->mapGroup);
+    MpWriteU8(&w, p->mapNum);
+    MpWriteS16(&w, p->x);
+    MpWriteS16(&w, p->y);
+    MpWriteU8(&w, p->facing);
+    MpWriteU8(&w, p->movement);
+    MpWriteU8(&w, p->avatarState);
+    MpWriteU8(&w, p->busy);
+    MpWriteU8(&w, p->stepId);
+    MpWriteU8(&w, 0); // presenceFlags: reserved
+    return MpFinishWrite(&w);
+}
