@@ -282,6 +282,28 @@ bool8 MpAvatar_IsMapDenied(u8 mapGroup, u8 mapNum)
     return FALSE;
 }
 
+void MpAvatar_StepCoords(u8 dir, s16 x, s16 y, s16 tiles, s16 *outX, s16 *outY)
+{
+    switch (dir)
+    {
+    case DIR_SOUTH: y = (s16)(y + tiles); break;
+    case DIR_NORTH: y = (s16)(y - tiles); break;
+    case DIR_WEST:  x = (s16)(x - tiles); break;
+    case DIR_EAST:  x = (s16)(x + tiles); break;
+    }
+    *outX = x;
+    *outY = y;
+}
+
+u8 MpAvatar_DoorTransition(u8 dir, bool8 fromIsDoor, bool8 destIsDoor)
+{
+    if (dir == DIR_NORTH && destIsDoor && !fromIsDoor)
+        return MP_AVATAR_DOOR_ENTER;
+    if (dir == DIR_SOUTH && fromIsDoor && !destIsDoor)
+        return MP_AVATAR_DOOR_EXIT;
+    return MP_AVATAR_DOOR_NONE;
+}
+
 u32 MpAvatar_DeniedMapCount(void)
 {
     return sizeof(sDeniedMaps) / sizeof(sDeniedMaps[0]);

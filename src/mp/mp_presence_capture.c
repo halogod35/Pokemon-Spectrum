@@ -33,6 +33,7 @@
 #include "task.h"
 #include "constants/event_object_movement.h"
 #include "mp/mp.h"
+#include "mp/mp_avatar.h" // MpAvatar_StepCoords (pure)
 
 #define MP_IDLE_TICKS 2
 
@@ -41,6 +42,9 @@ static bool8 sFieldLastTick;        // the previous tick was a captured overworl
 static struct MpPresence sCapture;  // last value built (and passed on)
 static u8 sIdleTicks;
 static u8 sLastActionId;
+static bool8 sJumpActive;           // PS-036: a ledge jump is in progress, report its landing tile
+static s16 sJumpLandX;
+static s16 sJumpLandY;
 
 // TRUE if `action` is in the 4-direction block starting at `firstDown` (DOWN, UP, LEFT, RIGHT).
 static bool8 MpActionIn(u8 action, u8 firstDown)
@@ -109,6 +113,28 @@ static bool8 MpCaptureField(struct MpPresence *p)
         facing = DIR_SOUTH;
     action = player->movementActionId;
     moving = player->heldMovementActive && !player->heldMovementFinished;
+
+    // PS-036: a ledge jump (JUMP_2_*) moves currentCoords twice: one tile when it starts
+    // (InitJump) and one at the halfway point (UpdateJumpAnim). Reported tile by tile that was
+    // two 1-tile WALKs, so receivers walked across the ledge. Report the landing tile for the
+    // whole jump instead: one 2-tile step = MP_MOVE_JUMP below.
+    if (moving && MpActionIn(action, MOVEMENT_ACTION_JUMP_2_DOWN))
+    {
+        if (!sJumpActive && (x != p->x || y != p->y))
+        {
+            sJumpActive = TRUE; // the first shift has happened: land one more tile ahead
+            MpAvatar_StepCoords((u8)(action - MOVEMENT_ACTION_JUMP_2_DOWN + DIR_SOUTH), x, y, 1, &sJumpLandX, &sJumpLandY);
+        }
+        if (sJumpActive)
+        {
+            x = sJumpLandX;
+            y = sJumpLandY;
+        }
+    }
+    else
+    {
+        sJumpActive = FALSE;
+    }
 
     if (!sSeenField || !sFieldLastTick || mapGroup != p->mapGroup || mapNum != p->mapNum)
     {

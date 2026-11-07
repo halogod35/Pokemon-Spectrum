@@ -40,7 +40,9 @@
 #include "field_effect_helpers.h"
 #include "field_player_avatar.h"
 #include "field_weather.h"
+#include "field_door.h"
 #include "fieldmap.h"
+#include "metatile_behavior.h"
 #include "main.h"
 #include "overworld.h"
 #include "script.h"
@@ -75,10 +77,26 @@ struct MpAvatar
     u8 lastStepId;          // stepId of the last update the avatar finished
     bool8 hasPending;
     u16 palTag;             // object palette tag loaded into our own sprite palette, MP_PAL_NONE if none
+    u8 doorState;           // PS-036: MP_AVATAR_DOOR_* of the step in progress
     struct MpPresence pending;  // already translated into the current map's frame
 };
 
+// PS-036: a door this module opened for an avatar (local cosmetics only: the door animation
+// draws BG tiles, it never changes the map). Kept apart from MpAvatar so a door still gets
+// closed after its avatar is gone.
+struct MpDoor
+{
+    bool8 open;
+    bool8 closeRequested;
+    u8 waitTicks;
+    s16 x;                  // map coordinates with MAP_OFFSET (what FieldAnimateDoor* take)
+    s16 y;
+};
+
+#define MP_DOOR_CLOSE_TIMEOUT 60    // ticks to wait for another door animation before forcing closed
+
 static struct MpAvatar sAvatars[MP_MAX_PLAYERS];
+static struct MpDoor sDoors[MP_MAX_PLAYERS];
 static bool8 sAvatarsInit;
 static bool8 sFieldLastTick;
 static u8 sEvictCooldown;
@@ -358,6 +376,127 @@ static u8 MpFacingOf(const struct MpPresence *p)
 }
 
 // ---------------------------------------------------------------------------
+// PS-036: doors (local cosmetics)
+// ---------------------------------------------------------------------------
+
+// Map-local tile (x, y) is an animated warp door.
+static bool8 MpIsWarpDoorAt(s16 x, s16 y)
+{
+    return MetatileBehavior_IsWarpDoor(MapGridGetMetatileBehaviorAt(x + MAP_OFFSET, y + MAP_OFFSET));
+}
+
+// The local player stands on the door tile or right below it: they may be using that door
+// themselves (their own door warp / exit animates it), so leave it alone.
+static bool8 MpLocalPlayerAtDoor(s16 doorX, s16 doorY)
+{
+    const struct ObjectEvent *player;
+
+    if (gPlayerAvatar.objectEventId >= OBJECT_EVENTS_COUNT)
+        return TRUE;
+    player = &gObjectEvents[gPlayerAvatar.objectEventId];
+    return player->currentCoords.x == doorX && (player->currentCoords.y == doorY || player->currentCoords.y == doorY + 1);
+}
+
+static void MpDoorOpen(u8 slot, s16 x, s16 y)
+{
+    struct MpDoor *door = &sDoors[slot];
+    s16 mx = x + MAP_OFFSET, my = y + MAP_OFFSET;
+
+    if (door->open && door->x == mx && door->y == my)
+    {
+        door->closeRequested = FALSE; // reuse the open door
+        return;
+    }
+    // Only one door animation can run at a time (field_door.c). Never start one while
+    // another runs or at a door the local player is at, so the local player's own door
+    // warp always gets its animation and is never delayed by ours.
+    if (door->open || FieldIsDoorAnimationRunning() || MpLocalPlayerAtDoor(mx, my))
+        return;
+    if (FieldAnimateDoorOpen(mx, my) < 0)
+        return;
+    door->open = TRUE;
+    door->closeRequested = FALSE;
+    door->waitTicks = 0;
+    door->x = mx;
+    door->y = my;
+}
+
+static void MpDoorRequestClose(u8 slot)
+{
+    if (sDoors[slot].open)
+    {
+        sDoors[slot].closeRequested = TRUE;
+        sDoors[slot].waitTicks = 0;
+    }
+}
+
+static void MpDoorsUpdate(void)
+{
+    u32 i;
+
+    for (i = 0; i < MP_MAX_PLAYERS; i++)
+    {
+        struct MpDoor *door = &sDoors[i];
+
+        if (!door->open || !door->closeRequested)
+            continue;
+        if (MpLocalPlayerAtDoor(door->x, door->y))
+        {
+            door->open = FALSE; // the local player's own door sequence draws it from here
+            continue;
+        }
+        if (!FieldIsDoorAnimationRunning())
+        {
+            if (FieldAnimateDoorClose(door->x, door->y) < 0)
+                FieldSetDoorClosed(door->x, door->y);
+            door->open = FALSE;
+        }
+        else if (++door->waitTicks >= MP_DOOR_CLOSE_TIMEOUT)
+        {
+            FieldSetDoorClosed(door->x, door->y);
+            door->open = FALSE;
+        }
+    }
+}
+
+// Called before an avatar starts a 1-tile step from (x, y) to (destX, destY).
+static void MpDoorBeforeStep(u8 slot, struct MpAvatar *av, s16 x, s16 y, s16 destX, s16 destY)
+{
+    struct ObjectEvent *obj = &gObjectEvents[av->objectEventId];
+    u8 dir = MpAvatar_DirectionOf((s16)(destX - x), (s16)(destY - y));
+
+    av->doorState = MpAvatar_DoorTransition(dir, MpIsWarpDoorAt(x, y), MpIsWarpDoorAt(destX, destY));
+    if (av->doorState == MP_AVATAR_DOOR_ENTER)
+    {
+        MpDoorOpen(slot, destX, destY);
+    }
+    else if (av->doorState == MP_AVATAR_DOOR_EXIT)
+    {
+        obj->invisible = FALSE;
+        MpDoorOpen(slot, x, y);
+    }
+    else if (obj->invisible && !MpIsWarpDoorAt(destX, destY))
+    {
+        obj->invisible = FALSE; // left a door some other way
+    }
+}
+
+// Called when the avatar's step has finished.
+static void MpDoorAfterStep(u8 slot, struct MpAvatar *av)
+{
+    if (av->doorState == MP_AVATAR_DOOR_ENTER)
+    {
+        gObjectEvents[av->objectEventId].invisible = TRUE; // went inside; the warp follows
+        MpDoorRequestClose(slot);
+    }
+    else if (av->doorState == MP_AVATAR_DOOR_EXIT)
+    {
+        MpDoorRequestClose(slot);
+    }
+    av->doorState = MP_AVATAR_DOOR_NONE;
+}
+
+// ---------------------------------------------------------------------------
 // Spawn / despawn / snap
 // ---------------------------------------------------------------------------
 
@@ -370,6 +509,7 @@ static void MpDespawn(u8 slot, struct MpAvatar *av, const char *why)
         RemoveObjectEventById(av->objectEventId);
         MP_DLOG("avatar slot %u removed (%s)\n", (unsigned)slot, why);
     }
+    MpDoorRequestClose(slot); // a door opened for it must not stay drawn open
     MpAvatarResetState(av);
 }
 
@@ -382,6 +522,10 @@ static void MpSnap(struct MpAvatar *av, const struct MpPresence *to)
     obj->currentElevation = elevation;
     obj->previousElevation = elevation;
     ObjectEventTurn(obj, MpFacingOf(to));
+    // PS-036: a player standing on a door tile is mid door-transition (just arrived, or just
+    // walked in): hidden on their own screen, so hidden here too until they step off.
+    obj->invisible = MpIsWarpDoorAt(to->x, to->y);
+    av->doorState = MP_AVATAR_DOOR_NONE;
     av->hasPending = FALSE;
     av->lastStepId = to->stepId;
 }
@@ -437,6 +581,7 @@ static bool8 MpSpawn(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
     av->avatarState = avatarState;
     av->lastStepId = p->stepId;
     ObjectEventTurn(&gObjectEvents[id], MpFacingOf(p));
+    gObjectEvents[id].invisible = MpIsWarpDoorAt(p->x, p->y); // PS-036: arriving through a door
     MpSetAvatarState(slot, av, avatarState);
     MpDrainQueue(slot); // it starts at the latest position
     MP_DLOG("avatar slot %u spawned as object %u at (%d,%d) on map %u.%u\n", (unsigned)slot, (unsigned)id,
@@ -473,6 +618,7 @@ static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
         if (!obj->heldMovementFinished)
             return; // still stepping
         ObjectEventClearHeldMovement(obj);
+        MpDoorAfterStep(slot, av); // PS-036: hide inside a door / close it behind
     }
 
     for (guard = 0; guard < MP_PRESENCE_QUEUE_SIZE + 1; guard++)
@@ -497,6 +643,16 @@ static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
         if (plan == MP_AVATAR_PLAN_ACTION)
         {
             av->lastStepId = av->pending.stepId;
+            // PS-036: a 1-tile step (not a turn, hop or ledge jump) may go through a door.
+            if ((av->pending.x != x || av->pending.y != y)
+             && !(action >= MOVEMENT_ACTION_JUMP_2_DOWN && action < MOVEMENT_ACTION_JUMP_2_DOWN + 4))
+            {
+                s16 destX, destY;
+
+                MpAvatar_StepCoords(MpAvatar_DirectionOf((s16)(av->pending.x - x), (s16)(av->pending.y - y)),
+                                    x, y, 1, &destX, &destY);
+                MpDoorBeforeStep(slot, av, x, y, destX, destY);
+            }
             ObjectEventSetHeldMovement(obj, action);
             return;
         }
@@ -515,6 +671,9 @@ static void MpOnFieldEntry(void)
     u32 i;
     u8 objects = 0, avatars = 0, tasks = 0, sprites = 0;
 
+    // PS-036: every field entry redraws the map view from the map grid (doors closed), so
+    // no door of ours is still drawn open.
+    memset(sDoors, 0, sizeof(sDoors));
     for (i = 0; i < MP_MAX_PLAYERS; i++)
     {
         struct MpAvatar *av = &sAvatars[i];
@@ -588,6 +747,7 @@ void MP_UpdateRemoteAvatars(void)
         sFieldLastTick = TRUE;
         MpOnFieldEntry();
     }
+    MpDoorsUpdate(); // PS-036: pending door closes, also after the avatars are gone
     if (sEvictCooldown != 0)
         sEvictCooldown--;
 
@@ -695,6 +855,8 @@ void MP_RemoveRemoteAvatars(void)
             MpDestroyBlob(av);
             MpFreePalette((u8)i, av);
         }
+        if (inField)
+            MpDoorRequestClose((u8)i); // closed on the next field tick
         MpAvatarResetState(av);
     }
     // Every object event with an avatar localId, tracked or not.
@@ -757,7 +919,10 @@ void MP_OnObjectEventRemoved(u8 objectEventId)
             continue;
         MpDestroyBlob(av);
         if (MpInField())
+        {
             MpFreePalette((u8)i, av);
+            MpDoorRequestClose((u8)i);
+        }
         MpAvatarResetState(av);
     }
 }
