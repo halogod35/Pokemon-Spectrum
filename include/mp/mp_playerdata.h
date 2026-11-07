@@ -22,4 +22,9 @@ void MpPlayerData_ToTrainerCard(const struct MpTrainerCard *in, struct TrainerCa
 // The caller has already faded the screen out and cleaned up the overworld windows.
 void MpPlayerData_ShowTrainerCard(const struct MpTrainerCard *card, void (*callback)(void));
 
+// PS-043: shows `count` (1..6) validated raw mons in the summary screen, read only
+// (SUMMARY_MODE_LOCK_MOVES), from a private static copy (never gPlayerParty / gEnemyParty).
+// Up/Down switches between them, B returns to `callback`. count 0 goes straight to `callback`.
+void MpPlayerData_ShowParty(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE], u8 count, void (*callback)(void));
+
 #endif // GUARD_MP_MP_PLAYERDATA_H

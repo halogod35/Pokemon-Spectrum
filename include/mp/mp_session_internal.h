@@ -130,6 +130,11 @@ struct MpInteractRx
     bool8 complete;         // ACCEPTED with valid data: MP_GetViewed* may return it
     bool8 hasCard;
     struct MpTrainerCard card;
+    // PS-043 VIEW_PARTY: the parts received so far (in order), every mon already validated.
+    u8 partyCount;
+    u8 partsReceived;
+    u8 monsReceived;
+    u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE];
 };
 
 struct MpInteractState
@@ -254,6 +259,9 @@ void MpInteract_Update(u32 now);
 // (the save) by default; the selftest points it at fixtures. Called on the main thread at
 // the moment the request arrives.
 extern void (*gMpLocalTrainerCardFunc)(struct MpTrainerCard *out);
+// PS-043: where the target's session gets the party it sends after ACCEPTED. MP_BuildLocalParty
+// (gPlayerParty, read only) by default; the selftest points it at fixtures. Returns the count.
+extern u8 (*gMpLocalPartyFunc)(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE]);
 
 #define MP_SLOG(fmt, ...) MP_LOG("%s" fmt, MpSession_Tag(), ##__VA_ARGS__)
 #define MP_SDLOG(fmt, ...) MP_DLOG("%s" fmt, MpSession_Tag(), ##__VA_ARGS__)

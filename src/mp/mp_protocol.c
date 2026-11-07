@@ -675,3 +675,68 @@ u16 MpProto_WriteTrainerCardData(u8 *buf, u16 cap, const struct MpMsgTrainerCard
     MpWriteBytes(&w, c->name, MP_PLAYER_NAME_SIZE);
     return MpFinishWrite(&w);
 }
+
+// ---------------------------------------------------------------------------
+// PARTY_DATA (PS-043, protocol.md 6.13)
+// ---------------------------------------------------------------------------
+
+u8 MpProto_ParsePartyData(const u8 *payload, u32 len, struct MpMsgPartyData *out)
+{
+    u32 expected;
+    u8 partyCount, partIndex, monCount, wantCount;
+    u32 i;
+
+    memset(out, 0, sizeof(*out));
+    if (payload == NULL || len < MP_PARTY_DATA_PREFIX_SIZE)
+        return MP_PARSE_ERR_TRUNCATED;
+    if (len > MP_PARTY_DATA_SIZE(MP_PARTY_MONS_PER_PART))
+        return MP_PARSE_ERR_OVERSIZED;
+    partyCount = payload[4];        // payload[3] and [7] are reserved
+    partIndex = payload[5];
+    monCount = payload[6];
+    if (payload[0] >= MP_MAX_PLAYERS || payload[1] == 0)
+        return MP_PARSE_ERR_BAD_FIELD;
+    if (partyCount > PARTY_SIZE || partIndex >= MP_PARTY_PART_COUNT(partyCount))
+        return MP_PARSE_ERR_BAD_FIELD;
+    wantCount = partyCount - partIndex * MP_PARTY_MONS_PER_PART;
+    if (wantCount > MP_PARTY_MONS_PER_PART)
+        wantCount = MP_PARTY_MONS_PER_PART;
+    if (monCount != wantCount)
+        return MP_PARSE_ERR_BAD_FIELD;
+    expected = MP_PARTY_DATA_SIZE(monCount);
+    if (len < expected)
+        return MP_PARSE_ERR_TRUNCATED;
+    if (len > expected)
+        return MP_PARSE_ERR_OVERSIZED;
+
+    out->slot = payload[0];
+    out->epoch = payload[1];
+    out->requestId = payload[2];
+    out->partyCount = partyCount;
+    out->partIndex = partIndex;
+    out->monCount = monCount;
+    for (i = 0; i < monCount; i++) // monCount <= 3, len checked above: fixed-size copies
+        memcpy(out->mons[i], &payload[MP_PARTY_DATA_PREFIX_SIZE + i * MP_MON_WIRE_SIZE], MP_MON_WIRE_SIZE);
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WritePartyData(u8 *buf, u16 cap, const struct MpMsgPartyData *msg)
+{
+    struct MpWriter w;
+    u8 monCount = (msg->monCount > MP_PARTY_MONS_PER_PART) ? MP_PARTY_MONS_PER_PART : msg->monCount;
+    u32 i;
+
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_PARTY_DATA, MP_PROTOCOL_VERSION, MP_PARTY_DATA_SIZE(monCount));
+    MpWriteU8(&w, msg->slot);
+    MpWriteU8(&w, msg->epoch);
+    MpWriteU8(&w, msg->requestId);
+    MpWriteU8(&w, 0);
+    MpWriteU8(&w, msg->partyCount);
+    MpWriteU8(&w, msg->partIndex);
+    MpWriteU8(&w, monCount);
+    MpWriteU8(&w, 0);
+    for (i = 0; i < monCount; i++)
+        MpWriteBytes(&w, msg->mons[i], MP_MON_WIRE_SIZE);
+    return MpFinishWrite(&w);
+}

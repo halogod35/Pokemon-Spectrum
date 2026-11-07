@@ -336,6 +336,7 @@ static void MpServerHandlePlayerMessage(u8 peer, u8 channel, const struct MpMsgH
     case MP_MSG_INTERACT_RESPONSE:
     case MP_MSG_INTERACT_CANCEL:
     case MP_MSG_TRAINER_CARD_DATA:  // PS-042 (protocol.md 6.12)
+    case MP_MSG_PARTY_DATA:         // PS-043 (protocol.md 6.13)
         if (channel != MP_CHANNEL_CONTROL)
             MpServerMalformed(peer, "INTERACT wrong channel");
         else if (!MpInteract_OnHostReceive(peer, hdr->type, payload, len, now))

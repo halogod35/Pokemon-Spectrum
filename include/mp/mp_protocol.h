@@ -39,6 +39,9 @@
 // PS-042 (protocol.md 6.12), channel 0, reliable: the data that comes with an ACCEPTED
 // TRAINER_CARD request, sent just before the RESPONSE and routed like it.
 #define MP_MSG_TRAINER_CARD_DATA    0x43    // target -> host -> requester
+// PS-043 (protocol.md 6.13): the party that comes with an ACCEPTED VIEW_PARTY request, in
+// 1..2 parts of up to 3 raw mons each, sent just before the RESPONSE and routed like it.
+#define MP_MSG_PARTY_DATA           0x44    // target -> host -> requester
 #define MP_MSG_DEBUG_ECHO       0xF0    // --mp-selftest only
 
 #define MP_DEBUG_ECHO_MAX_PAYLOAD 64
@@ -55,6 +58,13 @@
 #define MP_PRESENCE_SIZE        16
 #define MP_INTERACT_SIZE        8       // all three INTERACT_* messages
 #define MP_TRAINER_CARD_DATA_SIZE 56    // PS-042: 4-byte routing prefix + 52-byte card
+// PS-043 PARTY_DATA: 8-byte prefix + monCount * 100. A whole party (601 bytes with a count)
+// does not fit in one 512-byte packet, so it is split into parts of up to 3 mons (312 bytes).
+#define MP_PARTY_DATA_PREFIX_SIZE   8
+#define MP_PARTY_MONS_PER_PART      3
+#define MP_PARTY_MAX_PARTS          2
+#define MP_PARTY_DATA_SIZE(n)       (MP_PARTY_DATA_PREFIX_SIZE + MP_MON_WIRE_SIZE * (n))
+#define MP_PARTY_PART_COUNT(count)  ((count) == 0 ? 1 : ((count) + MP_PARTY_MONS_PER_PART - 1) / MP_PARTY_MONS_PER_PART)
 
 // Display limits of the trainer card screen (protocol.md 6.12). The parser clamps to them.
 #define MP_CARD_MAX_HOURS       999
@@ -179,6 +189,19 @@ struct MpMsgTrainerCardData
     struct MpTrainerCard card;
 };
 
+// PARTY_DATA (PS-043), routed like TRAINER_CARD_DATA. Part `partIndex` carries the party's mons
+// partIndex*3 .. partIndex*3 + monCount - 1, as raw struct Pokemon bytes.
+struct MpMsgPartyData
+{
+    u8 slot;
+    u8 epoch;
+    u8 requestId;
+    u8 partyCount;      // 0..PARTY_SIZE, the same in every part
+    u8 partIndex;       // 0..MP_PARTY_PART_COUNT(partyCount) - 1
+    u8 monCount;        // min(3, partyCount - partIndex * 3)
+    u8 mons[MP_PARTY_MONS_PER_PART][MP_MON_WIRE_SIZE];
+};
+
 // Header: 4 <= len <= MP_MAX_PACKET_SIZE and length == len - 4. Type/version/state
 // are not checked here.
 bool8 MpProto_ParseHeader(const u8 *buf, u32 len, struct MpMsgHeader *out);
@@ -212,6 +235,12 @@ u8 MpProto_ParseInteract(u8 type, const u8 *payload, u32 len, struct MpMsgIntera
 // clamped to the MP_CARD_MAX_* limits, easy chat words outside a valid group become
 // EC_EMPTY_WORD, reserved bytes and flag bits are ignored.
 u8 MpProto_ParseTrainerCardData(const u8 *payload, u32 len, struct MpMsgTrainerCardData *out);
+// PARTY_DATA (PS-043, protocol.md 6.13): the layout only. len >= 8; slot < 4; epoch != 0;
+// partyCount <= 6; partIndex < MP_PARTY_PART_COUNT(partyCount); monCount exactly
+// min(3, partyCount - partIndex * 3); len == 8 + 100 * monCount (TRUNCATED / OVERSIZED
+// otherwise). The mons are copied as they are: the receiver checks each one with
+// MP_ValidateMon (game code, so not part of this pure parser).
+u8 MpProto_ParsePartyData(const u8 *payload, u32 len, struct MpMsgPartyData *out);
 
 // `headerVersion` is the version byte written in the HELLO header (low 8 bits of the
 // advertised protocol version, so --mp-fake-protocol reaches the header too).
@@ -233,6 +262,9 @@ u16 MpProto_WriteInteract(u8 *buf, u16 cap, u8 type, const struct MpMsgInteract 
 // Writes the fields as given (reserved bytes 0). The sender builds the card with
 // MP_BuildLocalTrainerCard, so what it writes always passes the parser unchanged.
 u16 MpProto_WriteTrainerCardData(u8 *buf, u16 cap, const struct MpMsgTrainerCardData *msg);
+// Writes msg->monCount (clamped to 3) mons; reserved bytes 0. The caller fills the fields
+// consistently (MpInteract does), so what it writes passes the parser.
+u16 MpProto_WritePartyData(u8 *buf, u16 cap, const struct MpMsgPartyData *msg);
 
 // RFC 1982 serial-number "newer than" for u16 sequence numbers (protocol.md 6.8).
 bool8 MpSeqIsNewer(u16 s, u16 last);

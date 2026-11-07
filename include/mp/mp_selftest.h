@@ -21,12 +21,17 @@ u32 MpSelftest_Avatar(void);
 // PS-041: INTERACT_* parser fuzzing and an in-process host + 2 clients scenario (request ->
 // accept / decline, busy, timeout, cancel, rate limit, other map, malformed, requester leaving).
 u32 MpSelftest_Interact(void);
-// PS-042: TRAINER_CARD_DATA parser fuzzing, the game-side card checks
-// (MpPlayerData_SelfTest), and an in-process host + 2 clients scenario (client <-> client,
-// client <-> host, card while the target has a prompt, tampered card, requester leaving).
+// PS-042 / PS-043: TRAINER_CARD_DATA and PARTY_DATA parser fuzzing, the game-side checks
+// (MpPlayerData_SelfTest), and an in-process host + 2 clients scenario (cards and parties
+// client <-> client and client <-> host, consent / deny, tampered card and mon, empty party,
+// requester leaving mid-transfer).
 u32 MpSelftest_View(void);
-// PS-042 (src/mp/mp_playerdata.c): builds a card from in-memory test save blocks (the save is
-// left untouched, the result passes the parser) and checks the conversion to struct TrainerCard.
+// PS-042 / PS-043 (src/mp/mp_playerdata.c): builds a card from in-memory test save blocks (the
+// save is left untouched, the result passes the parser), checks the conversion to struct
+// TrainerCard, MP_ValidateMon (targeted fields, every bit flip, garbage) and MP_BuildLocalParty.
 u32 MpPlayerData_SelfTest(void);
+// PS-043 selftest helper (mp_playerdata.c): a valid raw mon (MP_MON_WIRE_SIZE bytes) made by
+// CreateMon with a fixed personality, IVs and OT, without touching the real save.
+void MpPlayerData_MakeTestMon(u8 *raw, u16 species, u8 level, u32 personality);
 
 #endif // GUARD_MP_MP_SELFTEST_H

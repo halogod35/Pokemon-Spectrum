@@ -10,8 +10,11 @@
 //     ACCEPTED with a valid card the screen fades out and trainer_card.c's link-partner mode
 //     shows it (A flips, B closes); it returns to the field through CB2_ReturnToField with
 //     FieldCB_ReturnToFieldNoScript, which unlocks controls and unfreezes the NPCs.
-//   - POKEMON: "That isn't available yet." (PS-043 plugs in at MpInteractUi_OpenPokemon),
-//     then back to the menu.
+//   - POKEMON (PS-043): a VIEW_PARTY request; the other player is asked to allow it. On
+//     ACCEPTED with a valid party the screen fades out and the summary screen shows their
+//     mons read only (SUMMARY_MODE_LOCK_MOVES, from a private copy; Up/Down switches, B
+//     returns to the field the same way as the trainer card). An empty party only shows a
+//     message.
 //   - TRADE / BATTLE: MP_SendInteractRequest, "Waiting for NAME... (B) CANCEL", then the
 //     outcome (accepted / declined / busy / timed out / unavailable). On ACCEPTED, for now
 //     "Trading/Battling isn't available yet." (PS-044 / PS-045 plug in at MpInteractUi_OnAccepted).
@@ -118,6 +121,9 @@ static EWRAM_DATA u8 sText[MP_INTERACT_UI_TEXT_SIZE] = {0};
 // cannot vanish (player leaving, session ending) between the fade and the card screen.
 // Never written to the save (AD-10).
 static EWRAM_DATA struct MpTrainerCard sViewCard = {0};
+// PS-043: the received party (validated raw mons), copied out the same way.
+static EWRAM_DATA u8 sViewParty[PARTY_SIZE][MP_MON_WIRE_SIZE] = {0};
+static EWRAM_DATA u8 sViewPartyCount = 0;
 
 static void Task_MpInteractMenu(u8 taskId);
 static void Task_MpIncomingPrompt(u8 taskId);
@@ -156,20 +162,16 @@ static void UnfreezeAfterUi(void)
 // Plug-in points for later cards
 // ---------------------------------------------------------------------------
 
-// PS-043 replaces this. It returns the message to show.
-static const u8 *MpInteractUi_OpenPokemon(u8 slot)
-{
-    return gText_MpNotAvailableYet;
-}
-
-// PS-042: copies the data of an ACCEPTED view request out of the session. FALSE if there is
-// none (then nothing will be shown).
+// PS-042 / PS-043: copies the data of an ACCEPTED view request out of the session. FALSE if
+// there is none (then nothing will be shown).
 static bool8 MpInteractUi_TakeViewData(u8 kind, u8 slot)
 {
     bool8 ok = FALSE;
 
     if (kind == MP_INTERACT_TRAINER_CARD)
         ok = MP_GetViewedTrainerCard(slot, &sViewCard);
+    else if (kind == MP_INTERACT_VIEW_PARTY)
+        ok = MP_GetViewedParty(slot, &sViewPartyCount, sViewParty);
     MP_ClearViewedData();
     return ok;
 }
@@ -182,13 +184,29 @@ static void MpInteractUi_OpenView(u8 kind)
     gFieldCallback = FieldCB_ReturnToFieldNoScript;
     if (kind == MP_INTERACT_TRAINER_CARD)
         MpPlayerData_ShowTrainerCard(&sViewCard, CB2_ReturnToField);
+    else if (kind == MP_INTERACT_VIEW_PARTY)
+        MpPlayerData_ShowParty(sViewParty, sViewPartyCount, CB2_ReturnToField); // count 0: straight back
     else
         SetMainCallback2(CB2_ReturnToField); // nothing to show: straight back (cannot happen)
 }
 
 static bool8 IsViewKind(u8 kind)
 {
-    return kind == MP_INTERACT_TRAINER_CARD;
+    return kind == MP_INTERACT_TRAINER_CARD || kind == MP_INTERACT_VIEW_PARTY;
+}
+
+// Target side: the question for a request of `kind`.
+static const u8 *IncomingText(u8 kind)
+{
+    switch (kind)
+    {
+    case MP_INTERACT_BATTLE:
+        return gText_MpIncomingBattle;
+    case MP_INTERACT_VIEW_PARTY:
+        return gText_MpIncomingViewParty;
+    default:
+        return gText_MpIncomingTrade;
+    }
 }
 
 // PS-044 / PS-045: both sides agreed. Returns the message shown after "NAME accepted!" on the
@@ -290,14 +308,14 @@ static void HandleMenuInput(u8 taskId)
     RemoveMenuWindow();
     switch (choice)
     {
-    case MENU_ITEM_POKEMON:
-        ShowMenuMessage(taskId, MpInteractUi_OpenPokemon(sMenuSlot), MENU_STATE_MESSAGE_REOPEN);
-        break;
     case MENU_ITEM_TRAINER_CARD:    // PS-042: no prompt on their side, the card comes back at once
+    case MENU_ITEM_POKEMON:         // PS-043: they are asked to allow it
     case MENU_ITEM_TRADE:
     case MENU_ITEM_BATTLE:
         if (choice == MENU_ITEM_TRAINER_CARD)
             sMenuKind = MP_INTERACT_TRAINER_CARD;
+        else if (choice == MENU_ITEM_POKEMON)
+            sMenuKind = MP_INTERACT_VIEW_PARTY;
         else
             sMenuKind = (choice == MENU_ITEM_TRADE) ? MP_INTERACT_TRADE : MP_INTERACT_BATTLE;
         sMenuResult = MP_INTERACT_RESULT_NONE;
@@ -322,6 +340,11 @@ static void ShowResult(u8 taskId)
             if (!MpInteractUi_TakeViewData(sMenuKind, sMenuSlot))
             {
                 ShowMenuMessage(taskId, gText_MpViewBadData, MENU_STATE_MESSAGE_CLOSE);
+                break;
+            }
+            if (sMenuKind == MP_INTERACT_VIEW_PARTY && sViewPartyCount == 0)
+            {
+                ShowMenuMessage(taskId, gText_MpViewNoPokemon, MENU_STATE_MESSAGE_CLOSE); // PS-043
                 break;
             }
             HideFieldMessageBox();
@@ -508,7 +531,13 @@ static void Task_MpIncomingPrompt(u8 taskId)
         break;
     case PROMPT_STATE_YES_NO:
         choice = Menu_ProcessInputNoWrapClearOnChoose();
-        if (choice == 0)
+        if (choice == 0 && sIncomingKind == MP_INTERACT_VIEW_PARTY)
+        {
+            // PS-043: our session sends the party with the answer; nothing more to say.
+            MP_RespondInteract(MP_INTERACT_RESULT_ACCEPTED);
+            ClosePrompt(taskId);
+        }
+        else if (choice == 0)
         {
             MP_RespondInteract(MP_INTERACT_RESULT_ACCEPTED);
             tState = PROMPT_STATE_MESSAGE;
@@ -552,7 +581,7 @@ bool8 MpInteractUi_TryShowIncoming(void)
     sIncomingWithdrawn = 0;
     FreezeForUi();
     LockPlayerFieldControls();
-    ShowMessageWithName(sIncomingName, (sIncomingKind == MP_INTERACT_BATTLE) ? gText_MpIncomingBattle : gText_MpIncomingTrade);
+    ShowMessageWithName(sIncomingName, IncomingText(sIncomingKind));
     CreateTask(Task_MpIncomingPrompt, 80);
     return TRUE;
 }

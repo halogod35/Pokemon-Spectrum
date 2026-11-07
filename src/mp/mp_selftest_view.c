@@ -22,6 +22,7 @@
 #include "constants/characters.h"
 #include "constants/easy_chat.h"
 #include "constants/maps.h"
+#include "constants/species.h"
 
 static u32 sFail;
 
@@ -290,6 +291,168 @@ static void TestCardParser(void)
 }
 
 // ===========================================================================
+// 1b. PARTY_DATA parser (PS-043)
+// ===========================================================================
+
+// Fills msg as the sender would for part `partIndex` of a party of `count` mons, with
+// recognisable (not valid) mon bytes: the parser checks the layout only.
+static void FixturePartyMsg(struct MpMsgPartyData *m, u8 count, u8 partIndex)
+{
+    u32 i, j;
+    u8 monCount = count - partIndex * MP_PARTY_MONS_PER_PART;
+
+    if (monCount > MP_PARTY_MONS_PER_PART)
+        monCount = MP_PARTY_MONS_PER_PART;
+    memset(m, 0, sizeof(*m));
+    m->slot = 1;
+    m->epoch = 3;
+    m->requestId = 0x77;
+    m->partyCount = count;
+    m->partIndex = partIndex;
+    m->monCount = monCount;
+    for (i = 0; i < monCount; i++)
+        for (j = 0; j < MP_MON_WIRE_SIZE; j++)
+            m->mons[i][j] = (u8)(j * 7 + i * 31 + partIndex);
+}
+
+static bool8 SameParty(const struct MpMsgPartyData *a, const struct MpMsgPartyData *b)
+{
+    return a->slot == b->slot && a->epoch == b->epoch && a->requestId == b->requestId
+        && a->partyCount == b->partyCount && a->partIndex == b->partIndex && a->monCount == b->monCount
+        && memcmp(a->mons, b->mons, (u32)a->monCount * MP_MON_WIRE_SIZE) == 0;
+}
+
+static bool8 PartyInRange(const struct MpMsgPartyData *m, u32 len)
+{
+    u8 want;
+
+    if (m->slot >= MP_MAX_PLAYERS || m->epoch == 0 || m->partyCount > PARTY_SIZE
+     || m->partIndex >= MP_PARTY_PART_COUNT(m->partyCount))
+        return FALSE;
+    want = m->partyCount - m->partIndex * MP_PARTY_MONS_PER_PART;
+    if (want > MP_PARTY_MONS_PER_PART)
+        want = MP_PARTY_MONS_PER_PART;
+    return m->monCount == want && len == MP_PARTY_DATA_SIZE(m->monCount);
+}
+
+static void TestPartyParser(void)
+{
+    u8 buf[MP_MAX_PACKET_SIZE + 8];
+    u8 copy[MP_MAX_PACKET_SIZE + 8];
+    const u8 *payload = &buf[MP_HEADER_SIZE];
+    struct MpMsgPartyData in, out, out2;
+    struct MpMsgHeader hdr;
+    u32 failuresBefore = sFail;
+    u32 i, bit, n, size, okFlips;
+    u16 len;
+    u8 count, part, r1, r2;
+
+    // Round trip for every party size and part
+    for (count = 0; count <= PARTY_SIZE; count++)
+    {
+        for (part = 0; part < MP_PARTY_PART_COUNT(count); part++)
+        {
+            FixturePartyMsg(&in, count, part);
+            len = MpProto_WritePartyData(buf, MP_MAX_PACKET_SIZE, &in);
+            size = MP_PARTY_DATA_SIZE(in.monCount);
+            V_CHECK(len == MP_HEADER_SIZE + size, "PARTY write size");
+            V_CHECK(MpProto_ParseHeader(buf, len, &hdr) && hdr.type == MP_MSG_PARTY_DATA && hdr.length == size, "PARTY header");
+            V_CHECK(MpProto_ParsePartyData(payload, size, &out) == MP_PARSE_OK && SameParty(&in, &out), "PARTY round trip");
+            V_CHECK(MpProto_ParsePartyData(payload, size + 1, &out) == MP_PARSE_ERR_OVERSIZED, "PARTY +1");
+            if (size > 0)
+                V_CHECK(MpProto_ParsePartyData(payload, size - 1, &out) == MP_PARSE_ERR_TRUNCATED, "PARTY -1");
+        }
+    }
+    V_CHECK(MP_HEADER_SIZE + MP_PARTY_DATA_SIZE(MP_PARTY_MONS_PER_PART) <= MP_MAX_PACKET_SIZE, "a full part fits in one packet");
+
+    // The biggest part (second half of a full party): truncated, oversized, bit flips
+    FixturePartyMsg(&in, PARTY_SIZE, 1);
+    len = MpProto_WritePartyData(buf, MP_MAX_PACKET_SIZE, &in);
+    size = MP_PARTY_DATA_SIZE(MP_PARTY_MONS_PER_PART);
+    for (n = 0; n < size; n++)
+        V_CHECK(MpProto_ParsePartyData(payload, n, &out) == MP_PARSE_ERR_TRUNCATED, "PARTY truncated");
+    V_CHECK(MpProto_ParsePartyData(NULL, 0, &out) == MP_PARSE_ERR_TRUNCATED, "PARTY NULL");
+    memset(copy, 0, sizeof(copy));
+    memcpy(copy, payload, size);
+    V_CHECK(MpProto_ParsePartyData(copy, 512, &out) == MP_PARSE_ERR_OVERSIZED, "PARTY 512");
+    V_CHECK(MpProto_ParsePartyData(copy, 513, &out) == MP_PARSE_ERR_OVERSIZED, "PARTY 513");
+    V_CHECK(MpProto_WritePartyData(copy, (u16)(MP_HEADER_SIZE + size - 1), &in) == 0, "PARTY write into small buffer");
+    okFlips = 0;
+    for (i = 0; i < size; i++)
+    {
+        for (bit = 0; bit < 8; bit++)
+        {
+            memcpy(copy, payload, size);
+            copy[i] ^= (u8)(1 << bit);
+            r1 = MpProto_ParsePartyData(copy, size, &out);
+            r2 = MpProto_ParsePartyData(copy, size, &out2);
+            V_CHECK(r1 == r2 && (r1 != MP_PARSE_OK || SameParty(&out, &out2)), "PARTY bit flip deterministic");
+            if (r1 == MP_PARSE_OK)
+            {
+                okFlips++;
+                V_CHECK(PartyInRange(&out, size), "PARTY flip result in range");
+            }
+            else
+            {
+                V_CHECK(out.slot == 0 && out.epoch == 0 && out.monCount == 0, "PARTY error zeroes out");
+            }
+        }
+    }
+    V_CHECK(okFlips >= MP_PARTY_MONS_PER_PART * MP_MON_WIRE_SIZE * 8, "flips inside the mons parse (the receiver validates the mons)");
+
+    // Targeted cases (prefix: slot, epoch, requestId, reserved, partyCount, partIndex, monCount, reserved)
+    memcpy(copy, payload, size);
+    copy[4] = PARTY_SIZE + 1;
+    V_CHECK(MpProto_ParsePartyData(copy, size, &out) == MP_PARSE_ERR_BAD_FIELD, "PARTY count 7 rejected");
+    memcpy(copy, payload, size);
+    copy[5] = MP_PARTY_MAX_PARTS;
+    V_CHECK(MpProto_ParsePartyData(copy, size, &out) == MP_PARSE_ERR_BAD_FIELD, "PARTY part 2 rejected");
+    memcpy(copy, payload, size);
+    copy[4] = 3; // a party of 3 has one part only
+    V_CHECK(MpProto_ParsePartyData(copy, size, &out) == MP_PARSE_ERR_BAD_FIELD, "PARTY part 1 of a 1-part party rejected");
+    memcpy(copy, payload, size);
+    copy[6] = 2; // the second part of 6 must carry 3
+    V_CHECK(MpProto_ParsePartyData(copy, MP_PARTY_DATA_SIZE(2), &out) == MP_PARSE_ERR_BAD_FIELD, "PARTY wrong mon count rejected");
+    memcpy(copy, payload, size);
+    copy[0] = MP_MAX_PLAYERS;
+    V_CHECK(MpProto_ParsePartyData(copy, size, &out) == MP_PARSE_ERR_BAD_FIELD, "PARTY slot 4 rejected");
+    memcpy(copy, payload, size);
+    copy[1] = 0;
+    V_CHECK(MpProto_ParsePartyData(copy, size, &out) == MP_PARSE_ERR_BAD_FIELD, "PARTY epoch 0 rejected");
+    memcpy(copy, payload, size);
+    copy[3] = 0xFF; copy[7] = 0xFF;
+    V_CHECK(MpProto_ParsePartyData(copy, size, &out) == MP_PARSE_OK, "PARTY reserved bytes ignored");
+    FixturePartyMsg(&in, 0, 0);
+    len = MpProto_WritePartyData(buf, MP_MAX_PACKET_SIZE, &in);
+    V_CHECK(len == MP_HEADER_SIZE + MP_PARTY_DATA_PREFIX_SIZE && MpProto_ParsePartyData(payload, MP_PARTY_DATA_PREFIX_SIZE, &out) == MP_PARSE_OK
+         && out.partyCount == 0 && out.monCount == 0, "an empty party is one 8-byte part");
+
+    // Garbage
+    MP_LOG("selftest: view: party garbage seed 0x%08X\n", (unsigned)sRng);
+    for (i = 0; i < 100000; i++)
+    {
+        u32 glen = Rand() % 601;
+
+        if (glen > sizeof(copy))
+            glen = sizeof(copy);
+        for (n = 0; n < glen; n++)
+            copy[n] = (u8)Rand();
+        if ((i & 3) == 0 && glen >= MP_PARTY_DATA_PREFIX_SIZE)
+        {
+            // A plausible prefix, so the deeper checks run too.
+            copy[0] &= 3;
+            copy[1] |= 1;
+            copy[4] %= PARTY_SIZE + 2;
+            copy[5] &= 1;
+            copy[6] &= 3;
+        }
+        if (MpProto_ParsePartyData(copy, glen, &out) == MP_PARSE_OK)
+            V_CHECK(PartyInRange(&out, glen), "PARTY garbage accepted only when well formed");
+    }
+    Report("PARTY_DATA parser fuzzing", failuresBefore);
+}
+
+// ===========================================================================
 // 3. Host + 2 clients
 // ===========================================================================
 
@@ -304,6 +467,8 @@ static void TestCardParser(void)
 struct ViewSeen
 {
     u8 requests;
+    u8 requestSlot;
+    u8 requestKind;
     u8 results;
     u8 resultSlot;
     u8 resultKind;
@@ -318,6 +483,46 @@ static u8 sWaitSlot;
 static u8 sWaitCount;
 static u16 sWaitMap;
 static bool8 sTamperCard[INSTANCES];
+
+// PS-043 party fixtures: valid mons made by CreateMon (mp_playerdata.c), per instance.
+#define NO_TAMPER 0xFF
+static const u8 sFixturePartyCount[INSTANCES] = { PARTY_SIZE, 2, 4 }; // host: 2 parts, C1: 1, C2: 2
+static u8 sFixtureParty[INSTANCES][PARTY_SIZE][MP_MON_WIRE_SIZE];
+static u8 sTamperMon[INSTANCES];    // index of a mon to damage after building, or NO_TAMPER
+static bool8 sEmptyParty[INSTANCES];
+
+static void MakeFixtureParties(void)
+{
+    static const u16 sSpecies[PARTY_SIZE] = {
+        SPECIES_TREECKO, SPECIES_MUDKIP, SPECIES_ZIGZAGOON, SPECIES_WURMPLE, SPECIES_PIKACHU, SPECIES_RAYQUAZA,
+    };
+    u8 inst, i;
+
+    for (inst = 0; inst < INSTANCES; inst++)
+    {
+        for (i = 0; i < PARTY_SIZE; i++)
+            MpPlayerData_MakeTestMon(sFixtureParty[inst][i], sSpecies[(i + inst) % PARTY_SIZE], (u8)(5 + i * 10 + inst),
+                                     0x10000000u * (inst + 1) + 0x111u * (i + 1));
+        sTamperMon[inst] = NO_TAMPER;
+        sEmptyParty[inst] = FALSE;
+    }
+}
+
+// gMpLocalPartyFunc for the test: the party of whichever instance is selected.
+static u8 TestPartyProvider(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE])
+{
+    u8 instance = gMpSession->instance;
+    u8 count, i;
+
+    if (instance >= INSTANCES || sEmptyParty[instance])
+        return 0;
+    count = sFixturePartyCount[instance];
+    for (i = 0; i < count; i++)
+        memcpy(mons[i], sFixtureParty[instance][i], MP_MON_WIRE_SIZE);
+    if (sTamperMon[instance] < count)
+        mons[sTamperMon[instance]][40] ^= 0x10; // inside the encrypted substructs: checksum fails
+    return count;
+}
 
 // gMpLocalTrainerCardFunc for the test: the card of whichever instance is selected.
 static void TestCardProvider(struct MpTrainerCard *out)
@@ -351,6 +556,8 @@ static void PumpOnce(void)
             {
             case MP_EVENT_INTERACT_REQUEST:
                 s->requests++;
+                s->requestSlot = ev.slot;
+                s->requestKind = ev.kind;
                 break;
             case MP_EVENT_INTERACT_RESULT:
                 s->results++;
@@ -511,6 +718,146 @@ static void CheckViewedCard(u8 viewer, u8 target, u8 variant, const char *what)
     V_CHECK(!MP_GetViewedTrainerCard(target, &got), "MP_ClearViewedData forgets the card");
 }
 
+// PS-043: `requester` asks `target` (slot == instance here) to see its party; the target
+// answers `answer` once the prompt event arrived. Returns the requester's result.
+static u8 AskParty(u8 requester, u8 target, u8 answer)
+{
+    u8 resultsBefore = sSeen[requester].results;
+    u8 requestsBefore = sSeen[target].requests;
+
+    WaitGap();
+    Sel(requester);
+    if (!MP_SendInteractRequest(target, MP_INTERACT_VIEW_PARTY))
+        return 0xFF;
+    if (!Wait(CondRequests, target, requestsBefore + 1, 2000))
+        return 0xFD;
+    V_CHECK(sSeen[target].requestKind == MP_INTERACT_VIEW_PARTY && sSeen[target].requestSlot == requester,
+            "the target is asked to show its party");
+    Sel(target);
+    MP_RespondInteract(answer);
+    if (!Wait(CondResults, requester, resultsBefore + 1, 2000))
+        return 0xFE;
+    V_CHECK(sSeen[requester].resultKind == MP_INTERACT_VIEW_PARTY && sSeen[requester].resultSlot == target,
+            "the result names the target and VIEW_PARTY");
+    return sSeen[requester].result;
+}
+
+static void CheckViewedParty(u8 viewer, u8 target, const char *what)
+{
+    u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE];
+    u8 count = 0xFF, i;
+    bool8 same;
+
+    Sel(viewer);
+    same = MP_GetViewedParty(target, &count, mons) && count == sFixturePartyCount[target];
+    for (i = 0; same && i < count; i++)
+        same = memcmp(mons[i], sFixtureParty[target][i], MP_MON_WIRE_SIZE) == 0;
+    V_CHECK(same, what);
+    MP_ClearViewedData();
+    V_CHECK(!MP_GetViewedParty(target, &count, mons), "MP_ClearViewedData forgets the party");
+}
+
+static void TestPartyScenario(void)
+{
+    u32 failuresBefore;
+    u8 malformedBefore;
+    u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE];
+    u8 count;
+
+    // --- allow: client -> client (4 mons, 2 parts, relayed) ---
+    failuresBefore = sFail;
+    V_CHECK(AskParty(V_C1, 2, MP_INTERACT_RESULT_ACCEPTED) == MP_INTERACT_RESULT_ACCEPTED, "C1 sees C2's party");
+    CheckViewedParty(V_C1, 2, "C1 got C2's 4 mons exactly");
+    Report("party request -> allow -> data (client -> client)", failuresBefore);
+
+    // --- allow: the host is the target (6 mons, 2 parts sent by the host itself) ---
+    failuresBefore = sFail;
+    V_CHECK(AskParty(V_C2, MP_HOST_SLOT, MP_INTERACT_RESULT_ACCEPTED) == MP_INTERACT_RESULT_ACCEPTED, "C2 sees the host's party");
+    CheckViewedParty(V_C2, MP_HOST_SLOT, "C2 got the host's 6 mons exactly");
+    Report("party: the host shows its party", failuresBefore);
+
+    // --- allow: the host is the requester (2 mons, 1 part) ---
+    failuresBefore = sFail;
+    V_CHECK(AskParty(V_HOST, 1, MP_INTERACT_RESULT_ACCEPTED) == MP_INTERACT_RESULT_ACCEPTED, "the host sees C1's party");
+    CheckViewedParty(V_HOST, 1, "the host got C1's 2 mons exactly");
+    Report("party: the host asks", failuresBefore);
+
+    // --- deny ---
+    failuresBefore = sFail;
+    V_CHECK(AskParty(V_C1, 2, MP_INTERACT_RESULT_DECLINED) == MP_INTERACT_RESULT_DECLINED, "C2 says no");
+    Sel(V_C1);
+    V_CHECK(!MP_GetViewedParty(2, &count, mons), "nothing to show after a NO");
+    Report("party request -> deny", failuresBefore);
+
+    // --- a tampered mon rejects the whole party ---
+    failuresBefore = sFail;
+    malformedBefore = HostMalformedOf(2);
+    sTamperMon[V_C2] = 3; // in the second part
+    V_CHECK(AskParty(V_C1, 2, MP_INTERACT_RESULT_ACCEPTED) == MP_INTERACT_RESULT_BAD_DATA, "C1: a tampered mon gives BAD_DATA");
+    Sel(V_C1);
+    V_CHECK(!MP_GetViewedParty(2, &count, mons), "nothing of the tampered party is shown");
+    V_CHECK(HostMalformedOf(2) == malformedBefore, "the host relays a well-formed part without judging the mons");
+    sTamperMon[V_C2] = 0; // in the first part this time
+    V_CHECK(AskParty(V_C1, 2, MP_INTERACT_RESULT_ACCEPTED) == MP_INTERACT_RESULT_BAD_DATA, "C1: a tampered first mon gives BAD_DATA");
+    sTamperMon[V_C2] = NO_TAMPER;
+    Report("tampered mon rejected", failuresBefore);
+
+    // --- an empty party ---
+    failuresBefore = sFail;
+    sEmptyParty[V_C1] = TRUE;
+    V_CHECK(AskParty(V_HOST, 1, MP_INTERACT_RESULT_ACCEPTED) == MP_INTERACT_RESULT_ACCEPTED, "an empty party is accepted");
+    Sel(V_HOST);
+    V_CHECK(MP_GetViewedParty(1, &count, mons) && count == 0, "the host sees 0 mons");
+    MP_ClearViewedData();
+    sEmptyParty[V_C1] = FALSE;
+    Report("empty party", failuresBefore);
+
+    // --- malformed PARTY_DATA on the client receive path ---
+    failuresBefore = sFail;
+    {
+        u8 junk[MP_PARTY_DATA_SIZE(1)];
+
+        memset(junk, 0, sizeof(junk));
+        Sel(V_C1);
+        V_CHECK(!MpInteract_OnClientReceive(MP_MSG_PARTY_DATA, junk, sizeof(junk)), "client: zeroed part is malformed");
+        V_CHECK(!MpInteract_OnClientReceive(MP_MSG_PARTY_DATA, junk, 5), "client: short part is malformed");
+    }
+    Report("malformed PARTY_DATA", failuresBefore);
+}
+
+// PS-043: C1 (re)joins, asks C2 to see its party, and leaves while C2's prompt is up; C2 then
+// allows it. The parts and the answer find no route at the host and are dropped silently.
+static void TestPartyRequesterLeaves(void)
+{
+    u32 failuresBefore = sFail;
+    u8 malformedBefore, requestsBefore;
+
+    V_CHECK(JoinAs(V_C1, "ViewC"), "client 1 joins again");
+    V_CHECK(Wait(CondInSession, V_C1, 0, 5000), "client 1 back in session");
+    SetMap(V_C1, MAP_LITTLEROOT_TOWN);
+    Sel(V_C1);
+    sWaitSlot = MP_GetLocalSlot();
+    sWaitMap = MAP_LITTLEROOT_TOWN;
+    V_CHECK(sWaitSlot == 1 && PumpUntil(CondHostHasPresence, 2000), "the host has C1's presence again");
+    malformedBefore = HostMalformedOf(2);
+    requestsBefore = sSeen[V_C2].requests;
+    Sel(V_C1);
+    V_CHECK(MP_SendInteractRequest(2, MP_INTERACT_VIEW_PARTY), "C1 asks to see C2's party");
+    V_CHECK(Wait(CondRequests, V_C2, requestsBefore + 1, 2000), "C2 is asked");
+    Sel(V_C1);
+    MP_Leave();
+    Sel(V_C2);
+    MP_RespondInteract(MP_INTERACT_RESULT_ACCEPTED); // may already be withdrawn: then ignored
+    sWaitInstance = V_HOST;
+    sWaitSlot = 1;
+    V_CHECK(PumpUntil(CondSlotGone, 3000), "the host removed C1");
+    PumpFor(300);
+    V_CHECK(HostMalformedOf(2) == malformedBefore, "C2's late party was dropped silently");
+    Sel(V_C2);
+    V_CHECK(MP_GetState() == MP_STATE_IN_SESSION && !MP_HasIncomingInteract(), "C2 is still in the session, no request left");
+    Report("party: requester leaves mid-transfer", failuresBefore);
+}
+
 static void TestScenario(void)
 {
     u32 failuresBefore;
@@ -518,10 +865,13 @@ static void TestScenario(void)
     bool8 hosting = FALSE;
     const u16 sameMap = MAP_LITTLEROOT_TOWN;
     void (*savedProvider)(struct MpTrainerCard *) = gMpLocalTrainerCardFunc;
+    u8 (*savedPartyProvider)(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE]) = gMpLocalPartyFunc;
 
     memset(sSeen, 0, sizeof(sSeen));
     memset(sTamperCard, 0, sizeof(sTamperCard));
+    MakeFixtureParties();
     gMpLocalTrainerCardFunc = TestCardProvider;
+    gMpLocalPartyFunc = TestPartyProvider;
     for (i = 0; i < INSTANCES; i++)
         MpSession_ResetInstance(i);
 
@@ -536,6 +886,7 @@ static void TestScenario(void)
     if (!hosting)
     {
         gMpLocalTrainerCardFunc = savedProvider;
+        gMpLocalPartyFunc = savedPartyProvider;
         return;
     }
     V_CHECK(JoinAs(V_C1, "ViewA"), "client 1 MP_Join");
@@ -617,6 +968,9 @@ static void TestScenario(void)
     }
     Report("malformed TRAINER_CARD_DATA", failuresBefore);
 
+    // --- PS-043: parties ---
+    TestPartyScenario();
+
     // --- the requester leaves mid-transfer ---
     failuresBefore = sFail;
     WaitGap();
@@ -632,14 +986,19 @@ static void TestScenario(void)
     V_CHECK(MP_GetState() == MP_STATE_IN_SESSION, "C2 is still in the session");
     Report("requester leaves mid-transfer", failuresBefore);
 
+    // --- PS-043: the requester leaves while the target is deciding ---
+    TestPartyRequesterLeaves();
+
     CleanUp();
     gMpLocalTrainerCardFunc = savedProvider;
+    gMpLocalPartyFunc = savedPartyProvider;
 }
 
 u32 MpSelftest_View(void)
 {
     sFail = 0;
     TestCardParser();
+    TestPartyParser();
     sFail += MpPlayerData_SelfTest();
     TestScenario();
     return sFail;

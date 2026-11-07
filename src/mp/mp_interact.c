@@ -25,6 +25,13 @@
 // it in gMpSession->interact.rx; the RESPONSE then completes it (ACCEPTED) or turns into the
 // local result BAD_DATA if the data was missing or invalid. TRAINER_CARD requests do not
 // make the target "busy" for trade / battle requests and are not refused when it is.
+//
+// PS-043 (protocol.md 6.13): kind VIEW_PARTY is prompted like a trade. When the target answers
+// ACCEPTED, its session sends the party as 1..2 PARTY_DATA parts (up to 3 raw 100-byte mons
+// each; a whole party does not fit in one 512-byte packet), then the RESPONSE. The host
+// forwards the parts in order along the route; the requester checks every mon with
+// MP_ValidateMon as it arrives. Any bad mon, a missing / extra / out-of-order part, or a count
+// that disagrees rejects the whole transfer (BAD_DATA).
 
 #include <string.h>
 #include "mp/mp_session_internal.h"
@@ -33,10 +40,11 @@
 
 u32 gMpInteractTimeoutMs = MP_INTERACT_TIMEOUT_MS;
 void (*gMpLocalTrainerCardFunc)(struct MpTrainerCard *out) = MP_BuildLocalTrainerCard;
+u8 (*gMpLocalPartyFunc)(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE]) = MP_BuildLocalParty;
 
 static u8 sInteractBuf[MP_MAX_PACKET_SIZE];
 
-static const char *const sKindNames[MP_INTERACT_KIND_COUNT] = { "none", "trade", "battle", "trainer card" };
+static const char *const sKindNames[MP_INTERACT_KIND_COUNT] = { "none", "trade", "battle", "trainer card", "party" };
 static const char *const sResultNames[MP_INTERACT_RESULT_COUNT] =
 {
     "none", "accepted", "declined", "busy", "timeout", "unavailable", "cancelled", "bad data",
@@ -151,6 +159,58 @@ static void MpEndpointSendTrainerCard(u8 requester, u8 requesterEpoch, u8 reques
     }
 }
 
+// PS-043: the party in parts of up to 3 mons, in order, to `peer`.
+static void MpSendPartyParts(u8 peer, u8 slot, u8 epoch, u8 requestId, u8 count, u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE])
+{
+    struct MpMsgPartyData msg;
+    u8 parts = MP_PARTY_PART_COUNT(count);
+    u8 p, i;
+    u16 len;
+
+    if (peer == MP_PEER_NONE)
+        return;
+    for (p = 0; p < parts; p++)
+    {
+        memset(&msg, 0, sizeof(msg));
+        msg.slot = slot;
+        msg.epoch = epoch;
+        msg.requestId = requestId;
+        msg.partyCount = count;
+        msg.partIndex = p;
+        msg.monCount = count - p * MP_PARTY_MONS_PER_PART;
+        if (msg.monCount > MP_PARTY_MONS_PER_PART)
+            msg.monCount = MP_PARTY_MONS_PER_PART;
+        for (i = 0; i < msg.monCount; i++)
+            memcpy(msg.mons[i], mons[p * MP_PARTY_MONS_PER_PART + i], MP_MON_WIRE_SIZE);
+        len = MpProto_WritePartyData(sInteractBuf, sizeof(sInteractBuf), &msg);
+        MpSession_SendTo(peer, sInteractBuf, len, MP_CHANNEL_CONTROL, TRUE);
+    }
+}
+
+// Target, kind VIEW_PARTY, the player said YES: send the party (before the RESPONSE).
+static void MpEndpointSendParty(u8 requester, u8 requesterEpoch, u8 requestId)
+{
+    struct MpSession *s = gMpSession;
+    u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE];
+    u8 count;
+
+    memset(mons, 0, sizeof(mons));
+    count = gMpLocalPartyFunc(mons);
+    if (count > PARTY_SIZE)
+        count = PARTY_SIZE;
+    MP_SLOG("interact: showing our party (%u) to slot %u (request %u)\n", (unsigned)count, (unsigned)requester, (unsigned)requestId);
+    if (s->isHost)
+    {
+        if (requester < MP_MAX_PLAYERS)
+            s->interact.routes[requester].dataCount += MP_PARTY_PART_COUNT(count);
+        MpSendPartyParts(MpPeerOfSlot(requester), s->localSlot, s->players[s->localSlot].epoch, requestId, count, mons);
+    }
+    else
+    {
+        MpSendPartyParts(MP_INTERACT_CLIENT_HOST_PEER, requester, requesterEpoch, requestId, count, mons);
+    }
+}
+
 static void MpDeliverRequest(u8 fromSlot, u8 fromEpoch, u8 kind, u8 requestId, u32 now)
 {
     struct MpInteractRequest *in = &gMpSession->interact.incoming;
@@ -191,14 +251,18 @@ static u8 MpFinishRx(u8 kind, u8 result)
     struct MpInteractRx *rx = &gMpSession->interact.rx;
     bool8 ok;
 
-    if (kind != MP_INTERACT_TRAINER_CARD)
+    if (kind != MP_INTERACT_TRAINER_CARD && kind != MP_INTERACT_VIEW_PARTY)
         return result;
     if (result != MP_INTERACT_RESULT_ACCEPTED)
     {
         memset(rx, 0, sizeof(*rx));
         return result;
     }
-    ok = !rx->bad && rx->kind == kind && rx->hasCard;
+    if (kind == MP_INTERACT_TRAINER_CARD)
+        ok = !rx->bad && rx->kind == kind && rx->hasCard;
+    else // PS-043: every part, in order, every mon valid, and the counts agree
+        ok = !rx->bad && rx->kind == kind && rx->partsReceived > 0
+          && rx->partsReceived == MP_PARTY_PART_COUNT(rx->partyCount) && rx->monsReceived == rx->partyCount;
     if (!ok)
     {
         MP_SLOG("interact: the %s from slot %u was missing or invalid; rejected\n", MpKindName(kind), (unsigned)rx->slot);
@@ -224,6 +288,47 @@ static void MpDeliverCardData(u8 targetSlot, u8 requestId, const struct MpTraine
     }
     rx->card = *card;
     rx->hasCard = TRUE;
+}
+
+// Requester (PS-043): a PARTY_DATA part for our request (layout already parsed). Checks the
+// order and the count, and validates every mon now; anything wrong rejects the transfer.
+static void MpDeliverPartyData(u8 targetSlot, const struct MpMsgPartyData *msg)
+{
+    struct MpInteractRequest *out = &gMpSession->interact.outgoing;
+    struct MpInteractRx *rx = &gMpSession->interact.rx;
+    u32 i, first;
+
+    if (!out->active || out->slot != targetSlot || out->requestId != msg->requestId)
+        return; // stale
+    if (rx->bad)
+        return;
+    if (out->kind != MP_INTERACT_VIEW_PARTY || msg->partIndex != rx->partsReceived
+     || (rx->partsReceived > 0 && msg->partyCount != rx->partyCount))
+    {
+        rx->bad = TRUE; // not asked for, out of order / duplicated, or the count changed
+        return;
+    }
+    first = (u32)msg->partIndex * MP_PARTY_MONS_PER_PART;
+    if (first + msg->monCount > PARTY_SIZE)
+    {
+        rx->bad = TRUE; // cannot happen after the parser; never index past the buffer
+        return;
+    }
+    for (i = 0; i < msg->monCount; i++)
+    {
+        if (!MP_ValidateMon(msg->mons[i]))
+        {
+            MP_SLOG("interact: mon %u from slot %u failed validation; the party is rejected\n",
+                    (unsigned)(first + i), (unsigned)targetSlot);
+            rx->bad = TRUE;
+            return;
+        }
+    }
+    for (i = 0; i < msg->monCount; i++)
+        memcpy(rx->mons[first + i], msg->mons[i], MP_MON_WIRE_SIZE);
+    rx->partyCount = msg->partyCount;
+    rx->partsReceived++;
+    rx->monsReceived += msg->monCount;
 }
 
 // The answer to our request arrived.
@@ -372,6 +477,9 @@ static void MpEndpointRespond(u8 result)
         return;
     in->active = FALSE;
     MP_SLOG("interact: we answer slot %u's %s request: %s\n", (unsigned)in->slot, MpKindName(in->kind), MpResultName(result));
+    // PS-043: the party goes out first, on the same ordered channel as the RESPONSE.
+    if (result == MP_INTERACT_RESULT_ACCEPTED && in->kind == MP_INTERACT_VIEW_PARTY)
+        MpEndpointSendParty(in->slot, in->epoch, in->requestId);
     if (gMpSession->isHost)
         MpHostRouteResponse(gMpSession->localSlot, in->slot, in->requestId, result);
     else
@@ -401,10 +509,40 @@ static bool8 MpHostRouteCardData(u8 from, const struct MpMsgTrainerCardData *msg
     return TRUE;
 }
 
+// Host (PS-043): a PARTY_DATA part from the target `from`; msg->slot names the requester. Parts
+// must come in order along a live VIEW_PARTY route, at most MP_PARTY_PART_COUNT of them.
+static bool8 MpHostRoutePartyData(u8 from, struct MpMsgPartyData *msg)
+{
+    struct MpInteractRoute *route = &gMpSession->interact.routes[msg->slot]; // slot < 4 (parser)
+    u8 requester = msg->slot;
+
+    if (!route->active || route->to != from || route->requestId != msg->requestId)
+        return TRUE; // stale: drop silently
+    if (route->kind != MP_INTERACT_VIEW_PARTY || msg->partIndex != route->dataCount
+     || route->dataCount >= MP_PARTY_MAX_PARTS)
+        return FALSE; // not asked for, out of order, or too many
+    route->dataCount++;
+    if (requester == gMpSession->localSlot)
+    {
+        MpDeliverPartyData(from, msg);
+    }
+    else if (MpSlotLive(requester, route->fromEpoch))
+    {
+        u16 len;
+
+        msg->slot = from;
+        msg->epoch = route->toEpoch;
+        len = MpProto_WritePartyData(sInteractBuf, sizeof(sInteractBuf), msg);
+        MpSession_SendTo(MpPeerOfSlot(requester), sInteractBuf, len, MP_CHANNEL_CONTROL, TRUE);
+    }
+    return TRUE;
+}
+
 bool8 MpInteract_OnHostReceive(u8 peer, u8 type, const u8 *payload, u32 len, u32 now)
 {
     struct MpMsgInteract msg;
     struct MpMsgTrainerCardData card;
+    struct MpMsgPartyData party;
     u8 from;
 
     if (peer >= MP_HOST_PEER_COUNT || gMpSession->peers[peer].state != MP_HOST_PEER_PLAYER)
@@ -417,6 +555,12 @@ bool8 MpInteract_OnHostReceive(u8 peer, u8 type, const u8 *payload, u32 len, u32
         if (MpProto_ParseTrainerCardData(payload, len, &card) != MP_PARSE_OK)
             return FALSE;
         return MpHostRouteCardData(from, &card);
+    }
+    if (type == MP_MSG_PARTY_DATA)
+    {
+        if (MpProto_ParsePartyData(payload, len, &party) != MP_PARSE_OK)
+            return FALSE;
+        return MpHostRoutePartyData(from, &party);
     }
     if (MpProto_ParseInteract(type, payload, len, &msg) != MP_PARSE_OK)
         return FALSE;
@@ -453,6 +597,20 @@ bool8 MpInteract_OnClientReceive(u8 type, const u8 *payload, u32 len)
         if (card.slot == gMpSession->localSlot)
             return FALSE; // the host never names us as the other party
         MpDeliverCardData(card.slot, card.requestId, &card.card);
+        return TRUE;
+    }
+    if (type == MP_MSG_PARTY_DATA)
+    {
+        struct MpMsgPartyData party;
+
+        if (MpProto_ParsePartyData(payload, len, &party) != MP_PARSE_OK)
+        {
+            gMpSession->interact.rx.bad = TRUE;
+            return FALSE;
+        }
+        if (party.slot == gMpSession->localSlot)
+            return FALSE;
+        MpDeliverPartyData(party.slot, &party);
         return TRUE;
     }
     if (MpProto_ParseInteract(type, payload, len, &msg) != MP_PARSE_OK)
@@ -639,6 +797,23 @@ bool8 MP_GetViewedTrainerCard(u8 slot, struct MpTrainerCard *out)
      || !rx->hasCard || rx->slot != slot)
         return FALSE;
     *out = rx->card;
+    return TRUE;
+}
+
+bool8 MP_GetViewedParty(u8 slot, u8 *countOut, u8 monsOut[PARTY_SIZE][MP_MON_WIRE_SIZE])
+{
+    const struct MpInteractRx *rx = &gMpSession->interact.rx;
+    u32 i;
+
+    if (countOut == NULL || monsOut == NULL)
+        return FALSE;
+    *countOut = 0;
+    if (gMpSession->state != MP_STATE_IN_SESSION || !rx->complete || rx->kind != MP_INTERACT_VIEW_PARTY
+     || rx->slot != slot || rx->partyCount > PARTY_SIZE)
+        return FALSE;
+    for (i = 0; i < rx->partyCount; i++)
+        memcpy(monsOut[i], rx->mons[i], MP_MON_WIRE_SIZE);
+    *countOut = rx->partyCount;
     return TRUE;
 }
 

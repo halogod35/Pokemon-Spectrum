@@ -18,10 +18,17 @@
 #include "global.h"
 #include "event_data.h"
 #include "link.h"
+#include "main.h"
+#include "pokemon.h"
+#include "pokemon_summary_screen.h"
 #include "trainer_card.h"
 #include "constants/characters.h"
 #include "constants/easy_chat.h"
 #include "constants/flags.h"
+#include "constants/items.h"
+#include "constants/moves.h"
+#include "constants/pokemon.h"
+#include "constants/species.h"
 #include "mp/mp.h"
 #include "mp/mp_internal.h"
 #include "mp/mp_playerdata.h"
@@ -32,6 +39,13 @@
 STATIC_ASSERT(MP_TRAINER_CARD_PROFILE_WORDS == TRAINER_CARD_PROFILE_LENGTH, MpCardProfileWords);
 STATIC_ASSERT(MP_PLAYER_NAME_SIZE == PLAYER_NAME_LENGTH + 1, MpCardNameSize);
 STATIC_ASSERT(MP_CARD_EC_EMPTY_WORD == EC_EMPTY_WORD, MpCardEmptyWord);
+// PS-043: a mon travels as the raw struct Pokemon (the link trade format). Its layout is all
+// u8/u16/u32 fields at natural alignment with no pointers, so it is exactly 100 bytes on every
+// build (32/64-bit, Windows/Linux). If this ever fails, the wire format needs a real serialiser.
+STATIC_ASSERT(sizeof(struct BoxPokemon) == 80, MpBoxMonWireSize);
+STATIC_ASSERT(sizeof(struct Pokemon) == MP_MON_WIRE_SIZE, MpMonWireSize);
+
+#define MP_MON_MARKING_COMBOS 16 // sAnims_MarkingCombo in mon_markings.c
 
 // The card screen draws one of 5 palettes per star count (sHoennTrainerCardPals).
 #define MP_CARD_PALETTE_COUNT (MP_CARD_MAX_STARS + 1)
@@ -148,6 +162,124 @@ void MpPlayerData_ShowTrainerCard(const struct MpTrainerCard *card, void (*callb
     ShowTrainerCardInLink(1, callback); // copies both into its own heap data at once
     gTrainerCards[1] = savedCard;
     gLinkPlayers[1].language = savedLanguage;
+}
+
+// ---------------------------------------------------------------------------
+// PS-043: party (raw struct Pokemon, protocol.md 6.13)
+// ---------------------------------------------------------------------------
+
+// The remote party while its summary screen is open. Never gPlayerParty / gEnemyParty, never
+// written to the save (AD-10). Static, so it outlives the summary screen's heap use.
+static EWRAM_DATA struct Pokemon sMpViewParty[PARTY_SIZE] = {0};
+
+// Bytes before the first EOS (or all `len` bytes) are printable characters, not text control
+// codes (0xF7..0xFE: placeholders, prompts, EXT_CTRL_CODE, newline).
+static bool8 MpIsPlainText(const u8 *text, u32 len)
+{
+    u32 i;
+
+    for (i = 0; i < len && text[i] != EOS; i++)
+    {
+        if (text[i] >= CHAR_DYNAMIC)
+            return FALSE;
+    }
+    return TRUE;
+}
+
+bool8 MP_ValidateMon(const u8 *raw)
+{
+    struct Pokemon mon;
+    u32 species, i;
+
+    if (raw == NULL)
+        return FALSE;
+    // Everything below works on this copy. GetMonData decrypts in place and encrypts again,
+    // and marks a bad checksum (isBadEgg) in place, so it must never run on `raw` itself.
+    memcpy(&mon, raw, sizeof(mon));
+    if (mon.box.isBadEgg)
+        return FALSE;
+    species = GetMonData(&mon, MON_DATA_SPECIES); // decrypts and verifies the checksum
+    if (mon.box.isBadEgg)
+        return FALSE;                             // checksum mismatch: tampered or corrupt
+    if (!GetMonData(&mon, MON_DATA_SANITY_HAS_SPECIES))
+        return FALSE;
+    if (species == SPECIES_NONE || species >= NUM_SPECIES
+     || (species >= SPECIES_OLD_UNOWN_B && species <= SPECIES_OLD_UNOWN_Z))
+        return FALSE;                             // gSpeciesInfo / pic / cry table index
+    if (mon.level < 1 || mon.level > MAX_LEVEL)
+        return FALSE;                             // gExperienceTables[..][level + 1]
+    if (mon.hp > mon.maxHP)
+        return FALSE;
+    if (GetMonData(&mon, MON_DATA_HELD_ITEM) >= ITEMS_COUNT)
+        return FALSE;
+    for (i = 0; i < MAX_MON_MOVES; i++)
+    {
+        if (GetMonData(&mon, MON_DATA_MOVE1 + i) >= MOVES_COUNT)
+            return FALSE;                         // gMoveNames / gBattleMoves / gContestMoves index
+    }
+    if (GetMonData(&mon, MON_DATA_MARKINGS) >= MP_MON_MARKING_COMBOS)
+        return FALSE;                             // sprite animation index
+    if (GetMonData(&mon, MON_DATA_LANGUAGE) > LANGUAGE_SPANISH)
+        return FALSE;
+    if (!MpIsPlainText(mon.box.nickname, POKEMON_NAME_LENGTH) || !MpIsPlainText(mon.box.otName, PLAYER_NAME_LENGTH))
+        return FALSE;
+    return TRUE;
+}
+
+u8 MP_BuildLocalParty(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE])
+{
+    struct Pokemon copy;
+    u8 count = 0;
+    u32 i;
+
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        memcpy(&copy, &gPlayerParty[i], sizeof(copy)); // never call GetMonData on the party itself here
+        if (GetMonData(&copy, MON_DATA_SPECIES) == SPECIES_NONE)
+            continue;
+        if (!MP_ValidateMon((const u8 *)&gPlayerParty[i]))
+        {
+            MP_LOG("view: party mon %u does not pass the checks, not sent\n", (unsigned)i);
+            continue;
+        }
+        memcpy(mons[count], &gPlayerParty[i], MP_MON_WIRE_SIZE);
+        count++;
+    }
+    return count;
+}
+
+void MpPlayerData_ShowParty(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE], u8 count, void (*callback)(void))
+{
+    u32 i;
+
+    if (count == 0 || count > PARTY_SIZE)
+    {
+        SetMainCallback2(callback);
+        return;
+    }
+    memset(sMpViewParty, 0, sizeof(sMpViewParty));
+    for (i = 0; i < count; i++)
+        memcpy(&sMpViewParty[i], mons[i], MP_MON_WIRE_SIZE);
+    // Read only: LOCK_MOVES (as in battle) cannot reorder moves, and the list is our copy.
+    ShowPokemonSummaryScreen(SUMMARY_MODE_LOCK_MOVES, sMpViewParty, 0, count - 1, callback);
+}
+
+void MpPlayerData_MakeTestMon(u8 *raw, u16 species, u8 level, u32 personality)
+{
+    struct SaveBlock2 *realSave2 = gSaveBlock2Ptr;
+    static struct SaveBlock2 sOtSave; // CreateMon copies the OT name / gender from SaveBlock2
+    struct Pokemon mon;
+
+    memset(&sOtSave, 0, sizeof(sOtSave));
+    memset(sOtSave.playerName, EOS, sizeof(sOtSave.playerName));
+    sOtSave.playerName[0] = CHAR_T;
+    sOtSave.playerName[1] = CHAR_E;
+    sOtSave.playerName[2] = CHAR_S;
+    sOtSave.playerName[3] = CHAR_T;
+    gSaveBlock2Ptr = &sOtSave;
+    CreateMon(&mon, species, level, 10, TRUE, personality, OT_ID_PRESET, 0x00051234);
+    gSaveBlock2Ptr = realSave2;
+    memcpy(raw, &mon, MP_MON_WIRE_SIZE);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,10 +408,200 @@ static void PdTestToTrainerCard(void)
     PdReport("conversion to struct TrainerCard", failuresBefore);
 }
 
+// --- PS-043 ---------------------------------------------------------------
+
+// struct BoxPokemon byte offsets (pokemon.h): the checksum and the encrypted substructs.
+#define PD_OFS_FLAGS        19  // isBadEgg (bit 0), hasSpecies (bit 1), isEgg (bit 2)
+#define PD_OFS_CHECKSUM     28
+#define PD_OFS_UNKNOWN      30
+#define PD_OFS_SECURE       32
+#define PD_OFS_SECURE_END   80
+
+static u32 sPdRng = 0x4D504D4Eu; // "MPMN"
+
+static u32 PdRand(void)
+{
+    sPdRng ^= sPdRng << 13;
+    sPdRng ^= sPdRng >> 17;
+    sPdRng ^= sPdRng << 5;
+    return sPdRng;
+}
+
+static struct Pokemon sPdPartyBackup[PARTY_SIZE];
+static struct Pokemon sPdPartyBefore[PARTY_SIZE];
+
+// Validates and checks that the input bytes were not modified.
+static bool8 PdValidate(const u8 *raw)
+{
+    u8 before[MP_MON_WIRE_SIZE];
+    bool8 ok;
+
+    memcpy(before, raw, sizeof(before));
+    ok = MP_ValidateMon(raw);
+    PD_CHECK(memcmp(before, raw, sizeof(before)) == 0, "MP_ValidateMon never modifies its input");
+    return ok;
+}
+
+// A valid mon with one field changed through SetMonData (which keeps the checksum right),
+// so the check under test is the field rule, not the checksum.
+static bool8 PdValidWith(const u8 *base, s32 field, u32 value)
+{
+    struct Pokemon mon;
+    u8 b8 = (u8)value;
+    u16 b16 = (u16)value;
+
+    memcpy(&mon, base, sizeof(mon));
+    switch (field)
+    {
+    case MON_DATA_SPECIES:
+    case MON_DATA_HELD_ITEM:
+    case MON_DATA_MOVE1:
+    case MON_DATA_MOVE4:
+    case MON_DATA_HP:
+        SetMonData(&mon, field, &b16);
+        break;
+    default:
+        SetMonData(&mon, field, &b8);
+        break;
+    }
+    return PdValidate((const u8 *)&mon);
+}
+
+static void PdTestValidateMon(void)
+{
+    u8 mon[MP_MON_WIRE_SIZE];
+    u8 copy[MP_MON_WIRE_SIZE];
+    u8 name[POKEMON_NAME_LENGTH + 1];
+    struct Pokemon tmp;
+    u32 failuresBefore = sPdFail;
+    u32 i, bit, accepted;
+    bool8 r1, r2;
+
+    MpPlayerData_MakeTestMon(mon, SPECIES_TREECKO, 5, 0x12345678);
+    PD_CHECK(PdValidate(mon), "a freshly created mon is valid");
+    MpPlayerData_MakeTestMon(copy, SPECIES_RAYQUAZA, MAX_LEVEL, 0xCAFEBABE);
+    PD_CHECK(PdValidate(copy), "a level 100 mon is valid");
+    PD_CHECK(!MP_ValidateMon(NULL), "NULL is rejected");
+
+    // Targeted field rules
+    PD_CHECK(!PdValidWith(mon, MON_DATA_SPECIES, SPECIES_NONE), "species 0 rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_SPECIES, NUM_SPECIES), "species NUM_SPECIES rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_SPECIES, 0xFFFF), "species 0xFFFF rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_SPECIES, SPECIES_OLD_UNOWN_B), "an unused old-Unown species rejected");
+    PD_CHECK(PdValidWith(mon, MON_DATA_SPECIES, SPECIES_PIKACHU), "another valid species accepted");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_MOVE1, MOVES_COUNT), "move MOVES_COUNT rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_MOVE4, 0xFFFF), "move 0xFFFF in slot 4 rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_HELD_ITEM, ITEMS_COUNT), "item ITEMS_COUNT rejected");
+    PD_CHECK(PdValidWith(mon, MON_DATA_HELD_ITEM, ITEM_POTION), "a real held item accepted");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_LEVEL, 0), "level 0 rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_LEVEL, MAX_LEVEL + 1), "level 101 rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_HP, 0xFFFF), "hp above max hp rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_MARKINGS, MP_MON_MARKING_COMBOS), "markings 16 rejected");
+    PD_CHECK(!PdValidWith(mon, MON_DATA_LANGUAGE, LANGUAGE_SPANISH + 1), "language 8 rejected");
+
+    memcpy(&tmp, mon, sizeof(tmp));
+    memset(name, EOS, sizeof(name));
+    name[0] = CHAR_A;
+    name[1] = 0xFC; // EXT_CTRL_CODE_BEGIN
+    SetMonData(&tmp, MON_DATA_NICKNAME, name);
+    PD_CHECK(!PdValidate((const u8 *)&tmp), "nickname with a control code rejected");
+    memcpy(&tmp, mon, sizeof(tmp));
+    name[1] = 0xFD; // PLACEHOLDER_BEGIN
+    SetMonData(&tmp, MON_DATA_OT_NAME, name);
+    PD_CHECK(!PdValidate((const u8 *)&tmp), "OT name with a placeholder rejected");
+    memcpy(&tmp, mon, sizeof(tmp));
+    memset(name, CHAR_A, POKEMON_NAME_LENGTH);
+    SetMonData(&tmp, MON_DATA_NICKNAME, name);
+    PD_CHECK(PdValidate((const u8 *)&tmp), "a 10-letter nickname without EOS accepted");
+
+    memcpy(copy, mon, sizeof(copy));
+    copy[PD_OFS_FLAGS] |= 1; // isBadEgg
+    PD_CHECK(!PdValidate(copy), "a bad egg rejected");
+
+    // Every single-bit flip: deterministic, the input untouched; the checksum and every bit
+    // of the encrypted substructs are always caught.
+    accepted = 0;
+    for (i = 0; i < MP_MON_WIRE_SIZE; i++)
+    {
+        for (bit = 0; bit < 8; bit++)
+        {
+            memcpy(copy, mon, sizeof(copy));
+            copy[i] ^= (u8)(1 << bit);
+            r1 = PdValidate(copy);
+            r2 = PdValidate(copy);
+            PD_CHECK(r1 == r2, "MON bit flip deterministic");
+            if (r1)
+                accepted++;
+            if ((i >= PD_OFS_CHECKSUM && i < PD_OFS_UNKNOWN) || (i >= PD_OFS_SECURE && i < PD_OFS_SECURE_END))
+                PD_CHECK(!r1, "a flipped checksum / encrypted bit is rejected");
+        }
+    }
+    MP_LOG("selftest: view: %u of %u single-bit mon flips still valid (unchecked or cosmetic bytes)\n",
+           (unsigned)accepted, (unsigned)(MP_MON_WIRE_SIZE * 8));
+
+    // Garbage: random buffers, and a valid mon with a few random bytes replaced
+    MP_LOG("selftest: view: mon garbage seed 0x%08X\n", (unsigned)sPdRng);
+    accepted = 0;
+    for (i = 0; i < 100000; i++)
+    {
+        u32 n, k;
+
+        if (i & 1)
+        {
+            for (n = 0; n < MP_MON_WIRE_SIZE; n++)
+                copy[n] = (u8)PdRand();
+        }
+        else
+        {
+            memcpy(copy, mon, sizeof(copy));
+            k = 1 + PdRand() % 4;
+            for (n = 0; n < k; n++)
+                copy[PdRand() % MP_MON_WIRE_SIZE] = (u8)PdRand();
+        }
+        if (MP_ValidateMon(copy))
+            accepted++;
+    }
+    MP_LOG("selftest: view: %u of 100000 garbage / damaged mons passed (no crash)\n", (unsigned)accepted);
+    PdReport("MP_ValidateMon", failuresBefore);
+}
+
+static void PdTestBuildParty(void)
+{
+    u8 a[MP_MON_WIRE_SIZE], b[MP_MON_WIRE_SIZE];
+    u8 out[PARTY_SIZE][MP_MON_WIRE_SIZE];
+    u32 failuresBefore = sPdFail;
+    u8 count;
+
+    memcpy(sPdPartyBackup, gPlayerParty, sizeof(sPdPartyBackup));
+    MpPlayerData_MakeTestMon(a, SPECIES_MUDKIP, 12, 0x00000101);
+    MpPlayerData_MakeTestMon(b, SPECIES_ZIGZAGOON, 3, 0x00000202);
+    memset(gPlayerParty, 0, sizeof(gPlayerParty));
+    memcpy(&gPlayerParty[0], a, MP_MON_WIRE_SIZE);
+    memcpy(&gPlayerParty[1], b, MP_MON_WIRE_SIZE);
+    ((u8 *)&gPlayerParty[1])[PD_OFS_SECURE + 5] ^= 0x40; // corrupt: fails the checksum
+    memcpy(&gPlayerParty[2], b, MP_MON_WIRE_SIZE);
+    memcpy(sPdPartyBefore, gPlayerParty, sizeof(sPdPartyBefore));
+
+    memset(out, 0, sizeof(out));
+    count = MP_BuildLocalParty(out);
+    PD_CHECK(count == 2, "the party has 2 sendable mons (the corrupt one is left out)");
+    PD_CHECK(memcmp(out[0], a, MP_MON_WIRE_SIZE) == 0 && memcmp(out[1], b, MP_MON_WIRE_SIZE) == 0,
+             "the party is sent as raw, unchanged mons in party order");
+    PD_CHECK(memcmp(sPdPartyBefore, gPlayerParty, sizeof(sPdPartyBefore)) == 0, "building the party leaves gPlayerParty untouched");
+
+    memset(gPlayerParty, 0, sizeof(gPlayerParty));
+    PD_CHECK(MP_BuildLocalParty(out) == 0, "an empty party gives 0 mons");
+
+    memcpy(gPlayerParty, sPdPartyBackup, sizeof(sPdPartyBackup));
+    PdReport("party built from gPlayerParty (read only)", failuresBefore);
+}
+
 u32 MpPlayerData_SelfTest(void)
 {
     sPdFail = 0;
     PdTestBuildCard();
     PdTestToTrainerCard();
+    PdTestValidateMon();
+    PdTestBuildParty();
     return sPdFail;
 }

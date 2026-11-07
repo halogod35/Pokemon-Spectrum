@@ -1,7 +1,7 @@
 # Pokémon Spectrum — Multiplayer Wire Protocol
 
-- **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests), PS-042 (trainer card)
-- **Protocol version:** `MP_PROTOCOL_VERSION = 3` (2 = `INTERACT_*`, PS-041; 3 = `TRAINER_CARD_DATA`, PS-042)
+- **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests), PS-042 (trainer card), PS-043 (view party)
+- **Protocol version:** `MP_PROTOCOL_VERSION = 4` (2 = `INTERACT_*`, PS-041; 3 = `TRAINER_CARD_DATA`, PS-042; 4 = `PARTY_DATA`, PS-043)
 - **Status:** draft for Director approval
 - **Companion docs:** `design.md` (modules, API, build), `include/mp/mp.h` (public API)
 
@@ -105,7 +105,8 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 | `0x41` | `INTERACT_RESPONSE` | C → H, H → C | 0 | 8 | IN_SESSION (PS-041, 6.11) |
 | `0x42` | `INTERACT_CANCEL` | C → H, H → C | 0 | 8 | IN_SESSION (PS-041, 6.11) |
 | `0x43` | `TRAINER_CARD_DATA` | C → H, H → C | 0 | 56 | IN_SESSION (PS-042, 6.12) |
-| `0x44`–`0x5F` | **reserved: `INTERACT_*`** (Stage 4: view Pokémon, …) | | 0 | | Stage 4 |
+| `0x44` | `PARTY_DATA` | C → H, H → C | 0 | 8 + 100·M (M = 0..3) | IN_SESSION (PS-043, 6.13) |
+| `0x45`–`0x5F` | **reserved: `INTERACT_*`** (Stage 4) | | 0 | | Stage 4 |
 | `0x60`–`0x7F` | **reserved: `LINK_*`** (Stage 4: virtual link cable, PS-040) | | 0 (or a new channel) | | Stage 4 |
 | `0x80`–`0xEF` | reserved | | | | |
 | `0xF0` | `DEBUG_ECHO` | both | 0 | 0..64 | only under `--mp-selftest` (PS-011). Session code drops it. |
@@ -435,7 +436,7 @@ All three share one layout:
 |---|---|---|---|---|
 | 0 | 1 | u8 | `slot` | The **other party** from the receiver's point of view (table below). `< 4` |
 | 1 | 1 | u8 | `epoch` | Epoch of `slot`. `!= 0` |
-| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE, `3` TRAINER_CARD (PS-042, 6.12). Others rejected |
+| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE, `3` TRAINER_CARD (PS-042, 6.12), `4` VIEW_PARTY (PS-043, 6.13). Others rejected |
 | 3 | 1 | u8 | `requestId` | Chosen by the requester (any value), echoed in RESPONSE / CANCEL |
 | 4 | 1 | u8 | `result` | RESPONSE only: `1` ACCEPTED, `2` DECLINED, `3` BUSY, `4` TIMEOUT, `5` UNAVAILABLE; others rejected. REQUEST / CANCEL: reserved, sender writes 0, receiver ignores |
 | 5 | 3 | u8[3] | reserved | 0 |
@@ -563,6 +564,79 @@ the session, fades out and shows it with `trainer_card.c`'s link-partner mode
 `gTrainerCards[1]` and `gLinkPlayers[1].language` only for that call, which copies them at once,
 and restores them right after. The conversion clamps `stars` and `gender` once more.
 
+### 6.13 `PARTY_DATA` (0x44) — both directions, channel 0, payload 8 + 100·M bytes
+
+PS-043. Viewing another player's party reuses the 6.11 request flow with `kind = 4`
+VIEW_PARTY. Unlike a trainer card it **needs consent**: the target is prompted exactly like for a
+trade ("NAME wants to see your POKéMON. Allow?", YES / NO, auto-BUSY, 15 s timeout) and the
+usual busy rules apply. When the target answers `ACCEPTED`, its session first sends the party as
+`PARTY_DATA` parts, then the `INTERACT_RESPONSE`, all on reliable ordered channel 0. Routing of
+`slot` / `epoch` / `requestId` is the same as for `TRAINER_CARD_DATA` (6.12).
+
+**Why parts.** A mon travels as the game's own **raw 100-byte `struct Pokemon`** (the encrypted,
+checksummed link-trade format; its layout is only u8/u16/u32 fields at natural alignment, so it
+is the same on 32- and 64-bit builds, static-asserted in `mp_playerdata.c`). Six mons are 600
+bytes, which does not fit in one packet (`MP_MAX_PACKET_SIZE` 512, also ENet's
+`maximumPacketSize`). The party is split into `ceil(count / 3)` parts (one part for an empty
+party): at most 2 parts of at most 312 bytes each.
+
+| Offset | Size | Type | Field | Rule on receive |
+|---|---|---|---|---|
+| 0 | 1 | u8 | `slot` | `< 4` |
+| 1 | 1 | u8 | `epoch` | `!= 0` |
+| 2 | 1 | u8 | `requestId` | any |
+| 3 | 1 | u8 | reserved | 0, ignored |
+| 4 | 1 | u8 | `partyCount` | `0..6`, the same in every part |
+| 5 | 1 | u8 | `partIndex` | `< max(1, ceil(partyCount / 3))`; parts are sent and must arrive in order 0, 1 |
+| 6 | 1 | u8 | `monCount` M | exactly `min(3, partyCount − 3·partIndex)` |
+| 7 | 1 | u8 | reserved | 0, ignored |
+| 8 | 100·M | struct Pokemon[M] | `mons` | party mons `3·partIndex .. 3·partIndex + M − 1`, raw; each one checked by the requester (6.13.1) |
+
+`length` must be exactly `8 + 100·M` (shorter: truncated; longer: oversized). The pure parser
+(`MpProto_ParsePartyData`) checks the layout only; the mons are game data and are checked by
+`MP_ValidateMon` (game code, `src/mp/mp_playerdata.c`).
+
+#### 6.13.1 Mon validation (`MP_ValidateMon`, requester side, every mon, on a local copy)
+
+Reject the mon if any of these fail:
+
+- the raw `isBadEgg` bit is clear, and after `GetMonData` has decrypted the copy the **checksum
+  matches** (a mismatch sets `isBadEgg`; any single flipped bit in the checksum or in the 48
+  encrypted bytes is always caught);
+- `hasSpecies` is set; species `1 .. NUM_SPECIES − 1` and not one of the unused
+  `SPECIES_OLD_UNOWN_B..Z` slots (table indices for stats, pics, cries, names);
+- level `1 .. MAX_LEVEL` (100) (`gExperienceTables[..][level + 1]`);
+- `hp <= maxHP`;
+- held item `< ITEMS_COUNT`; each of the 4 moves `< MOVES_COUNT` (`gMoveNames`, `gBattleMoves`,
+  `gContestMoves` indices);
+- markings `< 16` (sprite animation index); language `<= LANGUAGE_SPANISH` (7);
+- nickname (10 bytes) and OT name (7 bytes): no byte `>= 0xF7` (text control codes) before the
+  first EOS. A name without EOS is fine: `GetMonData` copies and terminates it.
+
+Fields the summary screen already guards (met location `>= MAPSEC_NONE`, met game, ribbons,
+status) are not restricted. The sender only includes mons of its own party that pass the same
+checks (`MP_BuildLocalParty`; a bad egg is left out rather than making the party unviewable).
+
+**Host.** Parses the layout (failure: malformed against the sender) and forwards each part only
+along the live VIEW_PARTY route of the requester named by `slot`: sender = the route's target,
+matching `requestId`, `partIndex` equal to the number of parts already forwarded, at most 2.
+No route → dropped silently. A route of another kind, a part out of order or a third part →
+malformed. The forwarded copy is re-serialised from the parse with `slot` / `epoch` rewritten.
+The host does not judge the mons; the requester does.
+
+**Requester.** Accepts parts only while its own VIEW_PARTY request to that `slot` with that
+`requestId` is pending (else stale, silent). Each part must have the next `partIndex` and the
+same `partyCount`, and every mon in it must pass 6.13.1; otherwise the **whole transfer is
+rejected**. When the RESPONSE arrives: `ACCEPTED` with all parts and `partyCount` mons received →
+`MP_EVENT_INTERACT_RESULT` `ACCEPTED`, and the mons are available from `MP_GetViewedParty()`;
+anything missing or rejected → `MP_INTERACT_RESULT_BAD_DATA`, nothing is shown. The mons live in
+session memory only, never in `gPlayerParty` / `gEnemyParty`, never in the save (AD-10).
+
+**Display.** The UI copies the mons out of the session, fades out and opens the summary screen
+on a private static `struct Pokemon[6]` (`ShowPokemonSummaryScreen(SUMMARY_MODE_LOCK_MOVES, …)`,
+the battle mode, so moves cannot be reordered); Up / Down switches mons, B returns to the field.
+An empty party only shows "NAME has no POKéMON.".
+
 ---
 
 ## 7. Session rules
@@ -636,6 +710,7 @@ or speed-up does not cause timeouts. The network is still pumped while the game 
 | `PING` | answer `PONG` (not forwarded) |
 | `INTERACT_*` | route to the other party after the checks of 6.11 (or answer / handle it itself) |
 | `TRAINER_CARD_DATA` | forward to the requester along the matching TRAINER_CARD route (6.12), at most one per route |
+| `PARTY_DATA` | forward to the requester along the matching VIEW_PARTY route (6.13), in order, at most two per route |
 | `BYE` | remove client, broadcast `PLAYER_LEFT` |
 | anything else | drop, count malformed |
 
@@ -736,6 +811,7 @@ exits with status 0 / 1.
 | `PLAYER_UPDATE` | at most 1 / s, coalesced | drop extras within 1 s |
 | `INTERACT_REQUEST` | one in flight per player (the API refuses a second) | refuse (`UNAVAILABLE`) a second one in flight, or one < 1000 ms after the previous; not counted malformed |
 | `TRAINER_CARD_DATA` | one per TRAINER_CARD request it answers | one per route; a second one (or one on a route of another kind) is malformed |
+| `PARTY_DATA` | 1–2 parts per accepted VIEW_PARTY request | in order, at most 2 per route; otherwise malformed |
 | `PING` | 1 / s | ignore PINGs < 250 ms apart |
 | `HELLO` | once per connection | a second one → disconnect |
 | ENet events | — | at most 64 processed per `MP_Update()` |
@@ -830,3 +906,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 1 | PS-030 | PRESENCE implemented. No byte change, so no version bump: field semantics pinned down (6.8.1); a CONNECTING client drops PRESENCE silently instead of counting it malformed (a relayed update can overtake a retransmitted WELCOME; it was dropped before too, only the malformed count changes); `MP_IsValidMap` from a compile-time-checked map count table. |
 | 2 | PS-041 | `INTERACT_REQUEST` (0x40), `INTERACT_RESPONSE` (0x41), `INTERACT_CANCEL` (0x42): trade / battle requests routed by the host (6.11), with host-side checks (same map, one request per requester, 1 s gap, busy target) and timeouts. Version bumped to 2: a version-1 peer is rejected (VERSION) instead of meeting unknown message types. |
 | 3 | PS-042 | INTERACT `kind` 3 TRAINER_CARD (answered by the target's session, no prompt, never busy) and `TRAINER_CARD_DATA` (0x43, 56 bytes, field by field, validated and clamped; 6.12), routed like the RESPONSE it precedes, one per route. Local result `MP_INTERACT_RESULT_BAD_DATA`. Version bumped to 3: a version-2 peer would reject kind 3 as malformed. *(If PS-046's `LINK_*` change lands first and takes 3, this becomes the next number.)* |
+| 4 | PS-043 | INTERACT `kind` 4 VIEW_PARTY (prompted, like a trade) and `PARTY_DATA` (0x44): the party as raw 100-byte `struct Pokemon`s in 1–2 parts of up to 3 (a full party does not fit in one 512-byte packet), sent before the ACCEPTED RESPONSE, forwarded in order along the route; every mon validated by the requester (6.13.1), any bad mon rejects the whole party (BAD_DATA). *(Renumber after PS-046 as above.)* |

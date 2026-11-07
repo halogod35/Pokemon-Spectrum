@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      3       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = trainer card (PS-042).
+#define MP_PROTOCOL_VERSION      4       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = trainer card (PS-042), 4 = view party (PS-043).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -402,6 +402,11 @@ u8 MP_GetRemoteAvatarSlotAt(s16 x, s16 y);
 // target's session answers by itself at once (TRAINER_CARD_DATA, then ACCEPTED), and no
 // MP_EVENT_INTERACT_REQUEST is queued on the target. After MP_EVENT_INTERACT_RESULT with
 // ACCEPTED the validated card is available from MP_GetViewedTrainerCard().
+//
+// PS-043: kind VIEW_PARTY asks to see the target's party. The target is prompted like for a
+// trade ("NAME wants to see your POKéMON. Allow?"). When it answers ACCEPTED its session
+// sends the party (PARTY_DATA) before the RESPONSE; after MP_EVENT_INTERACT_RESULT ACCEPTED
+// the validated party is available from MP_GetViewedParty().
 
 enum
 {
@@ -409,6 +414,7 @@ enum
     MP_INTERACT_TRADE,
     MP_INTERACT_BATTLE,
     MP_INTERACT_TRAINER_CARD,   // PS-042: public info, answered without a prompt
+    MP_INTERACT_VIEW_PARTY,     // PS-043: needs the target's consent
     MP_INTERACT_KIND_COUNT,
 };
 
@@ -488,5 +494,24 @@ void MP_BuildLocalTrainerCard(struct MpTrainerCard *out);
 bool8 MP_GetViewedTrainerCard(u8 slot, struct MpTrainerCard *out);
 // Forget any received view data (call after showing it). Safe in any state.
 void MP_ClearViewedData(void);
+
+// PS-043 (protocol.md 6.13). A Pokemon travels as the game's own 100-byte encrypted and
+// checksummed struct Pokemon (the link trade format; its layout has no padding or pointers,
+// so it is the same on 32- and 64-bit builds; static-asserted in mp_playerdata.c).
+#define MP_MON_WIRE_SIZE 100
+
+// The local party as raw mons (read only: copies of gPlayerParty, never written back). Only
+// mons that pass MP_ValidateMon are included, in party order. Returns the count (0..6).
+u8 MP_BuildLocalParty(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE]);
+// TRUE if `raw` (MP_MON_WIRE_SIZE bytes) is a mon the summary screen can show safely: the
+// checksum matches after decryption, not a bad egg, species 1..NUM_SPECIES-1 and not an
+// unused "old Unown" slot, level 1..MAX_LEVEL, moves < MOVES_COUNT, held item < ITEMS_COUNT,
+// hp <= maxHP, markings < 16, language <= LANGUAGE_SPANISH, no text control codes in the
+// nickname or OT name. Works on a local copy; `raw` is never modified. Pure.
+bool8 MP_ValidateMon(const u8 *raw);
+// Requester: the party that came with the last ACCEPTED VIEW_PARTY request to `slot`. Copies
+// *countOut mons (0..6, each MP_MON_WIRE_SIZE raw bytes, all validated) into `monsOut`.
+// FALSE if there is none.
+bool8 MP_GetViewedParty(u8 slot, u8 *countOut, u8 monsOut[PARTY_SIZE][MP_MON_WIRE_SIZE]);
 
 #endif // GUARD_MP_MP_H
