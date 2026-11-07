@@ -62,6 +62,22 @@ bool8 MpAvatar_TranslateConnection(u8 direction, s32 offset, s32 curWidth, s32 c
 // PS-032. TRUE for maps where remote avatars are never shown (link rooms, Frontier / Tent
 // challenge rooms, per-save generated layouts, contest stages, the intro truck).
 bool8 MpAvatar_IsMapDenied(u8 mapGroup, u8 mapNum);
+
+// PS-036. (x, y) moved `tiles` tiles in DIR_* `dir` (other directions: no move).
+void MpAvatar_StepCoords(u8 dir, s16 x, s16 y, s16 tiles, s16 *outX, s16 *outY);
+
+// PS-036. Door effect for an avatar step in `dir` from a tile to the next one. ENTER: the
+// destination is a warp door and the step goes north into it (open the door, then hide the
+// avatar on it, then close). EXIT: the step leaves a warp door southwards (show the avatar,
+// open the door, close after the step). Mirrors field_control_avatar.c TryDoorWarp and
+// field_screen_effect.c's door warp / exit sequences.
+enum
+{
+    MP_AVATAR_DOOR_NONE,
+    MP_AVATAR_DOOR_ENTER,
+    MP_AVATAR_DOOR_EXIT,
+};
+u8 MpAvatar_DoorTransition(u8 dir, bool8 fromIsDoor, bool8 destIsDoor);
 u32 MpAvatar_DeniedMapCount(void);      // selftest
 u16 MpAvatar_DeniedMapAt(u32 index);    // selftest: MAP_* id, 0xFFFF past the end
 
