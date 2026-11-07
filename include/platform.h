@@ -45,6 +45,8 @@ struct PlatformArgs
     u8 mpRole;                                   // PLATFORM_MP_ROLE_*
     bool8 mpDebug;                               // --mp-debug
     bool8 mpSelftest;                            // --mp-selftest (MP: PS-011)
+    bool8 debugSlowSave;                         // --debug-slow-save (MP: PS-014, kill-during-save test)
+    bool8 saveSelftest;                          // --save-selftest (MP: PS-014)
     bool8 hasFakeProtocol;                       // --mp-fake-protocol given (MP: PS-012)
     u16 fakeProtocol;                            // --mp-fake-protocol <0..65535>
     char fakeBuild[PLATFORM_ARG_FAKE_BUILD_SIZE]; // --mp-fake-build <1..15 printable ASCII>, empty if not given

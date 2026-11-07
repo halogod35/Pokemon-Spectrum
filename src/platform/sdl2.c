@@ -9,6 +9,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <xinput.h>
+#include <io.h>      // MP: _commit() for the crash-safe save (PS-014)
+#else
+#include <unistd.h>  // MP: fsync() for the crash-safe save (PS-014)
 #endif
 
 #include <SDL2/SDL.h>
@@ -47,7 +50,15 @@ double fixedTimestep = 1.0 / 60.0; // 16.666667ms
 double timeScale = 1.0;
 struct SiiRtcInfo internalClock;
 
-static FILE *sSaveFile = NULL;
+// MP: PS-014. The save file is no longer kept open. FLASH_BASE is the authoritative copy:
+// ReadSaveFile fills it once at startup, Platform_ReadFlash reads from it, and
+// Platform_StoreSaveFile replaces the file atomically (write "<save>.tmp", flush, rename).
+#define SAVE_TMP_SUFFIX          ".tmp"
+#define SAVE_SELFTEST_SUFFIX     ".selftest"
+#define SAVE_CHUNK_SIZE          0x1000  // one flash sector
+#define SAVE_FLASH_SECTOR_SHIFT  12      // DUMMY_SAVE sector shift, used if gFlash is not set yet
+#define SAVE_SLOW_DELAY_MS       50      // --debug-slow-save: per sector, 32 sectors = 1.6 s per file write
+#define SAVE_REPLACE_RETRIES     5       // Windows: retry if another process briefly holds the file
 
 struct PlatformArgs gPlatformArgs;
 
@@ -60,8 +71,9 @@ void ProcessEvents(void);
 void VDraw(SDL_Texture *texture);
 
 static bool ReadSaveFile(const char *path);
-static void StoreSaveFile(void);
-static void CloseSaveFile(void);
+static bool StoreSaveFile(void);
+static bool WriteSaveFileAtomic(const char *path, const u8 *data, u32 size, u32 delayMsPerSector);
+static int RunSaveSelftest(void);
 
 static int ParsePlatformArgs(int argc, char **argv);
 
@@ -86,6 +98,9 @@ int main(int argc, char **argv)
         MP_SetDebugLogging(gPlatformArgs.mpDebug);
         return MP_RunSelftest();
     }
+
+    if (gPlatformArgs.saveSelftest) // MP: --save-selftest checks the crash-safe save I/O (PS-014)
+        return RunSaveSelftest();
 
     // MP: --name is checked before anything opens (A-Z a-z 0-9, 1-7 chars)
     if (gPlatformArgs.hasName && !MP_SetNameOverride(gPlatformArgs.name))
@@ -237,7 +252,7 @@ int main(int argc, char **argv)
     }
 
     MP_Shutdown(); // MP:
-    CloseSaveFile();
+    // MP: PS-014: nothing to close, the save file is only open while it is read or replaced.
 
     SDL_DestroyWindow(sdlWindow);
     SDL_Quit();
@@ -266,13 +281,15 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --mp-selftest        Run the multiplayer self-test (no window), print OK/FAILED and exit\n"
         "  --mp-fake-protocol <n>  Test only: advertise protocol version n (host rejects with VERSION)\n"
         "  --mp-fake-build <id>    Test only: hash this build id instead of the real one (BUILD reject)\n"
+        "  --debug-slow-save    Test only: pause %d ms per 4 KB sector while writing the save (kill test)\n"
+        "  --save-selftest      Check the crash-safe save file I/O on <save>" SAVE_SELFTEST_SUFFIX ", print OK/FAILED and exit\n"
         "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
         "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
         "  -h, --help           Show this help and exit\n"
         "\n"
         "If a port is given more than once (--host <port>, --join ip:port, --port), the last one wins.\n",
         programName, PLATFORM_MP_DEFAULT_PORT, PLATFORM_MP_DEFAULT_PORT,
-        PLATFORM_ARG_NAME_SIZE - 1, PLATFORM_MAX_SCALE);
+        PLATFORM_ARG_NAME_SIZE - 1, SAVE_SLOW_DELAY_MS, PLATFORM_MAX_SCALE);
 }
 
 // Parses a decimal number in [minValue, maxValue]. The whole string must be digits.
@@ -437,6 +454,14 @@ static int ParsePlatformArgs(int argc, char **argv)
         {
             gPlatformArgs.mpSelftest = TRUE;
         }
+        else if (strcmp(arg, "--debug-slow-save") == 0) // MP: PS-014 kill-during-save test
+        {
+            gPlatformArgs.debugSlowSave = TRUE;
+        }
+        else if (strcmp(arg, "--save-selftest") == 0) // MP: PS-014
+        {
+            gPlatformArgs.saveSelftest = TRUE;
+        }
         else if (strcmp(arg, "--mp-fake-protocol") == 0) // MP: test the VERSION reject
         {
             unsigned long version;
@@ -530,32 +555,32 @@ usage_error:
     return 2;
 }
 
+// MP: PS-014. Loads the save into FLASH_BASE and closes the file again (it is not kept
+// open, so it can be replaced by rename). A missing save is created empty, as before,
+// so an unwritable --save path still fails at startup. A "<save>.tmp" left behind by a
+// killed save is ignored: the real save is still the previous complete one.
 static bool ReadSaveFile(const char *path)
 {
-    // Check whether the saveFile exists, and create it if not
-    sSaveFile = fopen(path, "r+b");
-    if (sSaveFile == NULL)
+    FILE *file;
+    size_t bytesRead = 0;
+    size_t i;
+
+    file = fopen(path, "rb");
+    if (file == NULL)
     {
-        sSaveFile = fopen(path, "w+b");
+        file = fopen(path, "w+b");
     }
-    if (sSaveFile == NULL)
+    if (file == NULL)
     {
         fprintf(stderr, "Could not open or create save file '%s'.\n", path);
         return false;
     }
 
-    fseek(sSaveFile, 0, SEEK_END);
-    int fileSize = ftell(sSaveFile);
-    fseek(sSaveFile, 0, SEEK_SET);
+    // Read at most sizeof(FLASH_BASE) bytes; a shorter or new file reads as erased flash.
+    bytesRead = fread(FLASH_BASE, 1, sizeof(FLASH_BASE), file);
+    fclose(file);
 
-    // Only read as many bytes as fit inside the buffer
-    // or as many bytes as are in the file
-    int bytesToRead = (fileSize < sizeof(FLASH_BASE)) ? fileSize : sizeof(FLASH_BASE);
-
-    int bytesRead = fread(FLASH_BASE, 1, bytesToRead, sSaveFile);
-
-    // Fill the buffer if the savefile was just created or smaller than the buffer itself
-    for (int i = bytesRead; i < sizeof(FLASH_BASE); i++)
+    for (i = bytesRead; i < sizeof(FLASH_BASE); i++)
     {
         FLASH_BASE[i] = 0xFF;
     }
@@ -563,40 +588,324 @@ static bool ReadSaveFile(const char *path)
     return true;
 }
 
-static void StoreSaveFile()
+// MP: PS-014. Flushes the OS buffers of `file` to the disk. Returns 0 on success.
+static int SyncSaveFileToDisk(FILE *file)
 {
-    if (sSaveFile != NULL)
+#ifdef _WIN32
+    return _commit(_fileno(file));
+#else
+    return fsync(fileno(file));
+#endif
+}
+
+// MP: PS-014. Atomically replaces `path` with `tmpPath`.
+static bool ReplaceSaveWithTemp(const char *tmpPath, const char *path)
+{
+#ifdef _WIN32
+    // rename() does not overwrite on Windows. MoveFileEx does, in one step.
+    int attempt;
+
+    for (attempt = 0; attempt < SAVE_REPLACE_RETRIES; attempt++)
     {
-        fseek(sSaveFile, 0, SEEK_SET);
-        fwrite(FLASH_BASE, 1, sizeof(FLASH_BASE), sSaveFile);
+        if (MoveFileExA(tmpPath, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            return true;
+        // Antivirus or backup tools can hold the file for a moment.
+        SDL_Delay(50);
     }
+    fprintf(stderr, "[save] could not replace '%s' (Windows error %lu)\n", path, (unsigned long)GetLastError());
+    return false;
+#else
+    // POSIX rename() replaces the destination atomically.
+    if (rename(tmpPath, path) == 0)
+        return true;
+    perror("[save] rename");
+    return false;
+#endif
+}
+
+// MP: PS-014. Crash-safe save write. Writes `data` to "<path>.tmp" one sector at a time
+// (sleeping delayMsPerSector after each for --debug-slow-save), flushes and syncs it,
+// then renames it over `path`. If the process dies at any point, `path` is either the
+// complete old save or the complete new one, never a mix. Returns false on any error;
+// the old save is then left untouched.
+static bool WriteSaveFileAtomic(const char *path, const u8 *data, u32 size, u32 delayMsPerSector)
+{
+    char tmpPath[PLATFORM_ARG_PATH_SIZE + sizeof(SAVE_TMP_SUFFIX) + sizeof(SAVE_SELFTEST_SUFFIX)];
+    FILE *file;
+    u32 written;
+    u32 chunk;
+    bool ok = true;
+    int len;
+
+    len = snprintf(tmpPath, sizeof(tmpPath), "%s%s", path, SAVE_TMP_SUFFIX);
+    if (len < 0 || (size_t)len >= sizeof(tmpPath))
+    {
+        fprintf(stderr, "[save] save path too long: '%s'\n", path);
+        return false;
+    }
+
+    file = fopen(tmpPath, "wb");
+    if (file == NULL)
+    {
+        fprintf(stderr, "[save] could not create '%s'\n", tmpPath);
+        return false;
+    }
+
+    for (written = 0; ok && written < size; written += chunk)
+    {
+        chunk = size - written;
+        if (chunk > SAVE_CHUNK_SIZE)
+            chunk = SAVE_CHUNK_SIZE;
+        if (fwrite(data + written, 1, chunk, file) != chunk)
+            ok = false;
+        if (ok && delayMsPerSector != 0)
+        {
+            // Make the partial temp file visible on disk, then hold the kill window open.
+            fflush(file);
+            SDL_Delay(delayMsPerSector);
+        }
+    }
+
+    if (fflush(file) != 0)
+        ok = false;
+    if (ok && SyncSaveFileToDisk(file) != 0)
+        ok = false;
+    if (fclose(file) != 0)
+        ok = false;
+
+    if (!ok)
+    {
+        fprintf(stderr, "[save] writing '%s' failed; the previous save is unchanged\n", tmpPath);
+        remove(tmpPath);
+        return false;
+    }
+
+    if (!ReplaceSaveWithTemp(tmpPath, path))
+    {
+        fprintf(stderr, "[save] the previous save '%s' is unchanged; the new data is in '%s'\n", path, tmpPath);
+        return false;
+    }
+    return true;
+}
+
+static bool StoreSaveFile(void)
+{
+    u32 delay = gPlatformArgs.debugSlowSave ? SAVE_SLOW_DELAY_MS : 0;
+
+    if (delay != 0)
+        printf("[save] --debug-slow-save: writing '%s' over %u ms\n", gPlatformArgs.savePath,
+               (unsigned int)(delay * (sizeof(FLASH_BASE) / SAVE_CHUNK_SIZE)));
+    if (!WriteSaveFileAtomic(gPlatformArgs.savePath, FLASH_BASE, sizeof(FLASH_BASE), delay))
+        return false;
+    if (delay != 0)
+        printf("[save] --debug-slow-save: save written\n");
+    return true;
 }
 
 void Platform_StoreSaveFile(void)
 {
+    // MP: PS-014. Callers (save.c, clear_save_data_screen.c) ignore the result; a failure
+    // is logged and the previous save file stays valid.
     StoreSaveFile();
 }
 
+// MP: PS-014. Reads from FLASH_BASE, the in-memory copy of the save that every flash write
+// goes to (agb_flash_dummy.c). It used to reopen the file for every read, which could
+// return stale data for anything written since the last Platform_StoreSaveFile.
+// Bytes outside the 128 KB flash read as 0xFF (erased).
 void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 {
-    DBGPRINTF("ReadFlash(sectorNum=0x%04X,offset=0x%08X,size=0x%02X)\n",sectorNum,offset,size);
-    FILE * savefile = fopen(gPlatformArgs.savePath, "r+b");
-    if (savefile == NULL)
-    {
-        puts("Error opening save file.");
+    u32 shift = (gFlash != NULL) ? gFlash->sector.shift : SAVE_FLASH_SECTOR_SHIFT;
+    u32 start = ((u32)sectorNum << shift) + offset;
+    u32 avail = 0;
+
+    if (dest == NULL || size == 0)
         return;
-    }
-    if (fseek(savefile, (sectorNum << gFlash->sector.shift) + offset, SEEK_SET))
+
+    if (start < sizeof(FLASH_BASE))
     {
-        fclose(savefile);
-        return;
+        avail = sizeof(FLASH_BASE) - start;
+        if (avail > size)
+            avail = size;
+        memcpy(dest, FLASH_BASE + start, avail);
     }
-    if (fread(dest, 1, size, savefile) != size)
+    if (avail < size)
     {
-        fclose(savefile);
-        return;
+        fprintf(stderr, "[save] ReadFlash(sector=%u, offset=0x%X, size=0x%X) is outside the flash\n",
+                (unsigned int)sectorNum, (unsigned int)offset, (unsigned int)size);
+        memset(dest + avail, 0xFF, size - avail);
     }
-    fclose(savefile);
+}
+
+// ---------------------------------------------------------------------------
+// MP: PS-014. --save-selftest: checks the crash-safe save I/O on "<save>.selftest"
+// (never the real save) and exits 0 (OK) or 1 (FAILED). Runs without a window.
+// ---------------------------------------------------------------------------
+
+static unsigned int sSaveSelftestFailures;
+
+#define SAVE_SELFTEST_CHECK(cond)                                                         \
+    do                                                                                    \
+    {                                                                                     \
+        if (!(cond))                                                                      \
+        {                                                                                 \
+            sSaveSelftestFailures++;                                                      \
+            printf("[save] selftest: check failed (sdl2.c:%d): %s\n", __LINE__, #cond);   \
+        }                                                                                 \
+    } while (0)
+
+static void FillSelftestPattern(u8 seed)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof(FLASH_BASE); i++)
+        FLASH_BASE[i] = (u8)((i * 7u + seed) ^ (i >> 8));
+}
+
+static bool SelftestPatternMatches(const u8 *data, u8 seed)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof(FLASH_BASE); i++)
+    {
+        if (data[i] != (u8)((i * 7u + seed) ^ (i >> 8)))
+            return false;
+    }
+    return true;
+}
+
+static bool SelftestFileExists(const char *path)
+{
+    FILE *file = fopen(path, "rb");
+
+    if (file == NULL)
+        return false;
+    fclose(file);
+    return true;
+}
+
+// TRUE if `path` is exactly sizeof(FLASH_BASE) bytes of pattern `seed`.
+static bool SelftestFileMatches(const char *path, u8 seed)
+{
+    static u8 sReadBack[sizeof(FLASH_BASE) + 1];
+    FILE *file = fopen(path, "rb");
+    size_t n;
+
+    if (file == NULL)
+        return false;
+    n = fread(sReadBack, 1, sizeof(sReadBack), file);
+    fclose(file);
+    return n == sizeof(FLASH_BASE) && SelftestPatternMatches(sReadBack, seed);
+}
+
+static void SelftestReport(const char *group, unsigned int failuresBefore)
+{
+    if (sSaveSelftestFailures == failuresBefore)
+        printf("[save] selftest: %s OK\n", group);
+    else
+        printf("[save] selftest: %s FAILED (%u)\n", group, sSaveSelftestFailures - failuresBefore);
+}
+
+static int RunSaveSelftest(void)
+{
+    char path[PLATFORM_ARG_PATH_SIZE + sizeof(SAVE_SELFTEST_SUFFIX)];
+    char tmpPath[sizeof(path) + sizeof(SAVE_TMP_SUFFIX)];
+    u8 buf[64];
+    unsigned int before;
+    FILE *file;
+    size_t i;
+    bool allFF;
+
+    sSaveSelftestFailures = 0;
+    snprintf(path, sizeof(path), "%s%s", gPlatformArgs.savePath, SAVE_SELFTEST_SUFFIX);
+    snprintf(tmpPath, sizeof(tmpPath), "%s%s", path, SAVE_TMP_SUFFIX);
+    printf("[save] selftest: using '%s'\n", path);
+    remove(path);
+    remove(tmpPath);
+
+    // 1. Write a new file, then replace an existing one.
+    before = sSaveSelftestFailures;
+    FillSelftestPattern(1);
+    SAVE_SELFTEST_CHECK(WriteSaveFileAtomic(path, FLASH_BASE, sizeof(FLASH_BASE), 0));
+    SAVE_SELFTEST_CHECK(SelftestFileMatches(path, 1));
+    SAVE_SELFTEST_CHECK(!SelftestFileExists(tmpPath));
+    FillSelftestPattern(2);
+    SAVE_SELFTEST_CHECK(WriteSaveFileAtomic(path, FLASH_BASE, sizeof(FLASH_BASE), 0));
+    SAVE_SELFTEST_CHECK(SelftestFileMatches(path, 2));
+    SAVE_SELFTEST_CHECK(!SelftestFileExists(tmpPath));
+    SelftestReport("write and replace", before);
+
+    // 2. Read back into FLASH_BASE.
+    before = sSaveSelftestFailures;
+    memset(FLASH_BASE, 0, sizeof(FLASH_BASE));
+    SAVE_SELFTEST_CHECK(ReadSaveFile(path));
+    SAVE_SELFTEST_CHECK(SelftestPatternMatches(FLASH_BASE, 2));
+    SelftestReport("read back", before);
+
+    // 3. A save killed mid-write leaves a partial "<save>.tmp": the save itself is still the
+    //    old complete one, loading ignores the leftover, and the next save replaces it.
+    before = sSaveSelftestFailures;
+    file = fopen(tmpPath, "wb");
+    SAVE_SELFTEST_CHECK(file != NULL);
+    if (file != NULL)
+    {
+        FillSelftestPattern(3);
+        SAVE_SELFTEST_CHECK(fwrite(FLASH_BASE, 1, sizeof(FLASH_BASE) / 2, file) == sizeof(FLASH_BASE) / 2);
+        fclose(file);
+    }
+    SAVE_SELFTEST_CHECK(SelftestFileMatches(path, 2));
+    memset(FLASH_BASE, 0, sizeof(FLASH_BASE));
+    SAVE_SELFTEST_CHECK(ReadSaveFile(path));
+    SAVE_SELFTEST_CHECK(SelftestPatternMatches(FLASH_BASE, 2));
+    FillSelftestPattern(4);
+    SAVE_SELFTEST_CHECK(WriteSaveFileAtomic(path, FLASH_BASE, sizeof(FLASH_BASE), 0));
+    SAVE_SELFTEST_CHECK(SelftestFileMatches(path, 4));
+    SAVE_SELFTEST_CHECK(!SelftestFileExists(tmpPath));
+    SelftestReport("interrupted save leftover", before);
+
+    // 4. The --debug-slow-save path (1 ms per sector here) writes the same bytes.
+    before = sSaveSelftestFailures;
+    FillSelftestPattern(5);
+    SAVE_SELFTEST_CHECK(WriteSaveFileAtomic(path, FLASH_BASE, sizeof(FLASH_BASE), 1));
+    SAVE_SELFTEST_CHECK(SelftestFileMatches(path, 5));
+    SelftestReport("slow save", before);
+
+    // 5. A write that cannot happen fails cleanly and leaves the old save alone.
+    before = sSaveSelftestFailures;
+    SAVE_SELFTEST_CHECK(!WriteSaveFileAtomic("pokemon-spectrum-no-such-dir/x.sav", FLASH_BASE, sizeof(FLASH_BASE), 0));
+    SAVE_SELFTEST_CHECK(SelftestFileMatches(path, 5));
+    SelftestReport("failed write", before);
+
+    // 6. Platform_ReadFlash reads the in-memory flash, clamped to its size.
+    before = sSaveSelftestFailures;
+    FillSelftestPattern(6);
+    Platform_ReadFlash(3, 0x10, buf, sizeof(buf));
+    SAVE_SELFTEST_CHECK(memcmp(buf, FLASH_BASE + (3 << SAVE_FLASH_SECTOR_SHIFT) + 0x10, sizeof(buf)) == 0);
+    memset(buf, 0, sizeof(buf));
+    Platform_ReadFlash(31, 0x1000 - 16, buf, sizeof(buf)); // last 16 bytes of the flash + 48 outside
+    SAVE_SELFTEST_CHECK(memcmp(buf, FLASH_BASE + sizeof(FLASH_BASE) - 16, 16) == 0);
+    allFF = true;
+    for (i = 16; i < sizeof(buf); i++)
+    {
+        if (buf[i] != 0xFF)
+            allFF = false;
+    }
+    SAVE_SELFTEST_CHECK(allFF);
+    memset(buf, 0, sizeof(buf));
+    Platform_ReadFlash(200, 0, buf, sizeof(buf));
+    SAVE_SELFTEST_CHECK(buf[0] == 0xFF && buf[sizeof(buf) - 1] == 0xFF);
+    SelftestReport("read flash from memory", before);
+
+    remove(path);
+    remove(tmpPath);
+
+    if (sSaveSelftestFailures == 0)
+    {
+        printf("[save] selftest OK\n");
+        return 0;
+    }
+    printf("[save] selftest FAILED (%u)\n", sSaveSelftestFailures);
+    return 1;
 }
 
 void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame)
@@ -604,14 +913,6 @@ void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame)
     SDL_QueueAudio(1, audioBuffer, samplesPerFrame);
 }
 
-
-static void CloseSaveFile()
-{
-    if (sSaveFile != NULL)
-    {
-        fclose(sSaveFile);
-    }
-}
 
 // Key mappings
 #define KEY_A_BUTTON      SDLK_z

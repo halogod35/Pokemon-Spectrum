@@ -13,6 +13,13 @@
 #include "gba/flash_internal.h"
 #include "decoration_inventory.h"
 #include "agb_flash.h"
+#include "mp/mp.h" // MP: MP_MAX_PLAYERS for the remote-avatar save filter (PS-014)
+
+// MP: PS-014 (AD-10). localIds reserved for remote player avatars: 0xE0 + slot
+// (design.md section 10, PS-031). No map object uses them (maps stay far below 0xE0;
+// the special ids are 127 camera, 236-240 Berry Blender, 255 player).
+#define MP_REMOTE_AVATAR_LOCALID_FIRST 0xE0
+#define MP_REMOTE_AVATAR_LOCALID_LAST  (MP_REMOTE_AVATAR_LOCALID_FIRST + MP_MAX_PLAYERS - 1)
 
 static void ApplyNewEncryptionKeyToAllEncryptedData(u32 encryptionKey);
 
@@ -194,7 +201,15 @@ void SaveObjectEvents(void)
     int i;
 
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
         gSaveBlock1Ptr->objectEvents[i] = gObjectEvents[i];
+        // MP: never write a remote player's avatar into the save (AD-10). This is a safety
+        // net; PS-031 must still remove its avatars before any save (see PS-014 Handoff).
+        if (gObjectEvents[i].active
+         && gObjectEvents[i].localId >= MP_REMOTE_AVATAR_LOCALID_FIRST
+         && gObjectEvents[i].localId <= MP_REMOTE_AVATAR_LOCALID_LAST)
+            memset(&gSaveBlock1Ptr->objectEvents[i], 0, sizeof(gSaveBlock1Ptr->objectEvents[i]));
+    }
 }
 
 void LoadObjectEvents(void)
