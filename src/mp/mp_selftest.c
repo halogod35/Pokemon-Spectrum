@@ -341,6 +341,8 @@ s32 MP_RunSelftest(void)
     sFailures += MpSelftest_Presence();
     // PS-031: remote-avatar decision logic (pure functions).
     sFailures += MpSelftest_Avatar();
+    // PS-046: virtual link cable (parsers + the real link stack on two in-process game instances).
+    sFailures += MpSelftest_Link();
     MpTransport_Shutdown();
 
     if (sFailures == 0)

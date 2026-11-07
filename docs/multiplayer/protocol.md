@@ -1,7 +1,7 @@
 # Pokémon Spectrum — Multiplayer Wire Protocol
 
-- **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence)
-- **Protocol version:** `MP_PROTOCOL_VERSION = 1`
+- **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-046 (virtual link cable)
+- **Protocol version:** `MP_PROTOCOL_VERSION = 2` (2: PS-046 added the `LINK_*` messages, 6.11)
 - **Status:** draft for Director approval
 - **Companion docs:** `design.md` (modules, API, build), `include/mp/mp.h` (public API)
 
@@ -35,7 +35,7 @@ changes what a peer accepts is a wire change and **must** bump `MP_PROTOCOL_VERS
 
 | Channel | ENet flags | Used for |
 |---|---|---|
-| **0** `MP_CHANNEL_CONTROL` | `ENET_PACKET_FLAG_RELIABLE` | All session/control messages (`0x01`–`0x07`) |
+| **0** `MP_CHANNEL_CONTROL` | `ENET_PACKET_FLAG_RELIABLE` | All session/control messages (`0x01`–`0x07`) and the virtual link cable (`0x60`–`0x6B`, 6.11) |
 | **1** `MP_CHANNEL_PRESENCE` | `0` (unreliable, **sequenced** by ENet per channel) | `PRESENCE`, `PING`, `PONG` |
 
 A message received on the wrong channel is dropped (counts as malformed, see 8.2).
@@ -102,7 +102,19 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 | `0x11`–`0x1F` | reserved: presence/world | | 1 | | |
 | `0x20`–`0x3F` | reserved: social (chat, emotes) | | | | later |
 | `0x40`–`0x5F` | **reserved: `INTERACT_*`** (Stage 4: interact menu, trainer card, view Pokémon, trade/battle requests) | | 0 | | Stage 4 |
-| `0x60`–`0x7F` | **reserved: `LINK_*`** (Stage 4: virtual link cable, PS-040) | | 0 (or a new channel) | | Stage 4 |
+| `0x60` | `LINK_JOIN` | C → H | 0 | 4 | IN_SESSION (6.11) |
+| `0x61` | `LINK_LEAVE` | C → H | 0 | 4 | IN_SESSION |
+| `0x62` | `LINK_GROUP` | H → C | 0 | 4 | IN_SESSION |
+| `0x63` | `LINK_END` | H → C | 0 | 4 | IN_SESSION |
+| `0x64` | `LINK_OPEN` | C → H | 0 | 4 | IN_SESSION |
+| `0x65` | `LINK_CLOSE` | C → H | 0 | 4 | IN_SESSION |
+| `0x66` | `LINK_START` | C → H | 0 | 4 | IN_SESSION |
+| `0x67` | `LINK_STATUS` | H → C | 0 | 4 | IN_SESSION |
+| `0x68` | `LINK_BUS_START` | H → C | 0 | 4 | IN_SESSION |
+| `0x69` | `LINK_BUS_END` | H → C | 0 | 4 | IN_SESSION |
+| `0x6A` | `LINK_CMD` | C → H | 0 | 20 | IN_SESSION |
+| `0x6B` | `LINK_ROW` | H → C | 0 | 8 + 16·N (N = 2..4) | IN_SESSION |
+| `0x6C`–`0x7F` | reserved: `LINK_*` | | 0 | | |
 | `0x80`–`0xEF` | reserved | | | | |
 | `0xF0` | `DEBUG_ECHO` | both | 0 | 0..64 | only under `--mp-selftest` (PS-011). Session code drops it. |
 | `0xF1`–`0xFE` | reserved: debug | | | | |
@@ -418,6 +430,96 @@ loss and reordering in `--mp-debug` logs and counters.
 Payload 0..64 arbitrary bytes, channel 0. Only handled by the PS-011 `--mp-selftest` loopback test.
 In a normal session it is dropped and counted malformed.
 
+### 6.11 Virtual link cable `LINK_*` (0x60–0x6B) — PS-046, channel 0
+
+Emerald's cable link (`src/link.c`) runs unchanged over the session; see
+`research/PS-040-link-report.md` section 2 for the cable semantics being reproduced. The
+**host is the bus**: it sequences every link group, including groups it is not a member of
+(Director ruling). Game side: `MP_LinkMain1` (`src/mp/mp_link_cable.c`) replaces the SIO
+`LinkMain1`; session side: `src/mp/mp_link.c`.
+
+**Concepts.**
+- A **link group** is 2..4 slots. It forms when every slot in a mask has sent `LINK_JOIN` with that
+  same mask and none of them is in a group. **Link id** = rank of the slot in the mask (lowest slot
+  = link id 0 = the link master, `GetMultiplayerId()`). A slot is in at most one group.
+- Each member counts its own **open sequence** (u8, +1 per `OpenLink`). The host records which
+  members are open with which sequence.
+- A **bus** is one run of the cable between an open and a close. The host gives each bus an
+  **epoch** (u8, never 0). `LINK_CMD`, `LINK_ROW` and `BUS_END` carry it; anything for an older
+  epoch is a stale race and is dropped **silently** (not malformed).
+- A **row** is one 8-word command per link id (zeros for "nothing"), sent to **every** member,
+  the sender included, like the SIO multi-mode registers. Members consume one row per game tick.
+
+**Control messages**: payload 4 bytes, one layout for all of them:
+
+| Offset | Size | Field | Notes |
+|---|---|---|---|
+| 0 | 1 | `groupId` | host-assigned, never 0. `JOIN` / `LEAVE`: reserved (0). `END`: 0 = "your request was refused". |
+| 1 | 1 | `arg1` | per type, below |
+| 2 | 1 | `arg2` | per type, below; reserved (0) where unused |
+| 3 | 1 | reserved | 0, ignored |
+
+| Type | Dir | `arg1` | `arg2` | Validation (parser, pure) |
+|---|---|---|---|---|
+| `0x60` `LINK_JOIN` | C → H | member slot mask | — | mask only in bits 0..3, 2..4 bits set |
+| `0x61` `LINK_LEAVE` | C → H | — | — | — |
+| `0x62` `LINK_GROUP` | H → C | member slot mask | recipient's link id | `groupId != 0`, mask as JOIN, link id < member count |
+| `0x63` `LINK_END` | H → C | reason: 1 LEFT, 2 LOST, 3 OVERFLOW, 4 REFUSED (5..31 reserved) | — | reason != 0 |
+| `0x64` `LINK_OPEN` | C → H | open sequence | — | `groupId != 0` |
+| `0x65` `LINK_CLOSE` | C → H | open sequence | — | `groupId != 0` |
+| `0x66` `LINK_START` | C → H | open sequence | — | `groupId != 0` |
+| `0x67` `LINK_STATUS` | H → C | open mask by link id | — | `groupId != 0`, mask < 0x10 |
+| `0x68` `LINK_BUS_START` | H → C | bus epoch | recipient's open sequence | `groupId != 0`, epoch != 0 |
+| `0x69` `LINK_BUS_END` | H → C | bus epoch | — | `groupId != 0`, epoch != 0 |
+
+**`0x6A` `LINK_CMD`** (C → H), payload 20 bytes: `groupId` u8, `busEpoch` u8, reserved u16,
+`cmd` u16[8] (one link command, `gSendCmd`). Valid: `groupId != 0`, `busEpoch != 0`, and the
+command is not all zeros (an all-zero command is never sent; the cable drops empty rows too).
+
+**`0x6B` `LINK_ROW`** (H → C), payload 8 + 16·N bytes: `groupId` u8, `busEpoch` u8, `count` N u8
+(2..4), reserved u8, `rowSeq` u16 (per bus, from 0, for logs), reserved u16, then N × u16[8] in link
+id order. Valid: `groupId != 0`, `busEpoch != 0`, 2 <= N <= 4 and `length == 8 + 16·N` exactly.
+
+**Host processing** (after the parser; the sender's slot is the real one, never a field):
+
+| Received | Action |
+|---|---|
+| `JOIN(mask)` | Mask without the sender, or with an empty slot → `END(0, REFUSED)` to the sender. If the sender is in a group, that group ends (`END(LEFT)` to the others). Store the request; form the group if every slot in the mask has asked for the same mask. Forming: new `groupId`, `GROUP(id, mask, linkId)` to each member. |
+| `LEAVE` | Drop the request; if in a group, the group ends: `END(LEFT)` to the other members. |
+| `OPEN(g, seq)` | `g` not the sender's group → ignore. If the bus is up it ends (`BUS_END`). Mark open with `seq`, send `STATUS(openMask)` to all members. If a start is pending and all are open, start the bus. |
+| `CLOSE(g, seq)` | Ignore unless open with that `seq`. Mark closed, cancel a pending start, end the bus if up (`BUS_END(epoch)` to all members), send `STATUS`. |
+| `START(g, seq)` | Only from link id 0, open with that `seq`, bus not up; else ignore. All open → **start the bus**: new epoch, empty queues, `BUS_START(epoch, member's seq)` to each member. Otherwise remember the start until all are open. |
+| `CMD(g, epoch, cmd)` | Ignore unless the bus `g`/`epoch` is up. Queue it for the sender's link id (128 per member). Queue full → the group ends with `END(OVERFLOW)` to all members. |
+| a player leaves the table | Requests that include the slot get `END(0, LOST)`; its group ends with `END(LOST)` to the others. |
+
+Rows: once per `MP_Update`, for every group whose bus is up, while any member's queue is not
+empty: take at most one command from each member's queue (zeros for an empty queue) and send
+`ROW` to every member. Each member sends at most one command per game tick and consumes one row
+per tick, so pairing the queues keeps the row rate at the busiest member's command rate, as on
+the cable. The host's own member (slot 0) is served by direct calls, never the network.
+
+**Member processing.** `GROUP` is accepted only while requested with that exact mask and link id;
+`END` for our group or for our pending request (group 0) ends it; `STATUS` updates the open count
+used for the handshake player count; `BUS_START` is accepted only while open with that sequence
+(rows of the new bus follow it on the same ordered channel); `ROW` and `BUS_END` only for the
+current bus. Rows are queued (`MP_LINK_RX_QUEUE_SIZE` = 256; overflow ends the link with
+`RX_OVERFLOW` and sends `LEAVE`). The game is told at most 50 (`QUEUE_CAPACITY`) of them.
+Watchdog: own commands not echoed in a row for 10 s (`MP_LINK_WATCHDOG_MS`) → `LEAVE`, link
+lost. A group or bus that ends while the game's cable is open sets the game's hardware-error bit.
+
+**Typical exchange** (A = link id 0, B = link id 1; both have called `MP_LinkJoin(mask)`):
+
+```
+A,B -> H  JOIN(mask)                      H -> A,B  GROUP(g, mask, linkId)
+A,B -> H  OPEN(g, seqA/seqB)              H -> A,B  STATUS(g, 0b11)        (after each OPEN)
+A   -> H  START(g, seqA)                  H -> A,B  BUS_START(g, e, seq)
+A,B -> H  CMD(g, e, cmd) ...              H -> A,B  ROW(g, e, n, {cmdA, cmdB}) ...
+A,B -> H  CLOSE(g, seq)                   H -> A,B  BUS_END(g, e), STATUS(g, ...)
+```
+
+Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x6C`–`0x7F` type):
+dropped and counted against the 8.2 budget. Stale (other group, old epoch, old sequence): silent.
+
 ---
 
 ## 7. Session rules
@@ -490,6 +592,7 @@ or speed-up does not cause timeouts. The network is still pumped while the game 
 | `PLAYER_UPDATE` | validate, store, forward to all other clients |
 | `PING` | answer `PONG` (not forwarded) |
 | `BYE` | remove client, broadcast `PLAYER_LEFT` |
+| `LINK_JOIN` `LINK_LEAVE` `LINK_OPEN` `LINK_CLOSE` `LINK_START` `LINK_CMD` | link bus (6.11): not forwarded as such; the host answers with `LINK_GROUP` / `END` / `STATUS` / `BUS_START` / `BUS_END` / `ROW` |
 | anything else | drop, count malformed |
 
 The host's own presence and summary changes are sent by the host to every client directly
@@ -656,9 +759,9 @@ The build hash `0x12345678` is an illustrative value (a real one is an FNV-1a re
 Packet = 36 bytes:
 
 ```
-01 01 20 00                 header: type HELLO, version 1, length 32
+01 02 20 00                 header: type HELLO, version 2, length 32
 50 53 4D 50                 magic "PSMP"
-01 00                       protocolVersion 1
+02 00                       protocolVersion 2
 00 00                       reserved
 78 56 34 12                 buildHash 0x12345678
 00                          buildFlags
@@ -679,3 +782,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 |---|---|---|
 | 1 | PS-010 | Initial spec |
 | 1 | PS-030 | PRESENCE implemented. No byte change, so no version bump: field semantics pinned down (6.8.1); a CONNECTING client drops PRESENCE silently instead of counting it malformed (a relayed update can overtake a retransmitted WELCOME; it was dropped before too, only the malformed count changes); `MP_IsValidMap` from a compile-time-checked map count table. |
+| 2 | PS-046 | Virtual link cable: `LINK_JOIN` … `LINK_ROW` (`0x60`–`0x6B`, 6.11) on channel 0, host-sequenced rows, link groups, bus epochs. Wire change, so `MP_PROTOCOL_VERSION` 1 → 2 (version-1 builds are rejected with VERSION). Worked example (10) updated. |

@@ -20,6 +20,7 @@ its own save file and its own multiplayer role, without going through menus.
 | `--name <text>` | Debug override for the name other players see (never saved). 1–7 characters, `A-Z a-z 0-9` only. Anything else exits with code 2 before the window opens. | the save's name |
 | `--mp-debug` | Verbose multiplayer/network logging. | off |
 | `--mp-selftest` | Run the multiplayer self-test (loopback on 127.0.0.1, UDP 27590–27599) without a window or a save, print `[MP] selftest OK` / `FAILED`, and exit 0 / 1. Added by PS-011. | off |
+| `--mp-link-test` | **Test only** (PS-046). With `--host` / `--join`: once slots 0 and 1 are in the session and in the overworld, both form a link group, `OpenLink()`, run the player-data exchange and 3 × 200-byte `SendBlock` rounds, close, and repeat every second. Each step is logged as `[MP] link test: ...`. Kill one instance and the other logs `link-error path reached` and shows the game's link error screen (recovery is PS-048; close the window). | off |
 | `--mp-fake-protocol <n>` | **Test only.** Advertise protocol version `n` (0–65535) in HELLO, so a normal host answers `REJECT(VERSION)`. | off |
 | `--mp-fake-build <id>` | **Test only.** Hash `<id>` (1–15 printable ASCII) instead of the real build id, so a normal host answers `REJECT(BUILD)`. | off |
 | `--debug-slow-save` | **Test only.** Pause 50 ms after each 4 KB sector while the save file is written (1.6 s per file write; one in-game save writes the file twice, so about 3.2 s), so the process can be killed mid-save. Added by PS-014. | off |
@@ -118,3 +119,21 @@ own save (AD-10). Remote data is never written. To check: host and join with two
 in both while the players can see each other, quit, start each save offline
 (no `--host` / `--join`), and CONTINUE. Each game loads its own position, and there is no
 extra player or NPC where the other player stood.
+
+## Virtual link cable test (PS-046)
+
+```
+pokeemerald64 --save host.sav   --host 27500           --mp-link-test --mp-debug
+pokeemerald64 --save client.sav --join 127.0.0.1:27500 --mp-link-test --mp-debug
+```
+
+Continue on both. Expected on both consoles, repeating: `grouped as link id N`, `2 players on the cable`
+(master), two `gLinkPlayers[i] = ...` lines naming both saves (the same on both consoles), `round 1..3: 200-byte blocks exchanged and
+verified`, `cycle N complete`. The game keeps running (walk around); the link runs alongside the overworld.
+
+- **Disconnect:** close one window (BYE, immediate) or kill the process (detected within the 10 s idle timeout). The survivor logs `link group ... ended: LOST`
+  (or `SESSION`) and `link-error path reached (CB2_LinkError ...)` and shows the link error screen.
+- **Latency (card acceptance, 150 ms):** Linux `sudo tc qdisc add dev lo root netem delay 75ms` (75 ms each
+  way on loopback = 150 ms RTT; remove with `sudo tc qdisc del dev lo root`). Windows: clumsy, "Lag" 150 ms on
+  the loopback filter. Rounds take longer (each block is about 15 rows plus round trips); they must still
+  verify.
