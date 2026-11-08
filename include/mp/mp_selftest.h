@@ -40,5 +40,9 @@ u32 MpSelftest_Link(void);
 // PS-047: the hardened link receive path: link.c ProcessRecvCmds, the battle link receive
 // path and controller filter, MP_LinkValidateMon and friends, text buffers, the bus pre-filter.
 u32 MpSelftest_LinkHardening(void);
+// PS-044: TRADE_COMMIT parser fuzzing, the host-arbitrated commit logic (pure + random-event
+// fuzz) and host + 2 clients in process: both ready -> both commit; a member that drops before
+// commit -> neither commits; in doubt -> presumed abort.
+u32 MpSelftest_Trade(void);
 
 #endif // GUARD_MP_MP_SELFTEST_H

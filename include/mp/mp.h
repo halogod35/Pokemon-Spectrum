@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      5       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043).
+#define MP_PROTOCOL_VERSION      6       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -579,6 +579,62 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[8]);
 // SendBlock rounds, close, and repeat, logging each step. Ticked from HandleLinkConnection().
 void MP_SetLinkTest(bool8 enabled);
 void MP_LinkTestTick(void);
+
+// ---------------------------------------------------------------------------
+// Direct trade over the cable (PS-044, protocol.md 6.15, src/mp/mp_trade.c + mp_trade_commit.c)
+// ---------------------------------------------------------------------------
+//
+// After PS-041's TRADE request is accepted, both players save, link up over the virtual
+// cable and enter Emerald's own trade menu (CB2_StartCreateTradeMenu) from the overworld.
+//
+// Host-arbitrated commit (Director ruling on PS-044). The trade's save is two-phase
+// (CB2_SaveAndEndTrade: write every sector, write the last one unsigned, then sign it). For a
+// direct trade the vanilla standby between "unsigned" and "signed" is replaced by:
+//   1. MP_TradeCommitReady(): "my save is written; only the signature is left" (READY to the host).
+//   2. The host answers COMMIT to every member once BOTH members of the link group are READY,
+//      or ABORT if the group ends, a member leaves, or the round is not complete within
+//      MP_TRADE_COMMIT_TIMEOUT_MS. The host's decision is final and repeated on request.
+//   3. MP_TradeCommitPoll(): COMMIT -> sign the save; ABORT -> do not sign (the old save stays
+//      valid and the link-error path reloads it).
+// A member whose own session ends while it waits gets ABORT (IN_DOUBT): see protocol.md 6.15
+// for the one remaining window.
+enum
+{
+    MP_TRADE_COMMIT_IDLE,       // MP_TradeCommitReady not called (or MP_TradeCommitReset since)
+    MP_TRADE_COMMIT_WAITING,    // READY sent, no decision yet: keep waiting
+    MP_TRADE_COMMIT_COMMIT,     // sign the save
+    MP_TRADE_COMMIT_ABORT,      // do not sign; MP_TradeCommitGetAbortReason() says why
+};
+enum
+{
+    MP_TRADE_ABORT_NONE         = 0,
+    // --- Wire reasons (TRADE_COMMIT ABORT from the host) ---
+    MP_TRADE_ABORT_GROUP_ENDED  = 1,  // the link group ended (a member left the link or the session)
+    MP_TRADE_ABORT_TIMEOUT      = 2,  // the other member was not ready within MP_TRADE_COMMIT_TIMEOUT_MS
+    MP_TRADE_ABORT_MISMATCH     = 3,  // not in a 2-member group with that id, or the members disagree on seq
+    MP_TRADE_ABORT_FIRST        = 1,
+    MP_TRADE_ABORT_LAST         = 3,
+    // --- Local reasons ---
+    MP_TRADE_ABORT_NOT_GROUPED  = 32, // MP_TradeCommitReady without a link group
+    MP_TRADE_ABORT_IN_DOUBT     = 33, // our session ended before the decision arrived (presumed abort)
+};
+#define MP_TRADE_COMMIT_TIMEOUT_MS  15000
+// Member: sends READY for the next trade of the current link group. FALSE (and the state is
+// ABORT, NOT_GROUPED) if we are not GROUPED.
+bool8 MP_TradeCommitReady(void);
+u8 MP_TradeCommitPoll(void);            // MP_TRADE_COMMIT_*
+u8 MP_TradeCommitGetAbortReason(void);  // MP_TRADE_ABORT_* for the last ABORT
+void MP_TradeCommitReset(void);         // back to IDLE (the round counter is kept)
+
+// Game side (src/mp/mp_trade.c). TRUE while a trade started by PS-044 runs (from the linkup
+// until the player is back in the overworld). trade.c uses it, marked "// MP:", to send its
+// exits to the normal overworld and to use the commit above in CB2_SaveAndEndTrade.
+bool8 MP_TradeIsDirect(void);
+// The trade menu's exit for a direct trade (instead of CB2_ReturnToFieldFromMultiplayer, which
+// re-enters the cable-room overworld): leaves the link group and returns to the normal field.
+void CB2_MpReturnToFieldAfterTrade(void);
+// MP: from MP_LinkPrepareErrorRecovery (link.c): a link error ended the trade; forget it.
+void MP_TradeOnLinkErrorRecovery(void);
 
 // ---------------------------------------------------------------------------
 // Link receive-path hardening (PS-047, AD-9). src/mp/mp_link_validate.c

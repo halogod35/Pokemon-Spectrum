@@ -349,6 +349,8 @@ s32 MP_RunSelftest(void)
     sFailures += MpSelftest_Link();
     // PS-047: link receive-path hardening (crafted commands, blocks, battle messages, mons).
     sFailures += MpSelftest_LinkHardening();
+    // PS-044: host-arbitrated trade commit (parsers, decision logic, host + 2 clients).
+    sFailures += MpSelftest_Trade();
     MpTransport_Shutdown();
 
     if (sFailures == 0)

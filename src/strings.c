@@ -96,6 +96,14 @@ const u8 gText_MpViewBadData[] = _("Couldn’t read {STR_VAR_1}’s data.");
 // MP: PS-043 view another player's POKéMON
 const u8 gText_MpIncomingViewParty[] = _("{STR_VAR_1} wants to see\nyour POKéMON. Allow?");
 const u8 gText_MpViewNoPokemon[] = _("{STR_VAR_1} has no POKéMON.");
+// MP: PS-044 direct trade
+const u8 gText_MpTradeLinking[] = _("Linking up with {STR_VAR_1}…\nDon’t turn off the power.");
+const u8 gText_MpTradeLinkFailed[] = _("Couldn’t link up with {STR_VAR_1}.\nThe trade was cancelled.");
+const u8 gText_MpTradeSaveFailed[] = _("The game couldn’t be saved.\nThe trade was cancelled.");
+const u8 gText_MpTradeNeedTwoMons[] = _("You need two or more POKéMON\nto trade.");
+const u8 gText_MpTradeEnigmaBerry[] = _("A POKéMON holding an ENIGMA BERRY\ncan’t be traded.");
+const u8 gText_MpTradeCantHere[] = _("You can’t trade here.");
+const u8 gText_MpTradePartnerBusy[] = _("{STR_VAR_1} can’t trade right now.");
 const u8 gText_WirelessNotConnected[] = _("The Wireless Adapter is not\nconnected.");
 const u8 gText_MysteryGiftCantUse[] = _("MYSTERY GIFT can't be used while\nthe Wireless Adapter is attached.");
 const u8 gText_MysteryEventsCantUse[] = _("MYSTERY EVENTS can't be used while\nthe Wireless Adapter is attached.");

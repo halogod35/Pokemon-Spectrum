@@ -18,6 +18,7 @@
 #include <string.h>
 #include "mp/mp_link.h"
 #include "mp/mp_session_internal.h"
+#include "mp/mp_trade_commit.h" // PS-044
 
 enum
 {
@@ -293,6 +294,7 @@ static void MpLinkHostEndGroup(struct MpLinkHostGroup *g, u8 reason, u8 exceptSl
     MP_SLOG("link group %u ended: %s\n", (unsigned)g->id, MpLinkEndName(reason));
     copy = *g;  // the group is gone before any direct call reaches our own member
     memset(g, 0, sizeof(*g));
+    MpTradeCommit_HostOnGroupEnded(copy.memberMask); // PS-044: undecided trade commits in it are aborted
     MpLinkHostBroadcastCtl(&copy, MP_MSG_LINK_END, reason, exceptSlot);
 }
 
@@ -534,6 +536,7 @@ void MpLink_HostUpdate(void)
         if (h->groups[i].used && h->groups[i].busUp)
             MpLinkHostEmitRows(&h->groups[i]);
     }
+    MpTradeCommit_HostUpdate(); // PS-044: commit timeouts
 }
 
 void MpLink_HostOnSlotLeft(u8 slot)
@@ -557,6 +560,7 @@ void MpLink_HostOnSlotLeft(u8 slot)
     g = MpLinkHostGroupOfSlot(slot);
     if (g != NULL)
         MpLinkHostEndGroup(g, MP_LINK_END_LOST, slot);
+    MpTradeCommit_HostOnSlotLeft(slot); // PS-044
 }
 
 bool8 MpLink_OnHostReceive(u8 slot, u8 channel, u8 type, const u8 *payload, u32 len)
@@ -582,6 +586,8 @@ bool8 MpLink_OnHostReceive(u8 slot, u8 channel, u8 type, const u8 *payload, u32 
             return FALSE;
         MpLinkHostHandleCmd(slot, &cmd);
         return TRUE;
+    case MP_MSG_TRADE_COMMIT: // PS-044 (protocol.md 6.15)
+        return MpTradeCommit_OnHostReceive(slot, payload, len);
     default:
         return FALSE; // host -> client types, or unassigned LINK_* numbers
     }
@@ -737,6 +743,8 @@ bool8 MpLink_OnClientReceive(u8 channel, u8 type, const u8 *payload, u32 len)
             return FALSE;
         MpLinkMemberHandleRow(&row);
         return TRUE;
+    case MP_MSG_TRADE_COMMIT: // PS-044 (protocol.md 6.15)
+        return MpTradeCommit_OnClientReceive(payload, len);
     default:
         return FALSE;
     }
@@ -752,12 +760,14 @@ void MpLink_ResetInstance(u8 instance)
         return;
     memset(&sLinkHost[instance], 0, sizeof(sLinkHost[instance]));
     memset(&sLinkMember[instance], 0, sizeof(sLinkMember[instance]));
+    MpTradeCommit_ResetInstance(instance); // PS-044
 }
 
 void MpLink_OnSessionStart(void)
 {
     struct MpLinkMember *m = MpLinkMemberState();
 
+    MpTradeCommit_OnSessionStart(); // PS-044
     memset(MpLinkHostState(), 0, sizeof(struct MpLinkHost));
     // The member keeps its open/lost state: the game's cable may still be open from before.
     if (m->state != MP_LINK_STATE_NONE)
@@ -766,6 +776,7 @@ void MpLink_OnSessionStart(void)
 
 void MpLink_OnSessionEnd(void)
 {
+    MpTradeCommit_OnSessionEnd(); // PS-044: a member still waiting presumes ABORT
     memset(MpLinkHostState(), 0, sizeof(struct MpLinkHost));
     MpLinkMemberEnd(MP_LINK_END_SESSION);
 }
@@ -832,6 +843,25 @@ u8 MP_LinkGetLinkId(void)
 u8 MP_LinkGetEndReason(void)
 {
     return MpLinkMemberState()->endReason;
+}
+
+// PS-044 (mp_trade_commit.c)
+bool8 MpLink_HostGetGroup(u8 slot, u8 *groupId, u8 *memberMask)
+{
+    struct MpLinkHostGroup *g = MpLinkHostGroupOfSlot(slot);
+
+    if (g == NULL)
+        return FALSE;
+    *groupId = g->id;
+    *memberMask = g->memberMask;
+    return TRUE;
+}
+
+u8 MpLink_MemberGroupId(void)
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+
+    return (m->state == MP_LINK_STATE_GROUPED) ? m->groupId : 0;
 }
 
 // ===========================================================================

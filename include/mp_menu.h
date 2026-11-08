@@ -52,6 +52,17 @@ struct MpEvent;
 void MpInteractUi_OnEvent(const struct MpEvent *ev);
 void MpInteractUi_Update(void);
 
+// Direct trade (PS-044, src/mp/mp_trade.c).
+// The reason we cannot trade right now (a message, {STR_VAR_1} unused), or NULL: a denied map,
+// already linking, fewer than two POKEMON, an ENIGMA BERRY held (the Cable Club's rules).
+const u8 *MpTrade_CheckLocal(void);
+// The reason `slot` cannot trade right now (a message with their name in {STR_VAR_1}), or NULL:
+// gone, or in a battle / warping / not in the field / on a denied map (PS-041's busy states).
+const u8 *MpTrade_CheckPartner(u8 slot);
+// Both sides, once the TRADE request is ACCEPTED: save, link up, enter the trade menu. Field
+// controls must be locked and the NPCs frozen (they stay so until it ends).
+void MpTrade_Start(u8 partnerSlot, const u8 *partnerName);
+
 void MpUi_ShowPlayerList(void);
 void MpUi_UpdatePlayerList(void);
 void MpUi_HidePlayerList(void);

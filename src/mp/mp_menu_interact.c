@@ -16,8 +16,10 @@
 //     returns to the field the same way as the trainer card). An empty party only shows a
 //     message.
 //   - TRADE / BATTLE: MP_SendInteractRequest, "Waiting for NAME... (B) CANCEL", then the
-//     outcome (accepted / declined / busy / timed out / unavailable). On ACCEPTED, for now
-//     "Trading/Battling isn't available yet." (PS-044 / PS-045 plug in at MpInteractUi_OnAccepted).
+//     outcome (accepted / declined / busy / timed out / unavailable). PS-044: TRADE is only
+//     sent if both can trade (MpTrade_CheckLocal / _CheckPartner), and on ACCEPTED both sides
+//     hand over to MpTrade_Start (src/mp/mp_trade.c). BATTLE still says "isn't available yet"
+//     (PS-045 plugs in at MpInteractUi_OnAccepted).
 //   - B / EXIT closes it. If the player leaves or the session ends, it closes with a message.
 //
 // Target side
@@ -319,6 +321,19 @@ static void HandleMenuInput(u8 taskId)
         else
             sMenuKind = (choice == MENU_ITEM_TRADE) ? MP_INTERACT_TRADE : MP_INTERACT_BATTLE;
         sMenuResult = MP_INTERACT_RESULT_NONE;
+        if (sMenuKind == MP_INTERACT_TRADE)
+        {
+            // PS-044: don't ask if one of us can't trade anyway.
+            const u8 *problem = MpTrade_CheckLocal();
+
+            if (problem == NULL)
+                problem = MpTrade_CheckPartner(sMenuSlot);
+            if (problem != NULL)
+            {
+                ShowMenuMessage(taskId, problem, MENU_STATE_MESSAGE_CLOSE);
+                break;
+            }
+        }
         if (!MP_SendInteractRequest(sMenuSlot, sMenuKind))
             ShowMenuMessage(taskId, gText_MpRequestFailed, MENU_STATE_MESSAGE_CLOSE);
         else
@@ -350,6 +365,14 @@ static void ShowResult(u8 taskId)
             HideFieldMessageBox();
             FadeScreen(FADE_TO_BLACK, 0);
             gTasks[taskId].tState = MENU_STATE_FADE_TO_VIEW;
+            break;
+        }
+        if (sMenuKind == MP_INTERACT_TRADE)
+        {
+            // PS-044: hand over to the trade (controls stay locked, the NPCs frozen).
+            sMenuActive = FALSE;
+            DestroyTask(taskId);
+            MpTrade_Start(sMenuSlot, sMenuName);
             break;
         }
         end = StringCopy(sText, gText_MpResultAccepted);
@@ -536,6 +559,29 @@ static void Task_MpIncomingPrompt(u8 taskId)
             // PS-043: our session sends the party with the answer; nothing more to say.
             MP_RespondInteract(MP_INTERACT_RESULT_ACCEPTED);
             ClosePrompt(taskId);
+        }
+        else if (choice == 0 && sIncomingKind == MP_INTERACT_TRADE)
+        {
+            // PS-044: check that we can trade before saying yes, then hand over to the trade.
+            const u8 *problem = MpTrade_CheckLocal();
+
+            if (problem == NULL)
+                problem = MpTrade_CheckPartner(sIncomingSlot);
+            if (problem != NULL)
+            {
+                MP_RespondInteract(MP_INTERACT_RESULT_DECLINED);
+                tState = PROMPT_STATE_MESSAGE;
+                ShowMessageWithName(sIncomingName, problem);
+            }
+            else
+            {
+                MP_RespondInteract(MP_INTERACT_RESULT_ACCEPTED);
+                sIncomingActive = FALSE;
+                sIncomingShown = FALSE;
+                sIncomingWithdrawn = 0;
+                DestroyTask(taskId);
+                MpTrade_Start(sIncomingSlot, sIncomingName); // controls stay locked, the NPCs frozen
+            }
         }
         else if (choice == 0)
         {

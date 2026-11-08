@@ -1766,7 +1766,8 @@ static void CB_ExitCanceledTrade(void)
             Free(sTradeMenu);
             FreeAllWindowBuffers();
             DestroyWirelessStatusIndicatorSprite();
-            SetMainCallback2(CB2_ReturnToFieldFromMultiplayer);
+            // MP: PS-044. A direct trade (from the overworld) returns to the normal field, not the cable room.
+            SetMainCallback2(MP_TradeIsDirect() ? CB2_MpReturnToFieldAfterTrade : CB2_ReturnToFieldFromMultiplayer);
         }
     }
     else
@@ -1776,7 +1777,8 @@ static void CB_ExitCanceledTrade(void)
             Free(sMenuTextTileBuffer);
             Free(sTradeMenu);
             FreeAllWindowBuffers();
-            SetMainCallback2(CB2_ReturnToFieldFromMultiplayer);
+            // MP: PS-044. A direct trade (from the overworld) returns to the normal field, not the cable room.
+            SetMainCallback2(MP_TradeIsDirect() ? CB2_MpReturnToFieldAfterTrade : CB2_ReturnToFieldFromMultiplayer);
         }
     }
 }
@@ -4722,7 +4724,10 @@ static void CB2_SaveAndEndTrade(void)
         if (gWirelessCommType)
             MysteryGift_TryIncrementStat(CARD_STAT_NUM_TRADES, gLinkPlayers[GetMultiplayerId() ^ 1].trainerId);
 
-        SetContinueGameWarpStatusToDynamicWarp();
+        // MP: PS-044. A direct trade is saved like a normal save at the player's position; the
+        // dynamic warp (the Cable Club's way back out) does not apply and is left untouched.
+        if (!MP_TradeIsDirect())
+            SetContinueGameWarpStatusToDynamicWarp();
         LinkFullSave_Init();
         gMain.state++;
         sTradeAnim->timer = 0;
@@ -4762,6 +4767,17 @@ static void CB2_SaveAndEndTrade(void)
     case 41:
         if (sTradeAnim->timer == 0)
         {
+            if (MP_TradeIsDirect())
+            {
+                // MP: PS-044 host-arbitrated commit (mp.h, protocol.md 6.15) instead of the
+                // standby: the save is written except for its signature. Tell the host and wait
+                // for its decision, which arrives even if the cable dies meanwhile, so a link
+                // error must not take us to CB2_LinkError before that.
+                SetSuppressLinkErrorMessage(TRUE);
+                MP_TradeCommitReady();
+                gMain.state = 43;
+                break;
+            }
             SetTradeLinkStandbyCallback(1);
             gMain.state = 42;
         }
@@ -4775,6 +4791,29 @@ static void CB2_SaveAndEndTrade(void)
         {
             LinkFullSave_SetLastSectorSignature();
             gMain.state = 5;
+        }
+        break;
+    case 43: // MP: PS-044. Waiting for the host's COMMIT / ABORT.
+        switch (MP_TradeCommitPoll())
+        {
+        case MP_TRADE_COMMIT_COMMIT:
+            MP_TradeCommitReset();
+            LinkFullSave_SetLastSectorSignature(); // the trade is now in this save
+            SetSuppressLinkErrorMessage(FALSE);
+            if (HasLinkErrorOccurred())
+                SetMainCallback2(CB2_LinkError); // the partner is gone; PS-048 reloads the new save
+            else
+                gMain.state = 5;
+            break;
+        case MP_TRADE_COMMIT_ABORT:
+            // Not signed: the previous save stays the valid one. The link-error path closes the
+            // cable and PS-048's "Continue from last save" reloads it, undoing the trade.
+            MP_TradeCommitReset();
+            SetSuppressLinkErrorMessage(FALSE);
+            if (!HasLinkErrorOccurred())
+                CloseLink();
+            SetMainCallback2(CB2_LinkError);
+            break;
         }
         break;
     case 5:

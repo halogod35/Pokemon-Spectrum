@@ -35,7 +35,7 @@ changes what a peer accepts is a wire change and **must** bump `MP_PROTOCOL_VERS
 
 | Channel | ENet flags | Used for |
 |---|---|---|
-| **0** `MP_CHANNEL_CONTROL` | `ENET_PACKET_FLAG_RELIABLE` | All session/control messages (`0x01`–`0x07`), `INTERACT_*` (6.11) and the virtual link cable (`0x60`–`0x6B`, 6.12) |
+| **0** `MP_CHANNEL_CONTROL` | `ENET_PACKET_FLAG_RELIABLE` | All session/control messages (`0x01`–`0x07`), `INTERACT_*` (6.11) and the virtual link cable (`0x60`–`0x6B`, 6.12) and `TRADE_COMMIT` (`0x6C`, 6.15) |
 | **1** `MP_CHANNEL_PRESENCE` | `0` (unreliable, **sequenced** by ENet per channel) | `PRESENCE`, `PING`, `PONG` |
 
 A message received on the wrong channel is dropped (counts as malformed, see 8.2).
@@ -119,7 +119,8 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 | `0x69` | `LINK_BUS_END` | H → C | 0 | 4 | IN_SESSION |
 | `0x6A` | `LINK_CMD` | C → H | 0 | 20 | IN_SESSION |
 | `0x6B` | `LINK_ROW` | H → C | 0 | 8 + 16·N (N = 2..4) | IN_SESSION |
-| `0x6C`–`0x7F` | reserved: `LINK_*` | | 0 | | |
+| `0x6C` | `TRADE_COMMIT` | both (READY C → H; COMMIT / ABORT H → C) | 0 | 4 | IN_SESSION (PS-044, 6.15) |
+| `0x6D`–`0x7F` | reserved: `LINK_*` | | 0 | | |
 | `0x80`–`0xEF` | reserved | | | | |
 | `0xF0` | `DEBUG_ECHO` | both | 0 | 0..64 | only under `--mp-selftest` (PS-011). Session code drops it. |
 | `0xF1`–`0xFE` | reserved: debug | | | | |
@@ -583,7 +584,7 @@ A,B -> H  CMD(g, e, cmd) ...              H -> A,B  ROW(g, e, n, {cmdA, cmdB}) .
 A,B -> H  CLOSE(g, seq)                   H -> A,B  BUS_END(g, e), STATUS(g, ...)
 ```
 
-Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x6C`–`0x7F` type):
+Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x6D`–`0x7F` type; `0x6C` is 6.15):
 dropped and counted against the 8.2 budget. Stale (other group, old epoch, old sequence): silent.
 
 ### 6.13 `TRAINER_CARD_DATA` (0x43) — both directions, channel 0, payload 56 bytes
@@ -739,6 +740,62 @@ on a private static `struct Pokemon[6]` (`ShowPokemonSummaryScreen(SUMMARY_MODE_
 the battle mode, so moves cannot be reordered); Up / Down switches mons, B returns to the field.
 An empty party only shows "NAME has no POKéMON.".
 
+### 6.15 `TRADE_COMMIT` (0x6C) — both directions, channel 0, payload 4 bytes (PS-044)
+
+The host-arbitrated commit of a direct trade's save (Director ruling on PS-044). A direct trade
+(TRADE request accepted, PS-041) runs Emerald's own trade over the virtual cable (6.12) in a
+2-member link group. Its save is two-phase (`CB2_SaveAndEndTrade`): every sector is written,
+the last one without its signature, then the signature is written. The signature is the commit:
+until it is written the previous save is the valid one. For a direct trade the vanilla standby
+between "unsigned" and "signed" is replaced by this exchange.
+
+| Offset | Size | Type | Field | Rule |
+|---|---|---|---|---|
+| 0 | 1 | u8 | `op` | 1 READY (C → H), 2 COMMIT (H → C), 3 ABORT (H → C); anything else rejected |
+| 1 | 1 | u8 | `groupId` | the link group of the trade, `!= 0` |
+| 2 | 1 | u8 | `seq` | the trade's number in that group (1, 2, ... each member counts its own READYs), `!= 0` |
+| 3 | 1 | u8 | `reason` | ABORT: 1 GROUP_ENDED, 2 TIMEOUT, 3 MISMATCH; READY / COMMIT: 0. Anything else rejected |
+
+**Member.** Once its save is written except for the signature, it sends READY(groupId, seq) and
+waits. The game keeps link errors from leaving the trade screen while it waits
+(`SetSuppressLinkErrorMessage`), because the decision arrives over the session even if the
+cable dies. COMMIT → write the signature. ABORT → do not; the link-error path reloads the
+previous save (PS-048). If the member's own session ends while it waits, it presumes ABORT
+(local reason IN_DOUBT 33). The host's own member uses direct calls, not the wire.
+
+**Host (the arbiter).** Per slot it records the latest round (groupId, seq, state):
+- READY that does not match the sender's current link group (no group, another id, not exactly
+  2 members) → ABORT MISMATCH.
+- READY from both members of the group for the same (groupId, seq) → COMMIT to both. When the
+  host is one of them, the client's COMMIT is sent and flushed (`MpTransport_Flush`) before the
+  host's own game sees its COMMIT.
+- Both members waiting for different `seq` → ABORT MISMATCH to both.
+- The group ends (a member left the link or the session, or joined another group) while a
+  member waits → ABORT GROUP_ENDED; a round not complete `MP_TRADE_COMMIT_TIMEOUT_MS` (15 s)
+  after its first READY → ABORT TIMEOUT. In both cases the partner's late READY for that round
+  gets the same ABORT.
+- A decision is final: a repeated READY for a decided round gets the same answer again.
+
+Malformed (parser failure, COMMIT / ABORT sent to the host, READY sent to a client): dropped and
+counted against the 8.2 budget. A decision for a round the member is not waiting for is ignored.
+
+**Guarantee.** Both saves change only through a COMMIT, and the host sends COMMIT only after it
+holds READY from both partners, at which point both have the received Pokémon written and only
+the signature left. So:
+- Anything that goes wrong before both READYs have reached the host (a member's game, link,
+  session or process ends; the link errors; a timeout) leaves **both saves unchanged**: nobody
+  can get COMMIT for that round any more.
+- Once both have received COMMIT, both sign: the trade is in both saves. A link error after that
+  reloads the new save.
+- **Remaining window (in doubt).** A member that has sent READY and loses its connection to the
+  host before COMMIT reaches it cannot know whether the host decided COMMIT. It presumes ABORT.
+  If the host did commit (both READYs had arrived), the other side signs and this side does not:
+  one Pokémon is then in both saves (duplicated) and the other in neither (lost). The window is
+  about one round trip from the moment the second READY reaches the host, on the side whose
+  connection drops: a client's network or process dying in that interval, or the host process
+  dying between flushing COMMIT and signing its own save (one frame). Closing it completely
+  needs a durable trade journal that resolves the in-doubt side on reconnect (not implemented).
+
 ---
 
 ## 7. Session rules
@@ -815,6 +872,7 @@ or speed-up does not cause timeouts. The network is still pumped while the game 
 | `PARTY_DATA` | forward to the requester along the matching VIEW_PARTY route (6.14), in order, at most two per route |
 | `BYE` | remove client, broadcast `PLAYER_LEFT` |
 | `LINK_JOIN` `LINK_LEAVE` `LINK_OPEN` `LINK_CLOSE` `LINK_START` `LINK_CMD` | link bus (6.12): not forwarded as such; the host answers with `LINK_GROUP` / `END` / `STATUS` / `BUS_START` / `BUS_END` / `ROW` |
+| `TRADE_COMMIT` READY | trade commit arbiter (6.15): not forwarded; the host answers `TRADE_COMMIT` COMMIT / ABORT to the members |
 | anything else | drop, count malformed |
 
 The host's own presence and summary changes are sent by the host to every client directly
@@ -984,9 +1042,9 @@ The build hash `0x12345678` is an illustrative value (a real one is an FNV-1a re
 Packet = 36 bytes:
 
 ```
-01 03 20 00                 header: type HELLO, version 3, length 32
+01 06 20 00                 header: type HELLO, version 6, length 32
 50 53 4D 50                 magic "PSMP"
-03 00                       protocolVersion 3
+06 00                       protocolVersion 6
 00 00                       reserved
 78 56 34 12                 buildHash 0x12345678
 00                          buildFlags
@@ -1011,3 +1069,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 3 | PS-046 | Virtual link cable: `LINK_JOIN` … `LINK_ROW` (`0x60`–`0x6B`, 6.12) on channel 0, host-sequenced rows, link groups, bus epochs. Wire change, so `MP_PROTOCOL_VERSION` 2 → 3 (older builds are rejected with VERSION). Worked example (10) updated. |
 | 4 | PS-042 | INTERACT `kind` 3 TRAINER_CARD (answered by the target's session, no prompt, never busy) and `TRAINER_CARD_DATA` (0x43, 56 bytes, field by field, validated and clamped; 6.13), routed like the RESPONSE it precedes, one per route. Local result `MP_INTERACT_RESULT_BAD_DATA`. Version bumped to 3: a version-2 peer would reject kind 3 as malformed. *(If PS-046's `LINK_*` change lands first and takes 3, this becomes the next number.)* |
 | 5 | PS-043 | INTERACT `kind` 4 VIEW_PARTY (prompted, like a trade) and `PARTY_DATA` (0x44): the party as raw 100-byte `struct Pokemon`s in 1–2 parts of up to 3 (a full party does not fit in one 512-byte packet), sent before the ACCEPTED RESPONSE, forwarded in order along the route; every mon validated by the requester (6.14.1), any bad mon rejects the whole party (BAD_DATA). *(Renumber after PS-046 as above.)* |
+| 6 | PS-044 | `TRADE_COMMIT` (0x6C, 6.15) in the `LINK_*` range: the host-arbitrated commit of a direct trade's save (READY / COMMIT / ABORT). Version bumped to 6: a version-5 peer would count `0x6C` as malformed. Worked example (10) updated to version 6. |

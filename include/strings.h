@@ -401,6 +401,13 @@ extern const u8 gText_MpPlayerGone[];
 extern const u8 gText_MpViewBadData[]; // MP: PS-042
 extern const u8 gText_MpIncomingViewParty[]; // MP: PS-043
 extern const u8 gText_MpViewNoPokemon[];     // MP: PS-043
+extern const u8 gText_MpTradeLinking[];      // MP: PS-044
+extern const u8 gText_MpTradeLinkFailed[];   // MP: PS-044
+extern const u8 gText_MpTradeSaveFailed[];   // MP: PS-044
+extern const u8 gText_MpTradeNeedTwoMons[];  // MP: PS-044
+extern const u8 gText_MpTradeEnigmaBerry[];  // MP: PS-044
+extern const u8 gText_MpTradeCantHere[];     // MP: PS-044
+extern const u8 gText_MpTradePartnerBusy[];  // MP: PS-044
 extern const u8 gText_WirelessNotConnected[];
 extern const u8 gText_MysteryGiftCantUse[];
 extern const u8 gText_MysteryEventsCantUse[];

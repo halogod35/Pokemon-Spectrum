@@ -1717,6 +1717,8 @@ void MP_LinkPrepareErrorRecovery(void)
     gLinkCallback = NULL;
     gBattleTypeFlags = 0; // EWRAM: zero after the GBA's ReloadSave
     memset(&sLinkErrorBuffer, 0, sizeof(sLinkErrorBuffer));
+    gSuppressLinkErrorMessage = FALSE; // MP: PS-044 (set while a direct trade waits for its commit)
+    MP_TradeOnLinkErrorRecovery(); // MP: PS-044: a direct trade ended here
     MP_LinkLeave();
 }
 

@@ -55,6 +55,7 @@
 #define MP_MSG_LINK_BUS_END     0x69    // H -> C
 #define MP_MSG_LINK_CMD         0x6A    // C -> H
 #define MP_MSG_LINK_ROW         0x6B    // H -> C
+#define MP_MSG_TRADE_COMMIT     0x6C    // C -> H (READY), H -> C (COMMIT / ABORT). PS-044, protocol.md 6.15
 #define MP_MSG_LINK_FIRST       0x60    // reserved LINK_* range (protocol.md 4)
 #define MP_MSG_LINK_LAST        0x7F
 #define MP_MSG_DEBUG_ECHO       0xF0    // --mp-selftest only
@@ -77,6 +78,7 @@
 #define MP_LINK_CMD_SIZE        (4 + 2 * MP_LINK_CMD_WORDS)                 // 20
 #define MP_LINK_ROW_SIZE(n)     (8 + 2 * MP_LINK_CMD_WORDS * (n))           // 8 + 16n
 #define MP_INTERACT_SIZE        8       // all three INTERACT_* messages
+#define MP_TRADE_COMMIT_SIZE    4       // PS-044: op, groupId, seq, reason
 #define MP_TRAINER_CARD_DATA_SIZE 56    // PS-042: 4-byte routing prefix + 52-byte card
 // PS-043 PARTY_DATA: 8-byte prefix + monCount * 100. A whole party (601 bytes with a count)
 // does not fit in one 512-byte packet, so it is split into parts of up to 3 mons (312 bytes).
@@ -256,6 +258,24 @@ struct MpMsgLinkRow
     u16 cmds[MP_LINK_MAX_MEMBERS][MP_LINK_CMD_WORDS]; // [link id]; rows >= count are 0
 };
 
+// TRADE_COMMIT (PS-044, protocol.md 6.15): the host-arbitrated commit of a direct trade's
+// save. op = MP_TRADE_OP_*; groupId = the link group the trade runs on (!= 0); seq = the
+// trade's number within that group (!= 0); reason = MP_TRADE_ABORT_* (mp.h) for ABORT, else 0.
+enum
+{
+    MP_TRADE_OP_READY  = 1,     // member -> host: my save is written, only the commit is left
+    MP_TRADE_OP_COMMIT = 2,     // host -> member: every member is ready; commit now
+    MP_TRADE_OP_ABORT  = 3,     // host -> member: do not commit (reason says why)
+};
+
+struct MpMsgTradeCommit
+{
+    u8 op;
+    u8 groupId;
+    u8 seq;
+    u8 reason;
+};
+
 // Header: 4 <= len <= MP_MAX_PACKET_SIZE and length == len - 4. Type/version/state
 // are not checked here.
 bool8 MpProto_ParseHeader(const u8 *buf, u32 len, struct MpMsgHeader *out);
@@ -328,6 +348,11 @@ u8 MpProto_ParseLinkCmd(const u8 *payload, u32 len, struct MpMsgLinkCmd *out);
 u16 MpProto_WriteLinkCmd(u8 *buf, u16 cap, const struct MpMsgLinkCmd *msg);
 u8 MpProto_ParseLinkRow(const u8 *payload, u32 len, struct MpMsgLinkRow *out);
 u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg);
+// TRADE_COMMIT (PS-044): exactly 4 bytes; op 1..3; groupId != 0; seq != 0; reason 0 for
+// READY / COMMIT and MP_TRADE_ABORT_FIRST..LAST for ABORT. The direction is checked by the caller.
+u8 MpProto_ParseTradeCommit(const u8 *payload, u32 len, struct MpMsgTradeCommit *out);
+u16 MpProto_WriteTradeCommit(u8 *buf, u16 cap, const struct MpMsgTradeCommit *msg);
+
 // Number of set bits in the low 4 bits (link masks).
 u8 MpProto_LinkMaskCount(u8 mask);
 

@@ -964,3 +964,50 @@ u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg)
     }
     return MpFinishWrite(&w);
 }
+
+// ===========================================================================
+// TRADE_COMMIT (PS-044, protocol.md 6.15)
+// ===========================================================================
+
+u8 MpProto_ParseTradeCommit(const u8 *payload, u32 len, struct MpMsgTradeCommit *out)
+{
+    struct MpMsgTradeCommit m;
+    u8 result;
+
+    memset(out, 0, sizeof(*out));
+    result = MpCheckExactSize(payload, len, MP_TRADE_COMMIT_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+    m.op = payload[0];
+    m.groupId = payload[1];
+    m.seq = payload[2];
+    m.reason = payload[3];
+    if (m.op < MP_TRADE_OP_READY || m.op > MP_TRADE_OP_ABORT || m.groupId == 0 || m.seq == 0)
+        return MP_PARSE_ERR_BAD_FIELD;
+    if (m.op == MP_TRADE_OP_ABORT)
+    {
+        if (m.reason < MP_TRADE_ABORT_FIRST || m.reason > MP_TRADE_ABORT_LAST)
+            return MP_PARSE_ERR_BAD_FIELD;
+    }
+    else if (m.reason != 0)
+    {
+        return MP_PARSE_ERR_BAD_FIELD;
+    }
+    *out = m;
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteTradeCommit(u8 *buf, u16 cap, const struct MpMsgTradeCommit *msg)
+{
+    struct MpWriter w;
+
+    if (msg->op < MP_TRADE_OP_READY || msg->op > MP_TRADE_OP_ABORT)
+        return 0;
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_TRADE_COMMIT, MP_PROTOCOL_VERSION, MP_TRADE_COMMIT_SIZE);
+    MpWriteU8(&w, msg->op);
+    MpWriteU8(&w, msg->groupId);
+    MpWriteU8(&w, msg->seq);
+    MpWriteU8(&w, (msg->op == MP_TRADE_OP_ABORT) ? msg->reason : 0);
+    return MpFinishWrite(&w);
+}

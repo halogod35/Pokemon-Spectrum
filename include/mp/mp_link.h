@@ -35,6 +35,12 @@ bool8 MpLink_OnHostReceive(u8 slot, u8 channel, u8 type, const u8 *payload, u32 
 // Client: a LINK_* message from the host. FALSE = malformed.
 bool8 MpLink_OnClientReceive(u8 channel, u8 type, const u8 *payload, u32 len);
 
+// --- PS-044 trade commit (mp_trade_commit.c) ---
+// Host: the link group `slot` is in (its id and member slot mask). FALSE if none.
+bool8 MpLink_HostGetGroup(u8 slot, u8 *groupId, u8 *memberMask);
+// Member: our link group's id while GROUPED, else 0.
+u8 MpLink_MemberGroupId(void);
+
 // --- Cable interface (mp_link_cable.c) ---
 enum
 {
