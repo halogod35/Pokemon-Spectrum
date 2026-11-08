@@ -4656,7 +4656,7 @@ static void Cmd_switchindataupdate(void)
         monData[i] = gBattleBufferB[gActiveBattler][4 + i];
     // MP: PS-047. A GetMonData reply: over a link it comes from the peer.
     if (!MP_SanitizeBattleMon(&gBattleMons[gActiveBattler]))
-        MP_LinkRejectData("switch-in mon data out of range");
+        MP_LinkRejectDataF("switch-in mon data out of range (battler %u)", (unsigned)gActiveBattler); // MP: BUG-006 reason
 
     gBattleMons[gActiveBattler].types[0] = gSpeciesInfo[gBattleMons[gActiveBattler].species].types[0];
     gBattleMons[gActiveBattler].types[1] = gSpeciesInfo[gBattleMons[gActiveBattler].species].types[1];

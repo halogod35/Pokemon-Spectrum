@@ -1086,7 +1086,7 @@ static void CB2_HandleStartBattle(void)
             // MP: PS-047 (R5). The whole party came from the peer: species, moves, items and
             // levels index tables everywhere in the battle. Bad mons are zeroed + link error.
             if (!MP_ValidateParty(gEnemyParty, PARTY_SIZE))
-                MP_LinkRejectData("link battle party failed validation");
+                MP_LinkRejectDataF("link battle party failed validation (%s)", MP_LinkValidateReason()); // MP: BUG-006 reason
             TryCorrectShedinjaLanguage(&gEnemyParty[0]);
             TryCorrectShedinjaLanguage(&gEnemyParty[1]);
             TryCorrectShedinjaLanguage(&gEnemyParty[2]);
@@ -1356,7 +1356,7 @@ static void CB2_HandleStartMultiPartnerBattle(void)
 
             // MP: PS-047 (R5). Partner and opponent mons came from peers (multi battle).
             if (!MP_ValidateParty(gPlayerParty, PARTY_SIZE) | !MP_ValidateParty(gEnemyParty, PARTY_SIZE)) // | : validate both
-                MP_LinkRejectData("link multi battle party failed validation");
+                MP_LinkRejectDataF("link multi battle party failed validation (%s)", MP_LinkValidateReason()); // MP: BUG-006 reason
             TryCorrectShedinjaLanguage(&gPlayerParty[0]);
             TryCorrectShedinjaLanguage(&gPlayerParty[1]);
             TryCorrectShedinjaLanguage(&gPlayerParty[2]);
@@ -1791,7 +1791,7 @@ static void CB2_HandleStartMultiBattle(void)
             }
             // MP: PS-047 (R5). Partner and opponent mons came from peers (multi battle).
             if (!MP_ValidateParty(gPlayerParty, PARTY_SIZE) | !MP_ValidateParty(gEnemyParty, PARTY_SIZE)) // | : validate both
-                MP_LinkRejectData("link multi battle party failed validation");
+                MP_LinkRejectDataF("link multi battle party failed validation (%s)", MP_LinkValidateReason()); // MP: BUG-006 reason
             TryCorrectShedinjaLanguage(&gPlayerParty[0]);
             TryCorrectShedinjaLanguage(&gPlayerParty[1]);
             TryCorrectShedinjaLanguage(&gPlayerParty[2]);
@@ -3429,7 +3429,7 @@ static void BattleIntroDrawTrainersOrMonsSprites(void)
                 ptr[i] = gBattleBufferB[gActiveBattler][4 + i];
             // MP: PS-047. A GetMonData reply: over a link it comes from the peer.
             if (!MP_SanitizeBattleMon(&gBattleMons[gActiveBattler]))
-                MP_LinkRejectData("battle mon data out of range");
+                MP_LinkRejectDataF("battle mon data out of range (battler %u, species %u)", (unsigned)gActiveBattler, (unsigned)gBattleMons[gActiveBattler].species); // MP: BUG-006 reason
 
             gBattleMons[gActiveBattler].types[0] = gSpeciesInfo[gBattleMons[gActiveBattler].species].types[0];
             gBattleMons[gActiveBattler].types[1] = gSpeciesInfo[gBattleMons[gActiveBattler].species].types[1];
@@ -4195,7 +4195,7 @@ static void HandleTurnActionSelectionState(void)
                 // over a link it is the peer's byte.
                 if (gBattleBufferB[gActiveBattler][1] >= ARRAY_COUNT(sTurnActionsFuncsTable))
                 {
-                    MP_LinkRejectData("battle action out of range");
+                    MP_LinkRejectDataF("battle action %u out of range (battler %u)", (unsigned)gBattleBufferB[gActiveBattler][1], (unsigned)gActiveBattler); // MP: BUG-006 reason
                     gBattleBufferB[gActiveBattler][1] = B_ACTION_USE_MOVE;
                 }
                 RecordedBattle_SetBattlerAction(gActiveBattler, gBattleBufferB[gActiveBattler][1]);
@@ -4436,7 +4436,7 @@ static void HandleTurnActionSelectionState(void)
                         gLastUsedItem = (gBattleBufferB[gActiveBattler][1] | (gBattleBufferB[gActiveBattler][2] << 8));
                         if (gLastUsedItem >= ITEMS_COUNT) // MP: PS-047, indexes gItems
                         {
-                            MP_LinkRejectData("battle item out of range");
+                            MP_LinkRejectDataF("battle item %u out of range (battler %u)", (unsigned)gLastUsedItem, (unsigned)gActiveBattler); // MP: BUG-006 reason
                             gLastUsedItem = ITEM_NONE;
                         }
                         gBattleCommunication[gActiveBattler]++;

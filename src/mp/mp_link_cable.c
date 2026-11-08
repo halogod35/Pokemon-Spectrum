@@ -16,6 +16,8 @@
 // Without a link group nothing is ever received: the same as single-player with the old stub
 // (gLinkStatus stays 0, so the Cable Club times out exactly as before).
 
+#include <stdarg.h>
+#include <stdio.h>
 #include "global.h"
 #include "decompress.h"
 #include "link.h"
@@ -172,6 +174,17 @@ void MP_LinkRejectData(const char *what)
     // runs the game's link-error path. CloseLink() zeroes gLink, which clears it again.
     if (gLink.state >= LINK_STATE_HANDSHAKE)
         gLink.hardwareError = TRUE;
+}
+
+void MP_LinkRejectDataF(const char *fmt, ...)
+{
+    char what[160];
+    va_list args;
+
+    va_start(args, fmt);
+    vsnprintf(what, sizeof(what), fmt, args);
+    va_end(args);
+    MP_LinkRejectData(what);
 }
 
 u32 MP_LinkGetRejectCount(void)

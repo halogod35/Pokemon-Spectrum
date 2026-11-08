@@ -582,8 +582,8 @@ static void ProcessRecvCmds(u8 unused)
                 // Refuse the block (size 0 = nothing in progress) and end the link.
                 if (blockRecv->size > sizeof(gDecompressionBuffer))
                 {
+                    MP_LinkRejectDataF("INIT_BLOCK size %u larger than gDecompressionBuffer (player %u)", (unsigned)blockRecv->size, (unsigned)i); // MP: BUG-006 reason
                     blockRecv->size = 0;
-                    MP_LinkRejectData("INIT_BLOCK size larger than gDecompressionBuffer");
                 }
                 break;
             }
@@ -669,7 +669,7 @@ static void ProcessRecvCmds(u8 unused)
                 // to the peer. Refuse it and end the link.
                 if (gRecvCmds[i][1] >= ARRAY_COUNT(sBlockRequests))
                 {
-                    MP_LinkRejectData("SEND_BLOCK_REQ type out of range");
+                    MP_LinkRejectDataF("SEND_BLOCK_REQ type %u out of range (player %u)", (unsigned)gRecvCmds[i][1], (unsigned)i); // MP: BUG-006 reason
                     break;
                 }
                 SendBlock(0, sBlockRequests[gRecvCmds[i][1]].address, sBlockRequests[gRecvCmds[i][1]].size);

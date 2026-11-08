@@ -1162,11 +1162,11 @@ static bool8 BufferTradeParties(void)
         // save: species, moves, items and levels index tables, the mail item picks the mail
         // layout. Bad mons / mail are zeroed and the trade ends with a link error.
         if (!MP_ValidateParty(gEnemyParty, PARTY_SIZE))
-            MP_LinkRejectData("trade party failed validation");
+            MP_LinkRejectDataF("trade party failed validation (%s)", MP_LinkValidateReason()); // MP: BUG-007 reason
         for (i = 0; i < PARTY_SIZE; i++)
         {
             if (!MP_SanitizeMail(&gTradeMail[i]))
-                MP_LinkRejectData("trade mail failed validation");
+                MP_LinkRejectDataF("trade mail %u failed validation (item %u)", (unsigned)i, (unsigned)gTradeMail[i].itemId); // MP: BUG-007 reason
         }
         for (i = 0, mon = gEnemyParty; i < PARTY_SIZE; mon++, i++)
         {
@@ -1261,6 +1261,7 @@ static void Follower_ReadLinkBuffer(u8 mpId, u8 status)
             BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
             PrintTradeMessage(MSG_WAITING_FOR_FRIEND);
             sTradeMenu->callbackId = CB_INIT_EXIT_CANCELED_TRADE;
+            MP_TradeLog("BUG-007: the leader says both cancelled; closing"); // MP: BUG-007 log
             break;
         case LINKCMD_PARTNER_CANCEL_TRADE:
             PrintTradeMessage(MSG_FRIEND_WANTS_TO_TRADE);
@@ -1750,7 +1751,10 @@ static void CB_InitExitCanceledTrade(void)
         // MP: BUG-005. SetCloseLinkCallbackAndType does nothing while another link callback
         // (a block send) runs; vanilla then waits in CB_ExitCanceledTrade forever. Wait for it.
         if (MP_TradeIsDirect() && !gWirelessCommType && gLinkCallback != NULL)
+        {
+            MP_TradeLog("BUG-007: the menu exit waits for another link callback"); // MP: BUG-007 log (once per frame at most a few)
             return;
+        }
         MP_TradeOnMenuExit(); // MP: BUG-005: the partner leaving is a normal end from here on
         if (gWirelessCommType)
             SetLinkStandbyCallback();

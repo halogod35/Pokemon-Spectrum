@@ -519,7 +519,8 @@ void MpBattle_Update(void)
     {
         if (++sGoneFrames > MP_BATTLE_GONE_FRAMES)
         {
-            MP_LOG("battle: the link group is gone during the battle; recovering from the last save\n");
+            MP_LOG("battle: the link group is gone during the battle (link state %u, end reason %u, session %u); recovering from the last save\n",
+                   (unsigned)MP_LinkGetState(), (unsigned)MP_LinkGetEndReason(), (unsigned)MP_IsActive()); // BUG-006
             sGoneFrames = 0;
             sPhase = PHASE_RETURNING; // not IN_BATTLE any more: this does not fire again
             CloseLink();

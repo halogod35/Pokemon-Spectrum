@@ -28,6 +28,9 @@
 #include "task.h"
 #include "trainer_card.h"
 #include "constants/abilities.h" // ABILITIES_COUNT
+#include "constants/battle.h" // BUG-006 replay
+#include "constants/battle_anim.h"
+#include "constants/pokemon.h"
 #include "constants/battle_string_ids.h"
 #include "constants/characters.h"
 #include "constants/items.h"
@@ -655,6 +658,7 @@ static void TestCardMailText(void)
     u8 src[4];
     u8 out[64];
     u32 savedTypeFlags = gBattleTypeFlags;
+    u16 value;
 
     memset(&card, 0, sizeof(card));
     card.stars = 200;
@@ -683,6 +687,12 @@ static void TestCardMailText(void)
     mail.itemId = ITEM_ORANGE_MAIL;
     mail.species = 0xFFFF;
     H_CHECK(!MP_SanitizeMail(&mail) && mail.species == SPECIES_NONE, "a mail species past the table is cleared");
+    // BUG-007: an Unown's mail species is 30000 + its letter (SpeciesToMailSpecies).
+    ClearMail(&mail);
+    mail.itemId = ITEM_ORANGE_MAIL;
+    mail.species = SpeciesToMailSpecies(SPECIES_UNOWN, 0x12345678);
+    value = mail.species;
+    H_CHECK(MP_SanitizeMail(&mail) && mail.species == value, "an Unown's mail species is accepted unchanged");
     Report("trade mail", failuresBefore);
 
     // Battle text buffers: an unknown placeholder type used to loop forever, indices past
@@ -735,6 +745,161 @@ static void TestBusFilter(void)
     Report("host bus pre-filter (MpLink_IsCmdAllowed)", failuresBefore);
 }
 
+// ---------------------------------------------------------------------------
+// BUG-006: an honest link battle's commands, built by the engine's own Emit functions (the
+// non-link path writes them straight into gBattleBufferA / B), must all pass the filter.
+// Covers what a 2-player single and double battle sends, with the stale bytes honest engines
+// leave in them (CHOOSEACTION's second argument is the first battler's last reply).
+// ---------------------------------------------------------------------------
+
+static u32 sReplayCount;
+
+static void ReplayCheck(u8 bufferId, const char *what)
+{
+    u8 *row = (bufferId == B_COMM_TO_CONTROLLER) ? gBattleBufferA[gActiveBattler] : gBattleBufferB[gActiveBattler];
+    const char *problem = MP_BattleLinkSelftestCheckMsg(bufferId, row);
+
+    sReplayCount++;
+    if (problem != NULL)
+    {
+        MP_LOG("selftest: FAIL: hardening: honest %s refused: %s\n", what, problem);
+        sFail++;
+    }
+}
+
+static void ReplayBattle(bool8 isDouble)
+{
+    static const u8 sEnvironments[] = { BATTLE_ENVIRONMENT_GRASS, BATTLE_ENVIRONMENT_BUILDING, BATTLE_ENVIRONMENT_PLAIN };
+    static const u16 sStrings[] = { STRINGID_INTROMSG, STRINGID_INTROSENDOUT, STRINGID_USEDMOVE, STRINGID_ITDOESNTAFFECT, BATTLESTRINGS_COUNT - 1 };
+    static const u16 sSongs[] = { SE_SUPER_EFFECTIVE, SE_NOT_EFFECTIVE, SE_EFFECTIVE, MUS_VICTORY_TRAINER, SE_FAINT };
+    struct ChooseMoveStruct moves;
+    struct DisableStruct disable;
+    u8 order[PARTY_SIZE / 2] = { 0x01, 0x23, 0x45 };
+    u8 battlers = isDouble ? 4 : 2;
+    u32 i, k, r;
+
+    memset(&moves, 0, sizeof(moves));
+    memset(&disable, 0, sizeof(disable));
+    moves.moves[0] = MOVE_TACKLE;
+    moves.moves[1] = MOVE_PSYCHO_BOOST;
+    moves.currentPP[0] = 35;
+    moves.maxPP[0] = 35;
+    moves.species = SPECIES_DEOXYS;
+    moves.monTypes[0] = TYPE_PSYCHIC;
+    moves.monTypes[1] = TYPE_PSYCHIC;
+    for (gActiveBattler = 0; gActiveBattler < battlers; gActiveBattler++)
+    {
+        // Intro
+        for (i = 0; i < ARRAY_COUNT(sEnvironments); i++)
+        {
+            BtlController_EmitIntroSlide(B_COMM_TO_CONTROLLER, sEnvironments[i]);
+            ReplayCheck(B_COMM_TO_CONTROLLER, "INTROSLIDE");
+        }
+        BtlController_EmitGetMonData(B_COMM_TO_CONTROLLER, REQUEST_ALL_BATTLE, 0);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "GETMONDATA");
+        BtlController_EmitDrawTrainerPic(B_COMM_TO_CONTROLLER);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "DRAWTRAINERPIC");
+        BtlController_EmitIntroTrainerBallThrow(B_COMM_TO_CONTROLLER);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "INTROTRAINERBALLTHROW");
+        for (i = 0; i < PARTY_SIZE; i++)
+        {
+            BtlController_EmitSwitchInAnim(B_COMM_TO_CONTROLLER, i, FALSE);
+            ReplayCheck(B_COMM_TO_CONTROLLER, "SWITCHINANIM");
+        }
+        for (i = 0; i < ARRAY_COUNT(sStrings); i++)
+        {
+            BtlController_EmitPrintString(B_COMM_TO_CONTROLLER, sStrings[i]);
+            ReplayCheck(B_COMM_TO_CONTROLLER, "PRINTSTRING");
+            BtlController_EmitPrintSelectionString(B_COMM_TO_CONTROLLER, sStrings[i]);
+            ReplayCheck(B_COMM_TO_CONTROLLER, "PRINTSTRINGPLAYERONLY");
+        }
+        // Turns: the action prompt with every stale "item" value (BUG-006), moves, party, bag.
+        for (k = 0; k < 2000; k++)
+        {
+            r = Rand();
+            BtlController_EmitChooseAction(B_COMM_TO_CONTROLLER, (u8)(r % (B_ACTION_NOTHING_FAINTED + 1)), (u16)(r >> 8));
+            ReplayCheck(B_COMM_TO_CONTROLLER, "CHOOSEACTION");
+            // CHOOSEPOKEMON: menu type | battler << 4, a (possibly stale) slot, an ability.
+            BtlController_EmitChoosePokemon(B_COMM_TO_CONTROLLER, (u8)((r % 6) | ((r >> 4) % battlers) << 4), (u8)(r >> 12), (u8)(r >> 20) % ABILITIES_COUNT, order);
+            ReplayCheck(B_COMM_TO_CONTROLLER, "CHOOSEPOKEMON");
+        }
+        BtlController_EmitChooseAction(B_COMM_TO_CONTROLLER, B_ACTION_USE_MOVE, 0xFFFF);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "CHOOSEACTION (0xFFFF)");
+        BtlController_EmitChooseMove(B_COMM_TO_CONTROLLER, isDouble, FALSE, &moves);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "CHOOSEMOVE");
+        BtlController_EmitChooseItem(B_COMM_TO_CONTROLLER, order);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "OPENBAG");
+        BtlController_EmitMoveAnimation(B_COMM_TO_CONTROLLER, MOVE_TACKLE, 0, 40, 25, 70, &disable, 0);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "MOVEANIMATION");
+        BtlController_EmitHealthBarUpdate(B_COMM_TO_CONTROLLER, 0);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "HEALTHBARUPDATE");
+        BtlController_EmitStatusIconUpdate(B_COMM_TO_CONTROLLER, 0xFFFFFFFF, 0xFFFFFFFF);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "STATUSICONUPDATE");
+        BtlController_EmitStatusAnimation(B_COMM_TO_CONTROLLER, TRUE, 0xFFFFFFFF);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "STATUSANIMATION");
+        for (i = 0; i <= B_ANIM_WISH_HEAL; i++)
+        {
+            BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, i, (u16)Rand());
+            ReplayCheck(B_COMM_TO_CONTROLLER, "BATTLEANIMATION");
+        }
+        for (i = 0; i < ARRAY_COUNT(sSongs); i++)
+        {
+            BtlController_EmitPlaySE(B_COMM_TO_CONTROLLER, sSongs[i]);
+            ReplayCheck(B_COMM_TO_CONTROLLER, "PLAYSE");
+            BtlController_EmitPlayFanfareOrBGM(B_COMM_TO_CONTROLLER, sSongs[i], TRUE);
+            ReplayCheck(B_COMM_TO_CONTROLLER, "PLAYFANFAREORBGM");
+        }
+        BtlController_EmitHitAnimation(B_COMM_TO_CONTROLLER);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "HITANIMATION");
+        BtlController_EmitFaintAnimation(B_COMM_TO_CONTROLLER);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "FAINTANIMATION");
+        BtlController_EmitFaintingCry(B_COMM_TO_CONTROLLER);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "FAINTINGCRY");
+        BtlController_EmitReturnMonToBall(B_COMM_TO_CONTROLLER, FALSE);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "RETURNMONTOBALL");
+        BtlController_EmitLinkStandbyMsg(B_COMM_TO_CONTROLLER, LINK_STANDBY_MSG_STOP_BOUNCE, FALSE);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "LINKSTANDBYMSG");
+        BtlController_EmitResetActionMoveSelection(B_COMM_TO_CONTROLLER, RESET_ACTION_MOVE_SELECTION);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "RESETACTIONMOVESELECTION");
+        BtlController_EmitSpriteInvisibility(B_COMM_TO_CONTROLLER, FALSE);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "SPRITEINVISIBILITY");
+        BtlController_EmitEndBounceEffect(B_COMM_TO_CONTROLLER);
+        ReplayCheck(B_COMM_TO_CONTROLLER, "ENDBOUNCEEFFECT");
+        // The controllers' replies to the engine.
+        for (k = 0; k < 200; k++)
+        {
+            r = Rand();
+            BtlController_EmitTwoReturnValues(B_COMM_TO_ENGINE, (u8)(r % (B_ACTION_NOTHING_FAINTED + 1)), (u16)(r >> 8));
+            ReplayCheck(B_COMM_TO_ENGINE, "TWORETURNVALUES");
+            BtlController_EmitOneReturnValue(B_COMM_TO_ENGINE, (u16)(r >> 16));
+            ReplayCheck(B_COMM_TO_ENGINE, "ONERETURNVALUE");
+            BtlController_EmitChosenMonReturnValue(B_COMM_TO_ENGINE, (u8)(r % (PARTY_SIZE + 1)), order);
+            ReplayCheck(B_COMM_TO_ENGINE, "CHOSENMONRETURNVALUE");
+        }
+    }
+}
+
+static void TestHonestBattleReplay(void)
+{
+    static struct BattleStruct sFakeBattleStruct; // EmitPrintString reads two fields of it
+    struct BattleStruct *savedStruct = gBattleStruct;
+    u32 savedFlags = gBattleTypeFlags;
+    u8 savedActive = gActiveBattler;
+    u32 failuresBefore = sFail;
+
+    memset(&sFakeBattleStruct, 0, sizeof(sFakeBattleStruct));
+    gBattleStruct = &sFakeBattleStruct;
+    gBattleTypeFlags = 0; // the non-link path: Emit writes straight into the buffers
+    sReplayCount = 0;
+    ReplayBattle(FALSE);
+    ReplayBattle(TRUE);
+    gBattleStruct = savedStruct;
+    gBattleTypeFlags = savedFlags;
+    gActiveBattler = savedActive;
+    H_CHECK(sReplayCount > 10000, "the replay ran");
+    Report("BUG-006 honest single + double battle commands all pass the filter", failuresBefore);
+}
+
 u32 MpSelftest_LinkHardening(void)
 {
     u32 need = MP_LinkSelftestState(NULL, 0, FALSE);
@@ -769,6 +934,7 @@ u32 MpSelftest_LinkHardening(void)
     TestLinkPlayer();
     TestRecvFuzz();
     TestBattle();
+    TestHonestBattleReplay(); // BUG-006
     TestMon();
     TestCardMailText();
     TestBusFilter();
