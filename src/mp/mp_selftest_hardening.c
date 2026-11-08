@@ -27,6 +27,7 @@
 #include "string_util.h"
 #include "task.h"
 #include "trainer_card.h"
+#include "constants/abilities.h" // ABILITIES_COUNT
 #include "constants/battle_string_ids.h"
 #include "constants/characters.h"
 #include "constants/items.h"
