@@ -499,4 +499,51 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[8]);
 void MP_SetLinkTest(bool8 enabled);
 void MP_LinkTestTick(void);
 
+// ---------------------------------------------------------------------------
+// Link receive-path hardening (PS-047, AD-9). src/mp/mp_link_validate.c
+// ---------------------------------------------------------------------------
+//
+// The decomp's link code trusts the peer completely. These helpers are called, marked
+// "// MP:", where link.c / battle_*.c / trade.c / trainer_card.c consume data that came from
+// another game: they clamp or reject anything that would index a table, size a copy or
+// overflow a buffer. They work on the data itself, so they protect whatever transport
+// delivered it (virtual cable, a PS-042/043 message, a future one).
+
+struct Pokemon;
+struct BattlePokemon;
+struct LinkPlayer;
+struct TrainerCard;
+struct Mail;
+
+// A peer sent data the game must not use. Logs `what`, counts it, and if a link cable is
+// open makes it report LINK_STAT_ERROR_HARDWARE, so the game's own link-error path ends the
+// activity (CB2_LinkError, recovery is PS-048). The caller still drops or neutralises the data.
+void MP_LinkRejectData(const char *what);
+u32 MP_LinkGetRejectCount(void);    // since boot (selftest / --mp-debug)
+
+// A received party Pokémon. Empty slots (species NONE) are zeroed and accepted. Anything
+// that fails the checksum, or has a species / held item / move / level out of range, is
+// zeroed and FALSE is returned. Harmless out-of-range fields (language, mail index, hp >
+// max hp, contest ribbon counts) are clamped in place. `mon` keeps its encryption.
+bool8 MP_ValidateMon(struct Pokemon *mon);
+// MP_ValidateMon on `count` mons; FALSE if any was rejected (all are still processed).
+bool8 MP_ValidateParty(struct Pokemon *party, u32 count);
+// A struct BattlePokemon from the peer (switch-in data, GetMonData replies, SETMONDATA):
+// species, moves and held item out of range are cleared and give FALSE (no honest game sends
+// them). Ability, types, level, stat stages, hp and the strings are clamped silently: honest
+// games leave some of them unset in transit.
+bool8 MP_SanitizeBattleMon(struct BattlePokemon *mon);
+// A received LinkPlayer, before ConvertLinkPlayerName(): EOS-terminated name (5 chars for
+// LANGUAGE_JAPANESE, which ConvertInternationalString grows by 4 bytes), language 1..7,
+// gender 0..1, battler id 0..3. FALSE if anything changed.
+bool8 MP_SanitizeLinkPlayer(struct LinkPlayer *player);
+// A trainer card about to be shown (ShowTrainerCardInLink): stars 0..4, gender 0..1, name
+// terminated, FRLG-only icon species and stickers in range. FALSE if anything changed.
+bool8 MP_SanitizeTrainerCard(struct TrainerCard *card);
+// A received struct Mail: not a mail item -> cleared (FALSE); species out of range -> NONE
+// (FALSE); the name is terminated silently.
+bool8 MP_SanitizeMail(struct Mail *mail);
+// A language byte from the peer: 1..NUM_LANGUAGES, else LANGUAGE_ENGLISH.
+u8 MP_SanitizeLanguage(u8 language);
+
 #endif // GUARD_MP_MP_H

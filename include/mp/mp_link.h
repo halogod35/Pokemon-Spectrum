@@ -15,6 +15,15 @@
 #define MP_LINK_MAX_GROUPS      2       // 4 players: at most 2 groups at a time
 #define MP_LINK_HOST_FIFO_SIZE  128     // commands queued per member on the host
 
+// PS-047 bus pre-filter. The host refuses LINK_CMDs that no honest game sends and that
+// would hurt the receivers (link.c refuses them too; this ends the link for everyone at
+// once). The values mirror link.h / decompress.h, checked at compile time in mp_link_cable.c.
+#define MP_LINKCMD_INIT_BLOCK       0xBBBB  // LINKCMD_INIT_BLOCK: word 1 = block size
+#define MP_LINKCMD_SEND_BLOCK_REQ   0xCCCC  // LINKCMD_SEND_BLOCK_REQ: word 1 = request type
+#define MP_LINK_MAX_BLOCK_SIZE      0x4000  // sizeof(gDecompressionBuffer)
+#define MP_LINK_BLOCK_REQ_COUNT     5       // ARRAY_COUNT(sBlockRequests) in link.c
+bool8 MpLink_IsCmdAllowed(const u16 *cmd); // cmd: MP_LINK_CMD_WORDS words
+
 // --- Session hooks (mp_session.c, mp_server.c, mp_client.c) ---
 void MpLink_ResetInstance(u8 instance);     // selftest + MP_Init: forget everything
 void MpLink_OnSessionStart(void);           // MP_Host / MP_Join: no groups
@@ -61,6 +70,7 @@ struct MpLinkStats
     u16 rxPeak;             // member: largest receive queue seen
     u32 rowsEmitted;        // host: rows sent (per group member counted once)
     u32 groupsFormed;       // host
+    u32 cmdsRefused;        // host: LINK_CMDs refused by the PS-047 pre-filter
 };
 void MpLink_GetStats(struct MpLinkStats *out);
 

@@ -527,6 +527,14 @@ static void HandleReceiveRemoteLinkPlayer(u8 who)
     }
 }
 
+// MP: PS-047. The magic strings of a received LinkPlayerBlock come from the peer and need
+// not be terminated: compare the bytes (the string and its NUL) instead of strcmp.
+static bool8 MpIsLinkPlayerBlockMagicOk(const struct LinkPlayerBlock *block)
+{
+    return memcmp(block->magic1, sASCIIGameFreakInc, sizeof(sASCIIGameFreakInc)) == 0
+        && memcmp(block->magic2, sASCIIGameFreakInc, sizeof(sASCIIGameFreakInc)) == 0;
+}
+
 static void ProcessRecvCmds(u8 unused)
 {
     u16 i;
@@ -569,10 +577,23 @@ static void ProcessRecvCmds(u8 unused)
                 blockRecv->pos = 0;
                 blockRecv->size = gRecvCmds[i][1];
                 blockRecv->multiplayerId = gRecvCmds[i][2];
+                // MP: PS-047 (R1). Blocks larger than 0x100 bytes are received into
+                // gDecompressionBuffer (0x4000 bytes); a bigger size would overflow it.
+                // Refuse the block (size 0 = nothing in progress) and end the link.
+                if (blockRecv->size > sizeof(gDecompressionBuffer))
+                {
+                    blockRecv->size = 0;
+                    MP_LinkRejectData("INIT_BLOCK size larger than gDecompressionBuffer");
+                }
                 break;
             }
             case LINKCMD_CONT_BLOCK:
             {
+                // MP: PS-047 (R1). A CONT_BLOCK with no block in progress (never started,
+                // already complete, or refused above) is ignored: otherwise `pos` keeps
+                // growing and the writes below walk past the receive buffers.
+                if (sBlockRecv[i].pos >= sBlockRecv[i].size)
+                    break;
                 if (sBlockRecv[i].size > BLOCK_BUFFER_SIZE)
                 {
                     u16 *buffer;
@@ -581,7 +602,8 @@ static void ProcessRecvCmds(u8 unused)
                     buffer = (u16 *)gDecompressionBuffer;
                     for (j = 0; j < CMD_LENGTH - 1; j++)
                     {
-                        buffer[(sBlockRecv[i].pos / 2) + j] = gRecvCmds[i][j + 1];
+                        if ((sBlockRecv[i].pos / 2) + j < sizeof(gDecompressionBuffer) / 2) // MP: PS-047 bound
+                            buffer[(sBlockRecv[i].pos / 2) + j] = gRecvCmds[i][j + 1];
                     }
                 }
                 else
@@ -590,7 +612,10 @@ static void ProcessRecvCmds(u8 unused)
 
                     for (j = 0; j < CMD_LENGTH - 1; j++)
                     {
-                        gBlockRecvBuffer[i][(sBlockRecv[i].pos / 2) + j] = gRecvCmds[i][j + 1];
+                        // MP: PS-047 bound. The last CONT_BLOCK of a 0xFD..0x100-byte block
+                        // wrote up to 5 words past this player's buffer.
+                        if ((sBlockRecv[i].pos / 2) + j < BLOCK_BUFFER_SIZE / 2)
+                            gBlockRecvBuffer[i][(sBlockRecv[i].pos / 2) + j] = gRecvCmds[i][j + 1];
                     }
                 }
 
@@ -613,8 +638,7 @@ static void ProcessRecvCmds(u8 unused)
                             linkPlayer->progressFlags = 0;
                         }
                         ConvertLinkPlayerName(linkPlayer);
-                        if (strcmp(block->magic1, sASCIIGameFreakInc) != 0
-                            || strcmp(block->magic2, sASCIIGameFreakInc) != 0)
+                        if (!MpIsLinkPlayerBlockMagicOk(block)) // MP: PS-047, was strcmp on unterminated peer data
                         {
                             SetMainCallback2(CB2_LinkError);
                         }
@@ -640,6 +664,14 @@ static void ProcessRecvCmds(u8 unused)
                 SetBerryBlenderLinkCallback();
                 break;
             case LINKCMD_SEND_BLOCK_REQ:
+                // MP: PS-047 (R2). The request type indexes sBlockRequests (5 entries): out of
+                // range it read an {address, size} from beyond the table and sent that memory
+                // to the peer. Refuse it and end the link.
+                if (gRecvCmds[i][1] >= ARRAY_COUNT(sBlockRequests))
+                {
+                    MP_LinkRejectData("SEND_BLOCK_REQ type out of range");
+                    break;
+                }
                 SendBlock(0, sBlockRequests[gRecvCmds[i][1]].address, sBlockRequests[gRecvCmds[i][1]].size);
                 break;
             case LINKCMD_SEND_HELD_KEYS:
@@ -1780,8 +1812,7 @@ void LinkPlayerFromBlock(u32 who)
     *player = block->linkPlayer;
     ConvertLinkPlayerName(player);
 
-    if (strcmp(block->magic1, sASCIIGameFreakInc) != 0
-     || strcmp(block->magic2, sASCIIGameFreakInc) != 0)
+    if (!MpIsLinkPlayerBlockMagicOk(block)) // MP: PS-047, was strcmp on unterminated peer data
         SetMainCallback2(CB2_LinkError);
 }
 
@@ -1876,6 +1907,13 @@ u32 MP_LinkSelftestState(u8 *buf, u32 cap, bool8 load)
     }
     return total;
 }
+
+// MP: PS-047, --mp-selftest only: runs the receive path (ProcessRecvCmds) once on the
+// current gRecvCmds, so the hardening selftest can feed it crafted commands.
+void MP_LinkSelftestProcessRecvCmds(void)
+{
+    ProcessRecvCmds(0);
+}
 #endif
 
 void SetWirelessCommType1(void)
@@ -1920,6 +1958,10 @@ u8 GetWirelessCommType(void)
 
 void ConvertLinkPlayerName(struct LinkPlayer *player)
 {
+    // MP: PS-047 (R6). Every caller passes a LinkPlayer received from a peer: terminate the
+    // name (5 characters for Japanese, which the conversion below grows in place) and
+    // range-check language, gender and battler id before anything uses them.
+    MP_SanitizeLinkPlayer(player);
     player->progressFlagsCopy = player->progressFlags; // ? Perhaps relocating for a longer name field
     ConvertInternationalString(player->name, player->language);
 }

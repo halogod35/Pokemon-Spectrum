@@ -12,6 +12,11 @@
 #include "task.h"
 #include "util.h"
 #include "constants/abilities.h"
+#include "constants/battle_string_ids.h" // MP: PS-047 (link message checks)
+#include "constants/items.h"
+#include "constants/moves.h"
+#include "constants/songs.h"
+#include "mp/mp.h" // MP: PS-047 link receive-path hardening
 
 static EWRAM_DATA u8 sLinkSendTaskId = 0;
 static EWRAM_DATA u8 sLinkReceiveTaskId = 0;
@@ -859,6 +864,183 @@ static void Task_HandleSendLinkBuffersData(u8 taskId)
     #undef BYTE_TO_SEND
 }
 
+// MP: PS-047 (AD-9). Checks for battle messages that arrived over the link, before the
+// controllers (B_COMM_TO_CONTROLLER) or the engine (B_COMM_TO_ENGINE) act on them. The link
+// master's engine drives the other side's controllers, and the other side answers the engine,
+// so either peer can send anything. Fields that index a table, a party slot or a battler, or
+// that are memory primitives, are checked here, centrally, by message type (the layouts are
+// those of the BtlController_Emit* functions below). Purely cosmetic indices are clamped;
+// anything an honest game never sends makes the message be dropped (FALSE) and the caller
+// raises a link error. Own messages come back through here too, so nothing an honest engine
+// sends may be refused. The engine's own consumers of reply values are clamped where they
+// read them (battle_main.c, battle_script_commands.c).
+static u16 MpLinkRead16(const u8 *p)
+{
+    return p[0] | (p[1] << 8);
+}
+
+static void MpLinkClampPartyOrder(u8 *order, u32 count)
+{
+    u32 i;
+
+    for (i = 0; i < count; i++)
+    {
+        if ((order[i] & 0xF) >= PARTY_SIZE)
+            order[i] &= 0xF0;
+        if ((order[i] >> 4) >= PARTY_SIZE)
+            order[i] &= 0x0F;
+    }
+}
+
+static bool8 MpLinkIsBattleMsgSafe(u8 bufferId, u8 *data)
+{
+    struct BattlePokemon mon;
+    struct BattleMsgData msg;
+    struct ChooseMoveStruct moves;
+    u32 i;
+
+    // `data` is a whole gBattleBufferA / gBattleBufferB row (0x200 bytes), so every offset
+    // read below is in bounds whatever the message size was.
+    if (bufferId == B_COMM_TO_ENGINE)
+    {
+        if (data[0] == CONTROLLER_CHOSENMONRETURNVALUE)
+        {
+            if (data[1] > PARTY_SIZE) // PARTY_SIZE = nothing chosen
+                return FALSE;
+            MpLinkClampPartyOrder(&data[2], PARTY_SIZE / 2); // garbage when sent with NULL
+        }
+        return TRUE;
+    }
+    if (bufferId != B_COMM_TO_CONTROLLER)
+        return FALSE;
+
+    switch (data[0])
+    {
+    // Never emitted (their Emit functions are UNUSED): raw memory reads / writes, an
+    // unchecked DMA to any address on 32-bit builds, a song id with a size.
+    case CONTROLLER_GETRAWMONDATA:
+    case CONTROLLER_SETRAWMONDATA:
+    case CONTROLLER_DMA3TRANSFER:
+    case CONTROLLER_PLAYBGM:
+    case CONTROLLER_32:
+        return FALSE;
+    case CONTROLLER_SETMONDATA:
+        switch (data[1])
+        {
+        case REQUEST_ALL_BATTLE:
+            memcpy(&mon, &data[3], sizeof(mon));
+            if (!MP_SanitizeBattleMon(&mon))
+                return FALSE;
+            memcpy(&data[3], &mon, sizeof(mon)); // with the silent clamps
+            break;
+        case REQUEST_SPECIES_BATTLE:
+            if (MpLinkRead16(&data[3]) >= NUM_SPECIES)
+                return FALSE;
+            break;
+        case REQUEST_HELDITEM_BATTLE:
+            if (MpLinkRead16(&data[3]) >= ITEMS_COUNT)
+                return FALSE;
+            break;
+        case REQUEST_MOVES_PP_BATTLE:
+            for (i = 0; i < MAX_MON_MOVES; i++)
+            {
+                if (MpLinkRead16(&data[3 + i * 2]) >= MOVES_COUNT)
+                    return FALSE;
+            }
+            break;
+        case REQUEST_MOVE1_BATTLE:
+        case REQUEST_MOVE2_BATTLE:
+        case REQUEST_MOVE3_BATTLE:
+        case REQUEST_MOVE4_BATTLE:
+            if (MpLinkRead16(&data[3]) >= MOVES_COUNT)
+                return FALSE;
+            break;
+        }
+        break;
+    case CONTROLLER_SWITCHINANIM:   // gBattlerPartyIndexes[battler] = data[1]
+    case CONTROLLER_EXPUPDATE:      // gPlayerParty[data[1]]
+        if (data[1] >= PARTY_SIZE)
+            return FALSE;
+        break;
+    case CONTROLLER_MOVEANIMATION:
+        if (MpLinkRead16(&data[1]) >= MOVES_COUNT)
+            return FALSE;
+        break;
+    case CONTROLLER_PRINTSTRING:
+    case CONTROLLER_PRINTSTRINGPLAYERONLY:
+        if (MpLinkRead16(&data[2]) >= BATTLESTRINGS_COUNT)
+            return FALSE;
+        // BufferStringBattle copies these into battle globals (gLastUsedItem, the scripting
+        // battler, the script party index, ...). The text buffers are bounded where they are
+        // expanded (ExpandBattleTextBuffPlaceholders).
+        memcpy(&msg, &data[4], sizeof(msg));
+        if (msg.currentMove >= MOVES_COUNT)
+            msg.currentMove = MOVE_NONE;
+        if (msg.originallyUsedMove >= MOVES_COUNT)
+            msg.originallyUsedMove = MOVE_NONE;
+        if (msg.lastItem >= ITEMS_COUNT)
+            msg.lastItem = ITEM_NONE;
+        if (msg.lastAbility >= ABILITIES_COUNT)
+            msg.lastAbility = ABILITY_NONE;
+        if (msg.scrActive >= MAX_BATTLERS_COUNT)
+            msg.scrActive = 0;
+        if (msg.bakScriptPartyIdx >= PARTY_SIZE)
+            msg.bakScriptPartyIdx = 0;
+        if (msg.itemEffectBattler >= MAX_BATTLERS_COUNT)
+            msg.itemEffectBattler = 0;
+        if (msg.moveType >= NUMBER_OF_MON_TYPES)
+            msg.moveType = TYPE_NORMAL;
+        for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+        {
+            if (msg.abilities[i] >= ABILITIES_COUNT)
+                msg.abilities[i] = ABILITY_NONE;
+        }
+        memcpy(&data[4], &msg, sizeof(msg));
+        break;
+    case CONTROLLER_CHOOSEACTION:
+        if (MpLinkRead16(&data[2]) >= ITEMS_COUNT)
+            return FALSE;
+        break;
+    case CONTROLLER_CHOOSEMOVE:
+        memcpy(&moves, &data[4], sizeof(moves));
+        for (i = 0; i < MAX_MON_MOVES; i++)
+        {
+            if (moves.moves[i] >= MOVES_COUNT)
+                return FALSE;
+        }
+        if (moves.species >= NUM_SPECIES || moves.monTypes[0] >= NUMBER_OF_MON_TYPES || moves.monTypes[1] >= NUMBER_OF_MON_TYPES)
+            return FALSE;
+        break;
+    case CONTROLLER_CHOOSEPOKEMON:
+        // data[1]: party menu type | battler preventing switch-out << 4; data[2]: previous
+        // slot; data[3]: ability preventing switch-out; data[4..6]: the party order.
+        if ((data[1] >> 4) >= MAX_BATTLERS_COUNT || data[2] > PARTY_SIZE || data[3] >= ABILITIES_COUNT)
+            return FALSE;
+        MpLinkClampPartyOrder(&data[4], PARTY_SIZE / 2);
+        break;
+    case CONTROLLER_OPENBAG:
+        MpLinkClampPartyOrder(&data[1], PARTY_SIZE / 2);
+        break;
+    case CONTROLLER_PLAYSE:
+    case CONTROLLER_PLAYFANFAREORBGM:
+        if (MpLinkRead16(&data[1]) > LAST_PHONEME_SONG) // gSongTable index
+            return FALSE;
+        break;
+    case CONTROLLER_BATTLEANIMATION:
+        if (data[1] > B_ANIM_WISH_HEAL) // gBattleAnims_General index
+            return FALSE;
+        break;
+    case CONTROLLER_INTROSLIDE:
+        if (data[1] > BATTLE_ENVIRONMENT_PLAIN) // sBattleIntroSlideFuncs index
+            return FALSE;
+        break;
+    case CONTROLLER_ENDLINKBATTLE:
+        data[2] = (data[2] != 0); // frontier.disableRecordBattle goes into the save
+        break;
+    }
+    return TRUE;
+}
+
 // We have received a message. Place it into the "receive" buffer.
 //
 // Counterintuitively, we also "receive" the outbound messages that
@@ -885,6 +1067,15 @@ void TryReceiveLinkBattleData(void)
                 {
                     u8 *dest, *src;
                     u16 dataSize = gBlockRecvBuffer[i][2];
+
+                    // MP: PS-047 (R3). dataSize comes from the peer; the copy below reads
+                    // dataSize + 8 bytes out of a BLOCK_BUFFER_SIZE (0x100) buffer and writes them
+                    // into the 0x1000 ring. Drop anything that does not fit the block buffer.
+                    if (dataSize + LINK_BUFF_DATA > BLOCK_BUFFER_SIZE)
+                    {
+                        MP_LinkRejectData("battle block size larger than the block buffer");
+                        continue;
+                    }
 
                     if (gTasks[sLinkReceiveTaskId].tCurrentBlock_End + 9 + dataSize > 0x1000)
                     {
@@ -925,6 +1116,18 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
         battler = BYTE_TO_RECEIVE(LINK_BUFF_ACTIVE_BATTLER);
         blockSize = BYTE_TO_RECEIVE(LINK_BUFF_SIZE_LO) | (BYTE_TO_RECEIVE(LINK_BUFF_SIZE_HI) << 8);
 
+        // MP: PS-047 (R4). battler and blockSize come from the peer: battler indexes
+        // gBattleBufferA/B ([4][0x200]) and gBitTable, blockSize sizes the memcpy, and the
+        // message must lie inside the 0x1000 ring. Anything else: drop what is queued (the
+        // ring position can no longer be trusted) and end the link.
+        if (battler >= MAX_BATTLERS_COUNT || blockSize > sizeof(gBattleBufferA[0])
+         || gTasks[taskId].tCurrentBlock_Start + LINK_BUFF_DATA + blockSize > BATTLE_BUFFER_LINK_SIZE)
+        {
+            MP_LinkRejectData("battle message with a bad battler or size");
+            gTasks[taskId].tCurrentBlock_Start = gTasks[taskId].tCurrentBlock_End;
+            return;
+        }
+
         switch (BYTE_TO_RECEIVE(0))
         {
         case B_COMM_TO_CONTROLLER:
@@ -932,21 +1135,39 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
                 return;
 
             memcpy(gBattleBufferA[battler], &BYTE_TO_RECEIVE(LINK_BUFF_DATA), blockSize);
+            if (!MpLinkIsBattleMsgSafe(B_COMM_TO_CONTROLLER, gBattleBufferA[battler])) // MP: PS-047
+            {
+                MP_LinkRejectData("battle controller command out of range");
+                gBattleBufferA[battler][0] = CONTROLLER_TERMINATOR_NOP;
+                break; // never handed to the controller
+            }
             MarkBattlerReceivedLinkData(battler);
 
             if (!(gBattleTypeFlags & BATTLE_TYPE_IS_MASTER))
             {
-                gBattlerAttacker    = BYTE_TO_RECEIVE(LINK_BUFF_ATTACKER);
-                gBattlerTarget      = BYTE_TO_RECEIVE(LINK_BUFF_TARGET);
+                // MP: PS-047. Battler ids from the peer index gBattleMons and friends.
+                gBattlerAttacker    = BYTE_TO_RECEIVE(LINK_BUFF_ATTACKER) % MAX_BATTLERS_COUNT;
+                gBattlerTarget      = BYTE_TO_RECEIVE(LINK_BUFF_TARGET) % MAX_BATTLERS_COUNT;
                 gAbsentBattlerFlags = BYTE_TO_RECEIVE(LINK_BUFF_ABSENT_BATTLER_FLAGS);
-                gEffectBattler      = BYTE_TO_RECEIVE(LINK_BUFF_EFFECT_BATTLER);
+                gEffectBattler      = BYTE_TO_RECEIVE(LINK_BUFF_EFFECT_BATTLER) % MAX_BATTLERS_COUNT;
             }
             break;
         case B_COMM_TO_ENGINE:
             memcpy(gBattleBufferB[battler], &gLinkBattleRecvBuffer[gTasks[taskId].tCurrentBlock_Start + LINK_BUFF_DATA], blockSize);
+            if (!MpLinkIsBattleMsgSafe(B_COMM_TO_ENGINE, gBattleBufferB[battler])) // MP: PS-047
+            {
+                MP_LinkRejectData("battle reply out of range");
+                gBattleBufferB[battler][0] = CONTROLLER_TERMINATOR_NOP;
+            }
             break;
         case B_COMM_CONTROLLER_IS_DONE:
             playerId = BYTE_TO_RECEIVE(LINK_BUFF_DATA);
+            // MP: PS-047. playerId is a shift count (playerId * 4) into a 32-bit flag word.
+            if (playerId >= MAX_LINK_PLAYERS)
+            {
+                MP_LinkRejectData("battle controller-done for a bad player id");
+                break;
+            }
             MARK_BATTLE_CONTROLLER_IDLE_FOR_PLAYER(battler, playerId);
             break;
         }
@@ -955,6 +1176,40 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
     }
 
     #undef BYTE_TO_RECEIVE
+}
+
+// MP: PS-047, --mp-selftest only. Runs the battle link receive path (TryReceiveLinkBattleData
+// and the copy task) on a caller-provided ring of BATTLE_BUFFER_LINK_SIZE bytes, without a
+// battle. Begin saves and End restores the receive task id and the ring pointer.
+static u8 sMpSelftestSavedTaskId;
+static u8 *sMpSelftestSavedRing;
+
+void MP_BattleLinkSelftestBegin(u8 *ring)
+{
+    sMpSelftestSavedTaskId = sLinkReceiveTaskId;
+    sMpSelftestSavedRing = gLinkBattleRecvBuffer;
+    gLinkBattleRecvBuffer = ring;
+    sLinkReceiveTaskId = CreateTask(Task_HandleCopyReceivedLinkBuffersData, 0);
+    gTasks[sLinkReceiveTaskId].tCurrentBlock_WrapFrom = 0;
+    gTasks[sLinkReceiveTaskId].tCurrentBlock_End      = 0;
+    gTasks[sLinkReceiveTaskId].tCurrentBlock_Start    = 0;
+}
+
+void MP_BattleLinkSelftestRunCopy(void)
+{
+    Task_HandleCopyReceivedLinkBuffersData(sLinkReceiveTaskId);
+}
+
+u16 MP_BattleLinkSelftestRingEnd(void)
+{
+    return gTasks[sLinkReceiveTaskId].tCurrentBlock_End;
+}
+
+void MP_BattleLinkSelftestEnd(void)
+{
+    DestroyTask(sLinkReceiveTaskId);
+    sLinkReceiveTaskId = sMpSelftestSavedTaskId;
+    gLinkBattleRecvBuffer = sMpSelftestSavedRing;
 }
 
 #undef tInitialDelayTimer

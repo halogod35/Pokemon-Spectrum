@@ -714,8 +714,27 @@ static void ScenarioHostNotMember(void)
     DoBlockRound(3);
     Report("A: close + re-open on the same group", failuresBefore);
 
+    // PS-047: a member sends a LINK_CMD no game sends (INIT_BLOCK of 0xFFFF bytes). The host
+    // bus refuses it and ends the group: both cables report the error.
+    failuresBefore = sFail;
+    {
+        u16 bad[MP_LINK_CMD_WORDS];
+
+        memset(bad, 0, sizeof(bad));
+        bad[0] = LINKCMD_INIT_BLOCK;
+        bad[1] = 0xFFFF;
+        Enter(G_A);
+        MpLink_CableSend(bad);
+        Leave();
+    }
+    L_CHECK(RunUntil(CondLinkError, 0x3, 0x3), "a refused LINK_CMD: both members reach CB2_LinkError");
+    Sel(S_HOST);
+    MpLink_GetStats(&stats);
+    L_CHECK(stats.cmdsRefused == 1, "the host counted one refused command");
+    Report("A: host bus pre-filter ends the group on a refused LINK_CMD (PS-047)", failuresBefore);
+
     // Close both cables and leave the group first, so no fuzzed message can ever reach link.c
-    // (its receive path is not hardened yet: PS-047). A member that is not open never accepts rows.
+    // (the fuzz below targets the session layer; link.c itself is fuzzed by the hardening group). A member that is not open never accepts rows.
     for (g = 0; g < G_COUNT; g++)
     {
         Enter(g);

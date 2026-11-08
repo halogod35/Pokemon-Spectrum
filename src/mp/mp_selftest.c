@@ -345,6 +345,8 @@ s32 MP_RunSelftest(void)
     sFailures += MpSelftest_Interact();
     // PS-046: virtual link cable (parsers + the real link stack on two in-process game instances).
     sFailures += MpSelftest_Link();
+    // PS-047: link receive-path hardening (crafted commands, blocks, battle messages, mons).
+    sFailures += MpSelftest_LinkHardening();
     MpTransport_Shutdown();
 
     if (sFailures == 0)

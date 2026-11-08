@@ -46,6 +46,7 @@
 #include "constants/contest.h"
 #include "constants/items.h"
 #include "constants/moves.h"
+#include "mp/mp.h" // MP: PS-047 link receive-path hardening
 #include "constants/region_map_sections.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
@@ -1157,6 +1158,16 @@ static bool8 BufferTradeParties(void)
         }
         break;
     case 21:
+        // MP: PS-047 (R5). The partner's party and mail came from the peer and may end up in our
+        // save: species, moves, items and levels index tables, the mail item picks the mail
+        // layout. Bad mons / mail are zeroed and the trade ends with a link error.
+        if (!MP_ValidateParty(gEnemyParty, PARTY_SIZE))
+            MP_LinkRejectData("trade party failed validation");
+        for (i = 0; i < PARTY_SIZE; i++)
+        {
+            if (!MP_SanitizeMail(&gTradeMail[i]))
+                MP_LinkRejectData("trade mail failed validation");
+        }
         for (i = 0, mon = gEnemyParty; i < PARTY_SIZE; mon++, i++)
         {
             u8 name[POKEMON_NAME_LENGTH + 1];

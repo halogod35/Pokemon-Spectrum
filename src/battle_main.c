@@ -60,6 +60,7 @@
 #include "constants/songs.h"
 #include "constants/trainers.h"
 #include "cable_club.h"
+#include "mp/mp.h" // MP: PS-047 link receive-path hardening
 
 extern const struct BgTemplate gBattleBgTemplates[];
 extern const struct WindowTemplate *const gBattleWindowTemplates[];
@@ -1082,6 +1083,10 @@ static void CB2_HandleStartBattle(void)
             ResetBlockReceivedFlags();
             memcpy(&gEnemyParty[4], gBlockRecvBuffer[enemyMultiplayerId], sizeof(struct Pokemon) * 2);
 
+            // MP: PS-047 (R5). The whole party came from the peer: species, moves, items and
+            // levels index tables everywhere in the battle. Bad mons are zeroed + link error.
+            if (!MP_ValidateParty(gEnemyParty, PARTY_SIZE))
+                MP_LinkRejectData("link battle party failed validation");
             TryCorrectShedinjaLanguage(&gEnemyParty[0]);
             TryCorrectShedinjaLanguage(&gEnemyParty[1]);
             TryCorrectShedinjaLanguage(&gEnemyParty[2]);
@@ -1349,6 +1354,9 @@ static void CB2_HandleStartMultiPartnerBattle(void)
             if (GetMultiplayerId() != 0)
                 memcpy(&gEnemyParty[4], gBlockRecvBuffer[0], sizeof(struct Pokemon) * 2);
 
+            // MP: PS-047 (R5). Partner and opponent mons came from peers (multi battle).
+            if (!MP_ValidateParty(gPlayerParty, PARTY_SIZE) | !MP_ValidateParty(gEnemyParty, PARTY_SIZE)) // | : validate both
+                MP_LinkRejectData("link multi battle party failed validation");
             TryCorrectShedinjaLanguage(&gPlayerParty[0]);
             TryCorrectShedinjaLanguage(&gPlayerParty[1]);
             TryCorrectShedinjaLanguage(&gPlayerParty[2]);
@@ -1781,6 +1789,9 @@ static void CB2_HandleStartMultiBattle(void)
                     }
                 }
             }
+            // MP: PS-047 (R5). Partner and opponent mons came from peers (multi battle).
+            if (!MP_ValidateParty(gPlayerParty, PARTY_SIZE) | !MP_ValidateParty(gEnemyParty, PARTY_SIZE)) // | : validate both
+                MP_LinkRejectData("link multi battle party failed validation");
             TryCorrectShedinjaLanguage(&gPlayerParty[0]);
             TryCorrectShedinjaLanguage(&gPlayerParty[1]);
             TryCorrectShedinjaLanguage(&gPlayerParty[2]);
@@ -3414,6 +3425,9 @@ static void BattleIntroDrawTrainersOrMonsSprites(void)
             ptr = (u8 *)&gBattleMons[gActiveBattler];
             for (i = 0; i < sizeof(struct BattlePokemon); i++)
                 ptr[i] = gBattleBufferB[gActiveBattler][4 + i];
+            // MP: PS-047. A GetMonData reply: over a link it comes from the peer.
+            if (!MP_SanitizeBattleMon(&gBattleMons[gActiveBattler]))
+                MP_LinkRejectData("battle mon data out of range");
 
             gBattleMons[gActiveBattler].types[0] = gSpeciesInfo[gBattleMons[gActiveBattler].species].types[0];
             gBattleMons[gActiveBattler].types[1] = gSpeciesInfo[gBattleMons[gActiveBattler].species].types[1];
@@ -4175,6 +4189,13 @@ static void HandleTurnActionSelectionState(void)
         case STATE_WAIT_ACTION_CHOSEN: // Try to perform an action.
             if (!IS_BATTLE_CONTROLLER_ACTIVE_OR_PENDING_SYNC_ANYWHERE(gActiveBattler))
             {
+                // MP: PS-047. The action indexes sTurnActionsFuncsTable (a function pointer table);
+                // over a link it is the peer's byte.
+                if (gBattleBufferB[gActiveBattler][1] >= ARRAY_COUNT(sTurnActionsFuncsTable))
+                {
+                    MP_LinkRejectData("battle action out of range");
+                    gBattleBufferB[gActiveBattler][1] = B_ACTION_USE_MOVE;
+                }
                 RecordedBattle_SetBattlerAction(gActiveBattler, gBattleBufferB[gActiveBattler][1]);
                 gChosenActionByBattler[gActiveBattler] = gBattleBufferB[gActiveBattler][1];
 
@@ -4186,7 +4207,7 @@ static void HandleTurnActionSelectionState(void)
                         gBattleCommunication[gActiveBattler] = STATE_SELECTION_SCRIPT;
                         *(gBattleStruct->selectionScriptFinished + gActiveBattler) = FALSE;
                         *(gBattleStruct->stateIdAfterSelScript + gActiveBattler) = STATE_WAIT_ACTION_CONFIRMED_STANDBY;
-                        *(gBattleStruct->moveTarget + gActiveBattler) = gBattleBufferB[gActiveBattler][3];
+                        *(gBattleStruct->moveTarget + gActiveBattler) = gBattleBufferB[gActiveBattler][3] % MAX_BATTLERS_COUNT; // MP: PS-047
                         return;
                     }
                     else if (gDisableStructs[gActiveBattler].encoredMove != 0)
@@ -4395,9 +4416,9 @@ static void HandleTurnActionSelectionState(void)
                                 RecordedBattle_SetBattlerAction(gActiveBattler, gBattleBufferB[gActiveBattler][2]);
                                 RecordedBattle_SetBattlerAction(gActiveBattler, gBattleBufferB[gActiveBattler][3]);
                             }
-                            *(gBattleStruct->chosenMovePositions + gActiveBattler) = gBattleBufferB[gActiveBattler][2];
+                            *(gBattleStruct->chosenMovePositions + gActiveBattler) = gBattleBufferB[gActiveBattler][2] % MAX_MON_MOVES; // MP: PS-047, indexes moves[]
                             gChosenMoveByBattler[gActiveBattler] = gBattleMons[gActiveBattler].moves[*(gBattleStruct->chosenMovePositions + gActiveBattler)];
-                            *(gBattleStruct->moveTarget + gActiveBattler) = gBattleBufferB[gActiveBattler][3];
+                            *(gBattleStruct->moveTarget + gActiveBattler) = gBattleBufferB[gActiveBattler][3] % MAX_BATTLERS_COUNT; // MP: PS-047
                             gBattleCommunication[gActiveBattler]++;
                         }
                         break;
@@ -4411,6 +4432,11 @@ static void HandleTurnActionSelectionState(void)
                     else
                     {
                         gLastUsedItem = (gBattleBufferB[gActiveBattler][1] | (gBattleBufferB[gActiveBattler][2] << 8));
+                        if (gLastUsedItem >= ITEMS_COUNT) // MP: PS-047, indexes gItems
+                        {
+                            MP_LinkRejectData("battle item out of range");
+                            gLastUsedItem = ITEM_NONE;
+                        }
                         gBattleCommunication[gActiveBattler]++;
                     }
                     break;
@@ -4570,6 +4596,9 @@ static bool8 AllAtActionConfirmed(void)
 static void UpdateBattlerPartyOrdersOnSwitch(void)
 {
     *(gBattleStruct->monToSwitchIntoId + gActiveBattler) = gBattleBufferB[gActiveBattler][1];
+    // MP: PS-047. A party slot from the peer over a link: keep it inside the party.
+    if (*(gBattleStruct->monToSwitchIntoId + gActiveBattler) >= PARTY_SIZE)
+        *(gBattleStruct->monToSwitchIntoId + gActiveBattler) = gBattlerPartyIndexes[gActiveBattler];
     RecordedBattle_SetBattlerAction(gActiveBattler, gBattleBufferB[gActiveBattler][1]);
 
     if (gBattleTypeFlags & BATTLE_TYPE_LINK && gBattleTypeFlags & BATTLE_TYPE_MULTI)
@@ -4940,12 +4969,17 @@ static void RunTurnActionsFunctions(void)
         gCurrentActionFuncId = B_ACTION_FINISHED;
 
     *(&gBattleStruct->savedTurnActionNumber) = gCurrentTurnActionNumber;
+    if (gCurrentActionFuncId >= ARRAY_COUNT(sTurnActionsFuncsTable)) // MP: PS-047 bound (a function pointer table)
+        gCurrentActionFuncId = B_ACTION_FINISHED;
     sTurnActionsFuncsTable[gCurrentActionFuncId]();
 
     if (gCurrentTurnActionNumber >= gBattlersCount) // everyone did their actions, turn finished
     {
         gHitMarker &= ~HITMARKER_PASSIVE_HP_UPDATE;
-        gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
+        if ((gBattleOutcome & 0x7F) < ARRAY_COUNT(sEndTurnFuncsTable)) // MP: PS-047 bound (a function pointer table)
+            gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
+        else
+            gBattleMainFunc = HandleEndTurn_FinishBattle;
     }
     else
     {

@@ -1917,6 +1917,14 @@ void PlayerHandleGetRawMonData(void)
     u8 *dst = (u8 *)&battleMon + gBattleBufferA[gActiveBattler][1];
     u8 i;
 
+    // MP: PS-047. Offset and size come from the battle engine, which over a link is the peer:
+    // never copy outside the party mon or the stack struct (the engine never sends this).
+    if (gBattleBufferA[gActiveBattler][1] + gBattleBufferA[gActiveBattler][2] > sizeof(battleMon))
+    {
+        PlayerBufferExecCompleted();
+        return;
+    }
+
     for (i = 0; i < gBattleBufferA[gActiveBattler][2]; i++)
         dst[i] = src[i];
 
@@ -2168,6 +2176,13 @@ static void PlayerHandleSetRawMonData(void)
 {
     u8 *dst = (u8 *)&gPlayerParty[gBattlerPartyIndexes[gActiveBattler]] + gBattleBufferA[gActiveBattler][1];
     u8 i;
+
+    // MP: PS-047. Offset and size come from the peer over a link: stay inside the party mon.
+    if (gBattleBufferA[gActiveBattler][1] + gBattleBufferA[gActiveBattler][2] > sizeof(struct Pokemon))
+    {
+        PlayerBufferExecCompleted();
+        return;
+    }
 
     for (i = 0; i < gBattleBufferA[gActiveBattler][2]; i++)
         dst[i] = gBattleBufferA[gActiveBattler][3 + i];
@@ -2790,16 +2805,9 @@ static void PlayerHandleDataTransfer(void)
 
 static void PlayerHandleDMA3Transfer(void)
 {
-    #ifndef VER_64BIT //unused function, just ifdef it out so it wouldnt cause pointer truncation warnings
-    u32 dstArg = gBattleBufferA[gActiveBattler][1]
-            | (gBattleBufferA[gActiveBattler][2] << 8)
-            | (gBattleBufferA[gActiveBattler][3] << 16)
-            | (gBattleBufferA[gActiveBattler][4] << 24);
-    u16 sizeArg = gBattleBufferA[gActiveBattler][5] | (gBattleBufferA[gActiveBattler][6] << 8);
-
-    DmaCopyLarge16(3, &gBattleBufferA[gActiveBattler][7], (void *)dstArg, sizeArg, 0x1000);
+    // MP: PS-047. Was a DMA of peer data to an address the peer named (32-bit builds), and a
+    // controller that never completed on 64-bit. The engine never sends this command.
     PlayerBufferExecCompleted();
-    #endif
 }
 
 static void PlayerHandlePlayBGM(void)

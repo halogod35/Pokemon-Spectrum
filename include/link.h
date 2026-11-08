@@ -291,6 +291,7 @@ void CheckShouldAdvanceLinkState(void);
 void SetCloseLinkCallback(void);
 bool8 HandleLinkConnection(void);
 u32 MP_LinkSelftestState(u8 *buf, u32 cap, bool8 load); // MP: PS-046, --mp-selftest only (link.c)
+void MP_LinkSelftestProcessRecvCmds(void); // MP: PS-047, --mp-selftest only (link.c)
 void SetLinkDebugValues(u32 seed, u32 flags);
 void SetBerryBlenderLinkCallback(void);
 void SetSuppressLinkErrorMessage(bool8 flag);

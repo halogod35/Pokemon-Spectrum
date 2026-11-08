@@ -58,6 +58,7 @@ struct MpLinkHost
     struct MpLinkHostGroup groups[MP_LINK_MAX_GROUPS];
     u32 rowsEmitted;
     u32 groupsFormed;
+    u32 cmdsRefused;                            // PS-047 pre-filter
 };
 
 struct MpLinkRxItem
@@ -430,6 +431,18 @@ static void MpLinkHostHandleCtl(u8 slot, u8 type, const struct MpMsgLinkCtl *ctl
     }
 }
 
+bool8 MpLink_IsCmdAllowed(const u16 *cmd)
+{
+    switch (cmd[0])
+    {
+    case MP_LINKCMD_INIT_BLOCK:     // word 1 = block size
+        return cmd[1] <= MP_LINK_MAX_BLOCK_SIZE;
+    case MP_LINKCMD_SEND_BLOCK_REQ: // word 1 = index into link.c's sBlockRequests
+        return cmd[1] < MP_LINK_BLOCK_REQ_COUNT;
+    }
+    return TRUE;
+}
+
 static void MpLinkHostHandleCmd(u8 slot, const struct MpMsgLinkCmd *cmd)
 {
     struct MpLinkHostGroup *g = MpLinkHostGroupOfSlot(slot);
@@ -438,6 +451,17 @@ static void MpLinkHostHandleCmd(u8 slot, const struct MpMsgLinkCmd *cmd)
     if (g == NULL || g->id != cmd->groupId || !g->busUp || g->busEpoch != cmd->busEpoch)
         return; // stale: the bus it was sent on has ended
     li = MpLinkRankOf(g->memberMask, slot);
+    if (!MpLink_IsCmdAllowed(cmd->cmd))
+    {
+        // PS-047: a command no honest game sends (it would overflow or leak memory in the
+        // receivers' link.c, which also refuses it). Take the sender off the cable: the group
+        // ends for everyone, as if it had left (LINK_END(LEFT)), so all members see a link error.
+        MP_SLOG("link group %u: link id %u sent a refused link command (0x%04X 0x%04X)\n",
+                (unsigned)g->id, (unsigned)li, (unsigned)cmd->cmd[0], (unsigned)cmd->cmd[1]);
+        MpLinkHostState()->cmdsRefused++;
+        MpLinkHostEndGroup(g, MP_LINK_END_LEFT, MP_SLOT_NONE);
+        return;
+    }
     if (g->fifoCount[li] >= MP_LINK_HOST_FIFO_SIZE)
     {
         MP_SLOG("link group %u: link id %u overflowed the bus\n", (unsigned)g->id, (unsigned)li);
@@ -922,4 +946,5 @@ void MpLink_GetStats(struct MpLinkStats *out)
     out->rxPeak = m->rxPeak;
     out->rowsEmitted = h->rowsEmitted;
     out->groupsFormed = h->groupsFormed;
+    out->cmdsRefused = h->cmdsRefused;
 }
