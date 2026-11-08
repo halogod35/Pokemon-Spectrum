@@ -136,6 +136,7 @@ jobs:
           mkdir -p dist
           cp pokeemerald${{ matrix.bits }}.exe dist/
           cp SDL2/${{ matrix.triplet }}/bin/SDL2.dll dist/
+          cp pokeemerald.map dist/   # crash reporter: resolve exe offsets (BUG-003)
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
