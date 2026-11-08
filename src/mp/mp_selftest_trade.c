@@ -161,7 +161,7 @@ static void TestParser(void)
         len = MpProto_WriteTradeCommit(buf, sizeof(buf), &out);
         T_CHECK(len == 8 && memcmp(buf + 4, raw, 4) == 0, "parsed message writes back the same bytes");
     }
-    T_CHECK(ok > 100, "fuzz produced valid messages too");
+    T_CHECK(ok > 10, "fuzz produced valid messages too"); // ~30 expected: 1/9 lengths are 4, then op and reason must agree
     Report("TRADE_COMMIT parser fuzz (40000 buffers)", failuresBefore);
 }
 
