@@ -204,6 +204,21 @@ int main(int argc, char **argv)
         // MainLoop() ticks; it also runs while paused (design.md section 5).
         MP_Update();
         MpUi_Update(); // MP: drain MP events right after the pump (PS-022; PS-033 notices)
+        // MP: PS-048. The link stack counts its timeouts in frames on every member: no pause
+        // or speed-up while this instance is in a link group (trade / battle).
+        if (MP_LinkTimeControlsLocked())
+        {
+            static bool sTimeLockNoticeShown = false;
+
+            if ((paused || speedUp || timeScale != 1.0) && !sTimeLockNoticeShown)
+            {
+                puts("[MP] pause and speed-up are disabled during a link (trade / battle)");
+                sTimeLockNoticeShown = true;
+            }
+            paused = false;
+            speedUp = false;
+            timeScale = 1.0;
+        }
 
         curGameTime = SDL_GetPerformanceCounter();
         deltaTime = (double)((curGameTime - lastGameTime) / (double)SDL_GetPerformanceFrequency());

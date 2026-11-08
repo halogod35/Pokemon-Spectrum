@@ -1702,6 +1702,24 @@ static void ErrorMsg_CheckConnections(void)
     CopyWindowToVram(WIN_LINK_ERROR_BOTTOM, COPYWIN_FULL);
 }
 
+static const u8 sText_MpABtnReloadSave[] = _("A Button: Continue from last save"); // MP: PS-048
+
+// MP: PS-048. Clean-up before ReloadSave() after a link error on PC. RegisterRamReset() is a
+// stub here, so EWRAM is NOT cleared as on the GBA: reset what the link and battle left
+// behind, close the cable if the error came without CloseLink (e.g. bad magic), and leave
+// the link group. The MP session itself is kept (its state is outside the game heap).
+void MP_LinkPrepareErrorRecovery(void)
+{
+    if (sLinkOpen)
+        CloseLink();
+    gReceivedRemoteLinkPlayers = FALSE;
+    gLinkErrorOccurred = FALSE;
+    gLinkCallback = NULL;
+    gBattleTypeFlags = 0; // EWRAM: zero after the GBA's ReloadSave
+    memset(&sLinkErrorBuffer, 0, sizeof(sLinkErrorBuffer));
+    MP_LinkLeave();
+}
+
 static void CB2_PrintErrorMessage(void)
 {
     switch (gMain.state)
@@ -1733,11 +1751,25 @@ static void CB2_PrintErrorMessage(void)
                 AddTextPrinterParameterized3(WIN_LINK_ERROR_TOP, FONT_SHORT_COPY_1, 2, 20, sTextColors, 0, gText_ABtnTitleScreen);
             else if (gWirelessCommType == 1)
                 AddTextPrinterParameterized3(WIN_LINK_ERROR_TOP, FONT_SHORT_COPY_1, 2, 20, sTextColors, 0, gText_ABtnRegistrationCounter);
+            else // MP: PS-048. The wired screen had no way out; on PC A reloads the last save.
+                AddTextPrinterParameterized3(WIN_LINK_ERROR_TOP, FONT_SHORT_COPY_1, 2, 20, sTextColors, 0, sText_MpABtnReloadSave);
             break;
     }
     if (gMain.state == 160)
     {
-        if (gWirelessCommType == 1)
+        if (gWirelessCommType == 0)
+        {
+            // MP: PS-048 (Director ruling: always reload the save after a link error). The game
+            // saves before every link activity, so this returns to the overworld where the
+            // trade / battle started. The MP session stays; only the link group is left.
+            if (JOY_NEW(A_BUTTON))
+            {
+                PlaySE(SE_PIN);
+                MP_LinkPrepareErrorRecovery();
+                ReloadSave();
+            }
+        }
+        else if (gWirelessCommType == 1)
         {
             if (JOY_NEW(A_BUTTON))
             {

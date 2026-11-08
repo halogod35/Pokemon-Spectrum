@@ -815,6 +815,13 @@ u8 MP_LinkGetState(void)
     return MpLinkMemberState()->state;
 }
 
+// PS-048: while this instance is in (or asking for) a link group, the game's frame-counted link
+// timeouts (300 / 600 frames) run on every member, so the PC may not pause or speed up.
+bool8 MP_LinkTimeControlsLocked(void)
+{
+    return MpLinkMemberState()->state != MP_LINK_STATE_NONE;
+}
+
 u8 MP_LinkGetLinkId(void)
 {
     struct MpLinkMember *m = MpLinkMemberState();

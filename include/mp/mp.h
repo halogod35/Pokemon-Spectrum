@@ -488,6 +488,9 @@ void MP_LinkLeave(void);
 u8 MP_LinkGetState(void);       // MP_LINK_STATE_*.
 u8 MP_LinkGetLinkId(void);      // 0..members-1 while GROUPED, else MP_SLOT_NONE.
 u8 MP_LinkGetEndReason(void);   // Why the last group or request ended (MP_LINK_END_*).
+// PS-048: TRUE while in or requesting a link group. sdl2.c then keeps pause and speed-up off,
+// because the peers count link timeouts in frames.
+bool8 MP_LinkTimeControlsLocked(void);
 
 // MP: called by HandleLinkConnection() (link.c, PC build) once per game tick in place of the
 // SIO LinkMain1(). Same contract: fills recvCmds[0..3] with one row (or zeros), queues

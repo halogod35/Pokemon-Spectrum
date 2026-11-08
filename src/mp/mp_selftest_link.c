@@ -15,6 +15,7 @@
 //     survivor, a member leaving the link while open, and the single-player (no group) cable.
 
 #include "global.h"
+#include "battle.h" // gBattleTypeFlags (PS-048 recovery test)
 #include "link.h"
 #include "main.h"
 #include "string_util.h"
@@ -825,6 +826,8 @@ static void ScenarioHostMember(void)
     L_CHECK(RunUntil(CondGrouped, 0x3, 0x3), "both grouped");
     DoExchange("player-data exchange with the host as link master");
     DoBlockRound(1);
+    Enter(G_A); L_CHECK(MP_LinkTimeControlsLocked(), "PS-048: pause / speed-up locked while grouped (host)"); Leave();
+    Enter(G_B); L_CHECK(MP_LinkTimeControlsLocked(), "PS-048: pause / speed-up locked while grouped (client)"); Leave();
     Report("B: host as link member: exchange + SendBlock", failuresBefore);
 
     failuresBefore = sFail;
@@ -837,6 +840,23 @@ static void ScenarioHostMember(void)
     L_CHECK(MP_GetState() == MP_STATE_IN_SESSION, "the session itself is unaffected");
     Leave();
     Report("B: a member leaving the link while open -> link-error path", failuresBefore);
+
+    // PS-048: the error screen's A button cleans up, then ReloadSave(). The clean-up must close
+    // the cable, leave the link group and keep the session. (ReloadSave itself needs the real
+    // game and a save file: manual test, see the PS-048 card.)
+    failuresBefore = sFail;
+    Enter(G_A);
+    gBattleTypeFlags = BATTLE_TYPE_LINK | BATTLE_TYPE_LINK_IN_BATTLE;
+    MP_LinkPrepareErrorRecovery();
+    L_CHECK(!gReceivedRemoteLinkPlayers && !gLinkErrorOccurred && gBattleTypeFlags == 0, "recovery: link and battle flags cleared");
+    L_CHECK(MP_LinkGetState() == MP_LINK_STATE_NONE && !MP_LinkTimeControlsLocked(), "recovery: out of the link group, pause / speed-up allowed again");
+    L_CHECK(MP_GetState() == MP_STATE_IN_SESSION, "recovery: still in the MP session");
+    Leave();
+    // After recovery the same players can link again.
+    Enter(G_A); L_CHECK(MP_LinkJoin(0x03), "recovery: host asks for a new group"); Leave();
+    Enter(G_B); MP_LinkLeave(); L_CHECK(MP_LinkJoin(0x03), "recovery: client asks for a new group"); Leave();
+    L_CHECK(RunUntil(CondGrouped, 0x3, 0x3), "recovery: regrouped after the link error");
+    Report("B: link-error recovery clean-up keeps the session (PS-048)", failuresBefore);
 
     LeaveAll();
 }
