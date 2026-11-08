@@ -9,7 +9,7 @@
 //  2. battle_controllers.c TryReceiveLinkBattleData + the copy task on a test ring
 //     (MP_BattleLinkSelftest*): block sizes (R3), battler index / size (R4), the controller
 //     command filter (DMA3 / raw mon data / indices), engine replies, controller-done ids.
-//  3. MP_ValidateMon / MP_SanitizeBattleMon (R5), trainer card, mail, text buffers, and the
+//  3. MP_LinkValidateMon / MP_SanitizeBattleMon (R5), trainer card, mail, text buffers, and the
 //     host bus pre-filter (MpLink_IsCmdAllowed).
 // Every out-of-bounds case must be refused AND counted by MP_LinkRejectData; every legit case
 // must still pass. All global state touched is saved and restored.
@@ -565,30 +565,30 @@ static void TestMon(void)
 
     MakeMon(&ref);
     mon = ref;
-    H_CHECK(MP_ValidateMon(&mon) && memcmp(&mon, &ref, sizeof(mon)) == 0, "a valid mon is accepted unchanged");
+    H_CHECK(MP_LinkValidateMon(&mon) && memcmp(&mon, &ref, sizeof(mon)) == 0, "a valid mon is accepted unchanged");
     memset(&mon, 0, sizeof(mon));
-    H_CHECK(MP_ValidateMon(&mon) && GetMonData(&mon, MON_DATA_SPECIES) == SPECIES_NONE, "an empty slot is accepted");
+    H_CHECK(MP_LinkValidateMon(&mon) && GetMonData(&mon, MON_DATA_SPECIES) == SPECIES_NONE, "an empty slot is accepted");
     memset(&mon, 0x37, sizeof(mon));
     mon.box.secure.raw[0] ^= 0x1234;
-    H_CHECK(!MP_ValidateMon(&mon), "garbage (bad checksum) is rejected");
+    H_CHECK(!MP_LinkValidateMon(&mon), "garbage (bad checksum) is rejected");
     H_CHECK(GetMonData(&mon, MON_DATA_SPECIES) == SPECIES_NONE && GetMonData(&mon, MON_DATA_LEVEL) == 0, "a rejected mon is zeroed");
     mon = ref;
     mon.box.secure.raw[3] ^= 0x00010000;
-    H_CHECK(!MP_ValidateMon(&mon), "a flipped bit (checksum) is rejected");
+    H_CHECK(!MP_LinkValidateMon(&mon), "a flipped bit (checksum) is rejected");
 
     mon = ref; value = 999;
     SetMonData(&mon, MON_DATA_SPECIES, &value);
-    H_CHECK(!MP_ValidateMon(&mon), "species 999 is rejected");
+    H_CHECK(!MP_LinkValidateMon(&mon), "species 999 is rejected");
     mon = ref; value = ITEMS_COUNT + 5;
     SetMonData(&mon, MON_DATA_HELD_ITEM, &value);
-    H_CHECK(!MP_ValidateMon(&mon), "a held item past the item table is rejected");
+    H_CHECK(!MP_LinkValidateMon(&mon), "a held item past the item table is rejected");
     mon = ref; value = MOVES_COUNT;
     SetMonData(&mon, MON_DATA_MOVE3, &value);
-    H_CHECK(!MP_ValidateMon(&mon), "a move past the move table is rejected");
+    H_CHECK(!MP_LinkValidateMon(&mon), "a move past the move table is rejected");
     mon = ref; mon.level = 0;
-    H_CHECK(!MP_ValidateMon(&mon), "level 0 is rejected");
+    H_CHECK(!MP_LinkValidateMon(&mon), "level 0 is rejected");
     mon = ref; mon.level = MAX_LEVEL + 1;
-    H_CHECK(!MP_ValidateMon(&mon), "level 101 is rejected");
+    H_CHECK(!MP_LinkValidateMon(&mon), "level 101 is rejected");
 
     mon = ref; value = 0x4F;
     SetMonData(&mon, MON_DATA_LANGUAGE, &value);
@@ -597,12 +597,12 @@ static void TestMon(void)
     mon.hp = mon.maxHP + 50;
     value = 7;
     SetMonData(&mon, MON_DATA_COOL_RIBBON, &value);
-    H_CHECK(MP_ValidateMon(&mon), "harmless out-of-range fields are accepted");
+    H_CHECK(MP_LinkValidateMon(&mon), "harmless out-of-range fields are accepted");
     H_CHECK(GetMonData(&mon, MON_DATA_LANGUAGE) == LANGUAGE_ENGLISH, "language clamped");
     H_CHECK(GetMonData(&mon, MON_DATA_MAIL) == MAIL_NONE, "mail index clamped (gTradeMail has 6)");
     H_CHECK(GetMonData(&mon, MON_DATA_HP) == GetMonData(&mon, MON_DATA_MAX_HP), "hp clamped to max hp");
     H_CHECK(GetMonData(&mon, MON_DATA_COOL_RIBBON) == 4, "contest ribbon count clamped");
-    H_CHECK(MP_ValidateMon(&mon) && GetMonData(&mon, MON_DATA_SPECIES) == SPECIES_PIKACHU, "the clamped mon still has a valid checksum");
+    H_CHECK(MP_LinkValidateMon(&mon) && GetMonData(&mon, MON_DATA_SPECIES) == SPECIES_PIKACHU, "the clamped mon still has a valid checksum");
 
     // Fuzz: random corruptions are either rejected or leave every table index in range.
     for (i = 0; i < 20000; i++)
@@ -612,7 +612,7 @@ static void TestMon(void)
         mon = ref;
         for (k = 0; k < n; k++)
             ((u8 *)&mon)[Rand() % sizeof(mon)] ^= (u8)(1 << (Rand() % 8));
-        if (MP_ValidateMon(&mon))
+        if (MP_LinkValidateMon(&mon))
         {
             accepted++;
             if (GetMonData(&mon, MON_DATA_SPECIES) >= NUM_SPECIES || GetMonData(&mon, MON_DATA_HELD_ITEM) >= ITEMS_COUNT
@@ -624,7 +624,7 @@ static void TestMon(void)
         }
     }
     H_CHECK(accepted > 0 && accepted < 20000, "the mon fuzz exercised both outcomes");
-    Report("R5 MP_ValidateMon (checksum, species, item, moves, level, clamps, 20000 fuzz)", failuresBefore);
+    Report("R5 MP_LinkValidateMon (checksum, species, item, moves, level, clamps, 20000 fuzz)", failuresBefore);
 
     failuresBefore = sFail;
     memset(&bmon, 0, sizeof(bmon));

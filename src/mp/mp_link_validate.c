@@ -29,7 +29,7 @@ u8 MP_SanitizeLanguage(u8 language)
     return language;
 }
 
-bool8 MP_ValidateMon(struct Pokemon *mon)
+bool8 MP_LinkValidateMon(struct Pokemon *mon)
 {
     // Work on a copy: GetMonData decrypts in place and marks a bad checksum as a Bad Egg.
     struct Pokemon copy = *mon;
@@ -107,7 +107,7 @@ bool8 MP_ValidateParty(struct Pokemon *party, u32 count)
 
     for (i = 0; i < count; i++)
     {
-        if (!MP_ValidateMon(&party[i]))
+        if (!MP_LinkValidateMon(&party[i]))
             ok = FALSE;
     }
     return ok;

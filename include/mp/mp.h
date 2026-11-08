@@ -606,8 +606,8 @@ u32 MP_LinkGetRejectCount(void);    // since boot (selftest / --mp-debug)
 // that fails the checksum, or has a species / held item / move / level out of range, is
 // zeroed and FALSE is returned. Harmless out-of-range fields (language, mail index, hp >
 // max hp, contest ribbon counts) are clamped in place. `mon` keeps its encryption.
-bool8 MP_ValidateMon(struct Pokemon *mon);
-// MP_ValidateMon on `count` mons; FALSE if any was rejected (all are still processed).
+bool8 MP_LinkValidateMon(struct Pokemon *mon);
+// MP_LinkValidateMon on `count` mons; FALSE if any was rejected (all are still processed).
 bool8 MP_ValidateParty(struct Pokemon *party, u32 count);
 // A struct BattlePokemon from the peer (switch-in data, GetMonData replies, SETMONDATA):
 // species, moves and held item out of range are cleared and give FALSE (no honest game sends
