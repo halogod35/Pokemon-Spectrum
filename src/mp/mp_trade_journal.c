@@ -10,6 +10,7 @@
 //  52  u8[100] receivedMon (struct Pokemon)  152  u32 FNV-1a of bytes 0..151
 
 #include <string.h>
+#include "global.h" // TRUE / FALSE, u8..u32
 #include "mp/mp_protocol.h"
 #include "mp/mp_trade_journal.h"
 #include "mp/mp_wire.h"
