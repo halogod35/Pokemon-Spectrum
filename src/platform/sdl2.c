@@ -917,6 +917,19 @@ static int RunSaveSelftest(void)
     SAVE_SELFTEST_CHECK(buf[0] == 0xFF && buf[sizeof(buf) - 1] == 0xFF);
     SelftestReport("read flash from memory", before);
 
+    // 7. MP: BUG-003. The trade's two-phase link save on a real save (save_link_selftest.c).
+    //    Platform_StoreSaveFile writes gPlatformArgs.savePath, so point it at the test file.
+    before = sSaveSelftestFailures;
+    {
+        char savedPath[sizeof(gPlatformArgs.savePath)];
+
+        memcpy(savedPath, gPlatformArgs.savePath, sizeof(savedPath));
+        snprintf(gPlatformArgs.savePath, sizeof(gPlatformArgs.savePath), "%s", path);
+        sSaveSelftestFailures += SaveSelftest_LinkSave(path);
+        memcpy(gPlatformArgs.savePath, savedPath, sizeof(savedPath));
+    }
+    SelftestReport("link save", before);
+
     remove(path);
     remove(tmpPath);
 

@@ -836,6 +836,13 @@ bool8 LinkFullSave_SetLastSectorSignature(void)
     CopySectorSignatureByte(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
     if (gDamagedSaveSectors)
         DoSaveFailedScreen(SAVE_NORMAL);
+#ifdef PORTABLE
+    // MP: BUG-003. The link saves (trade, link battle records) only wrote the in-memory flash
+    // copy, so on PC the signed save never reached the disk until the next normal save. Store
+    // it now, atomically (PS-014): the file goes from the old save to the signed one in one
+    // step. Before the signature nothing is stored, so the file is never the unsigned mix.
+    Platform_StoreSaveFile();
+#endif
     return FALSE;
 }
 

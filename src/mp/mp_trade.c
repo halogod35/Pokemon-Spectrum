@@ -45,6 +45,7 @@
 #include "mp/mp.h"
 #include "mp/mp_avatar.h"
 #include "mp/mp_internal.h"
+#include "mp/mp_link.h"
 #include "mp_menu.h"
 
 #define MP_TRADE_GROUP_TIMEOUT_FRAMES   (60 * 10)   // both players must ask for the group within ~10 s
@@ -64,6 +65,12 @@ enum
 };
 
 static bool8 sDirectTrade = FALSE;      // TRUE from CB2_StartCreateTradeMenu until back in the field
+static bool8 sLeavePending = FALSE;     // BUG-004: leave the link group once the partner closed too
+static u16 sLeaveTimer = 0;
+static u16 sGroupGoneFrames = 0;       // BUG-004: watchdog, the group is gone while still trading
+
+#define MP_TRADE_LEAVE_GRACE_FRAMES     180 // ~3 s for the partner to finish its close handshake
+#define MP_TRADE_GONE_FRAMES            180 // ~3 s for the trade's own link-error path
 static u8 sTradePartner = MP_SLOT_NONE;
 static u8 sTradePartnerName[MP_PLAYER_NAME_SIZE];
 
@@ -284,7 +291,10 @@ void CB2_MpReturnToFieldAfterTrade(void)
     MP_LOG("trade: back to the overworld\n");
     sDirectTrade = FALSE;
     MP_TradeCommitReset();
-    MP_LinkLeave();
+    // BUG-004: not yet. The partner may still be in its close-link handshake; leaving now
+    // would end the group under it. MpTrade_Update leaves once both cables are closed.
+    sLeavePending = TRUE;
+    sLeaveTimer = 0;
     StopMapMusic();
     ScriptContext_Init();
     gFieldCallback = FieldCB_ReturnToFieldNoScriptCheckMusic; // unlocks controls, unfreezes NPCs
@@ -296,5 +306,46 @@ void MP_TradeOnLinkErrorRecovery(void)
     if (sDirectTrade)
         MP_LOG("trade: ended by a link error; the last save is reloaded\n");
     sDirectTrade = FALSE;
+    sLeavePending = FALSE; // MP_LinkPrepareErrorRecovery leaves the group itself
+    sGroupGoneFrames = 0;
     MP_TradeCommitReset();
+}
+
+// BUG-004. Once per frame (MpUi_Update):
+//  - the deferred MP_LinkLeave after a direct trade: when both cables are closed (the partner
+//    finished its close handshake too), or after MP_TRADE_LEAVE_GRACE_FRAMES;
+//  - never hang: if the link group is gone while a direct trade is still on screen (and no
+//    commit is waiting for the host), give the trade's own error path a moment, then take the
+//    PS-048 recovery (CB2_LinkError -> "Continue from last save").
+void MpTrade_Update(void)
+{
+    struct MpLinkCableInfo info;
+
+    if (sLeavePending)
+    {
+        MpLink_CableGetInfo(&info);
+        if (MP_LinkGetState() == MP_LINK_STATE_NONE || (!info.open && info.openCount == 0)
+         || ++sLeaveTimer > MP_TRADE_LEAVE_GRACE_FRAMES)
+        {
+            sLeavePending = FALSE;
+            MP_LinkLeave();
+        }
+    }
+
+    if (sDirectTrade && gMain.callback2 != CB2_LinkError
+     && (!MP_IsActive() || MP_LinkGetState() != MP_LINK_STATE_GROUPED)
+     && MP_TradeCommitPoll() != MP_TRADE_COMMIT_WAITING)
+    {
+        if (++sGroupGoneFrames > MP_TRADE_GONE_FRAMES)
+        {
+            MP_LOG("trade: the link group is gone while trading; recovering from the last save\n");
+            sGroupGoneFrames = 0;
+            CloseLink();
+            SetMainCallback2(CB2_LinkError);
+        }
+    }
+    else
+    {
+        sGroupGoneFrames = 0;
+    }
 }

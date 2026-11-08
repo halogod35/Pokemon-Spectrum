@@ -250,6 +250,7 @@ void MpUi_Update(void)
         }
     }
     MpInteractUi_Update(); // PS-041: busy bookkeeping for a waiting incoming request
+    MpTrade_Update(); // BUG-004: deferred link leave, never hang in a trade
 }
 
 // ---------------------------------------------------------------------------

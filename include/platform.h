@@ -5,6 +5,9 @@
 #include "siirtc.h"
 
 void Platform_StoreSaveFile(void);
+// MP: BUG-003, --save-selftest: the trade's two-phase link save on a real save (save_link_selftest.c).
+// `path` must equal gPlatformArgs.savePath. Returns the number of failures.
+u32 SaveSelftest_LinkSave(const char *path);
 void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size);
 void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame);
 u16 Platform_GetKeyInput(void);

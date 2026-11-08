@@ -858,6 +858,26 @@ static void ScenarioHostMember(void)
     L_CHECK(RunUntil(CondGrouped, 0x3, 0x3), "recovery: regrouped after the link error");
     Report("B: link-error recovery clean-up keeps the session (PS-048)", failuresBefore);
 
+    // BUG-004: both cancel in the trade menu (SetCloseLinkCallback on both). A finishes its
+    // close first and leaves the link group at once, while B still has the rows with A's
+    // READY_CLOSE_LINK queued. B must still finish its close cleanly: no link error, no hang.
+    failuresBefore = sFail;
+    Enter(G_A); gMain.callback2 = NULL; Leave();            // forget the error screens of the test above
+    Enter(G_B); gMain.callback2 = NULL; Leave();
+    DoExchange("BUG-004: player-data exchange");
+    L_CHECK(RunUntil(CondTaskFinished, 0x3, 0x3), "BUG-004: link task idle");
+    Enter(G_A); SetCloseLinkCallback(); Leave();
+    Enter(G_B); SetCloseLinkCallback(); Leave();
+    RunFrames(3, 0x3);                                      // both send READY_CLOSE_LINK
+    L_CHECK(RunUntil(CondClosed, 0x1, 0x1), "BUG-004: A closes (B not ticking)");
+    Enter(G_A); MP_LinkLeave(); Leave();                    // A's exit leaves the group right away
+    RunFrames(20, 0x0);                                     // LINK_END reaches B, rows still queued
+    L_CHECK(RunUntil(CondClosed, 0x2, 0x2), "BUG-004: B finishes its close");
+    Enter(G_B);
+    L_CHECK(gMain.callback2 != CB2_LinkError && !gLinkErrorOccurred, "BUG-004: B closed cleanly, no link error");
+    Leave();
+    Report("B: BUG-004 a partner leaves right after its close: the other still closes cleanly", failuresBefore);
+
     LeaveAll();
 }
 

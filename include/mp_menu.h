@@ -62,6 +62,9 @@ const u8 *MpTrade_CheckPartner(u8 slot);
 // Both sides, once the TRADE request is ACCEPTED: save, link up, enter the trade menu. Field
 // controls must be locked and the NPCs frozen (they stay so until it ends).
 void MpTrade_Start(u8 partnerSlot, const u8 *partnerName);
+// BUG-004: the deferred link leave after a trade, and the "group gone while trading" watchdog.
+// Once per frame from MpUi_Update.
+void MpTrade_Update(void);
 
 void MpUi_ShowPlayerList(void);
 void MpUi_UpdatePlayerList(void);

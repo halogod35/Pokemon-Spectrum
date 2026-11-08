@@ -114,7 +114,9 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
     *shouldAdvanceLinkState = 0;
 
     MpLink_CableGetInfo(&info);
-    if (info.lost && gLink.state >= LINK_STATE_HANDSHAKE)
+    // MP: BUG-004. Only once the rows already received are played: the last ones may carry the
+    // partner's READY_CLOSE_LINK, and the close handshake must see it to finish cleanly.
+    if (info.lost && info.queued == 0 && gLink.state >= LINK_STATE_HANDSHAKE)
         gLink.hardwareError = TRUE;
 
     // Fields other code reads (GetLinkRecvQueueLength, the overworld send-queue check,
