@@ -2738,6 +2738,11 @@ static void SetTradeGpuRegs(void)
 {
     u16 dispcnt;
 
+    // MP: BUG-003. VBlankCB_TradeAnim can run one more frame after sTradeAnim was freed
+    // (CB2_FreeTradeAnim and the in-game trade exits free it but leave this VBlank callback).
+    // On the GBA the NULL read hits the BIOS and is harmless; on PC it is a crash.
+    if (sTradeAnim == NULL)
+        return;
     SetGpuReg(REG_OFFSET_BG1VOFS, sTradeAnim->bg1vofs);
     SetGpuReg(REG_OFFSET_BG1HOFS, sTradeAnim->bg1hofs);
 
@@ -4881,6 +4886,7 @@ static void CB2_FreeTradeAnim(void)
         Free(GetBgTilemapBuffer(1));
         Free(GetBgTilemapBuffer(0));
         FreeMonSpritesGfx();
+        SetVBlankCallback(NULL); // MP: BUG-003, stop VBlankCB_TradeAnim before freeing its data
         FREE_AND_SET_NULL(sTradeAnim);
         if (gWirelessCommType)
             DestroyWirelessStatusIndicatorSprite();
