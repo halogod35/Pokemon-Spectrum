@@ -49,6 +49,7 @@
 #include "task.h"
 #include "constants/battle.h"
 #include "constants/cable_club.h"
+#include "constants/characters.h" // EOS
 #include "constants/field_weather.h"
 #include "constants/songs.h"
 #include "constants/species.h"
