@@ -738,7 +738,11 @@ u16 MpProto_WritePartyData(u8 *buf, u16 cap, const struct MpMsgPartyData *msg)
     MpWriteU8(&w, 0);
     for (i = 0; i < monCount; i++)
         MpWriteBytes(&w, msg->mons[i], MP_MON_WIRE_SIZE);
-    return MpFinishWrite(&w);\n}\n\n// ---------------------------------------------------------------------------\n// LINK_* (PS-046, protocol.md 6.12)
+    return MpFinishWrite(&w);
+}
+
+// ---------------------------------------------------------------------------
+// LINK_* (PS-046, protocol.md 6.12)
 // ---------------------------------------------------------------------------
 
 u8 MpProto_LinkMaskCount(u8 mask)

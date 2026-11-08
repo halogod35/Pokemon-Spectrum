@@ -513,7 +513,9 @@ bool8 MP_ValidateMon(const u8 *raw);
 // *countOut mons (0..6, each MP_MON_WIRE_SIZE raw bytes, all validated) into `monsOut`.
 // FALSE if there is none.
 bool8 MP_GetViewedParty(u8 slot, u8 *countOut, u8 monsOut[PARTY_SIZE][MP_MON_WIRE_SIZE]);
-\n// ---------------------------------------------------------------------------\n// Virtual link cable (PS-046, protocol.md 6.12, design.md "As implemented in PS-046")
+
+// ---------------------------------------------------------------------------
+// Virtual link cable (PS-046, protocol.md 6.12, design.md "As implemented in PS-046")
 // ---------------------------------------------------------------------------
 //
 // Emerald's own cable stack (link.c: OpenLink, SendBlock, the player-data exchange,

@@ -220,7 +220,9 @@ struct MpMsgPartyData
     u8 partIndex;       // 0..MP_PARTY_PART_COUNT(partyCount) - 1
     u8 monCount;        // min(3, partyCount - partIndex * 3)
     u8 mons[MP_PARTY_MONS_PER_PART][MP_MON_WIRE_SIZE];
-};\n\n// LINK_* control messages (protocol.md 6.12). One 4-byte layout: groupId, arg1, arg2,
+};
+
+// LINK_* control messages (protocol.md 6.12). One 4-byte layout: groupId, arg1, arg2,
 // reserved. What arg1/arg2 mean depends on the type:
 //   JOIN      arg1 = member slot mask (2..4 bits of 0x0F)        groupId ignored
 //   LEAVE     -                                                  groupId ignored
