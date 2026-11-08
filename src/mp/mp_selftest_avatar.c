@@ -423,6 +423,379 @@ static void TestDoorsAndLedges(void)
     Report("doors and ledge jumps", failuresBefore);
 }
 
+// --- BUG-008: jitter, loss and reordering end exactly on the reported tile -------------
+//
+// Frame-by-frame model of both ends. Sender: a scripted walk, captured every frame (x/y =
+// destination during a step), sent on change at most every 3 frames (50 ms) plus a keep-alive
+// every 60 frames (1 s), seq + 1 each send. Network: fixed seed, loss, base delay + random
+// jitter (so packets reorder). Receiver: the PS-030 newer-seq filter, latest + an 8-entry
+// FIFO that drops the oldest on overflow, and a replay that mirrors MpReplay: nothing starts
+// while a step is still running, then the overflow / too-far snap, then queued updates through
+// MpAvatar_Plan (+ catch-up), then MpAvatar_PlanIdle once the queue is empty.
+
+#define NET_FRAMES      1800
+#define NET_INFLIGHT    256
+
+struct NetScriptItem
+{
+    u8 movement;    // MP_MOVE_WALK / WALK_FAST / TURN / NONE (wait)
+    u8 dir;
+    u8 count;       // steps, or frames for a wait
+};
+
+struct NetSim
+{
+    u32 rng;
+    // sender
+    struct MpPresence local;
+    const struct NetScriptItem *script;
+    u32 scriptLen, item, itemDone, busy;
+    struct MpPresence lastSent;
+    bool8 sentAny;
+    u32 lastSentFrame;
+    u16 nextSeq;
+    // network
+    struct { u32 at; struct MpPresence p; bool8 used; } air[NET_INFLIGHT];
+    // receiver
+    bool8 seqValid;
+    u16 lastSeq;
+    struct MpPresence latest;
+    bool8 hasLatest;
+    struct MpPresence queue[MP_PRESENCE_QUEUE_SIZE];
+    u32 qHead, qCount;
+    bool8 overflow;
+    // avatar
+    struct SimAvatar av;
+    bool8 spawned, hasPending;
+    struct MpPresence pending;
+    u32 avBusy;
+    u32 midStepSnaps;   // must stay 0
+};
+
+static u32 NetRand(struct NetSim *s)
+{
+    s->rng = s->rng * 1103515245u + 12345u;
+    return (s->rng >> 16) & 0x7FFF;
+}
+
+static void NetSenderTick(struct NetSim *s)
+{
+    static const s8 sDx[5] = { 0, 0, 0, -1, 1 };
+    static const s8 sDy[5] = { 0, 1, -1, 0, 0 };
+
+    if (s->busy > 0 && --s->busy > 0)
+        return;
+    while (s->item < s->scriptLen)
+    {
+        const struct NetScriptItem *it = &s->script[s->item];
+
+        if (s->itemDone >= it->count)
+        {
+            s->item++;
+            s->itemDone = 0;
+            continue;
+        }
+        s->itemDone++;
+        if (it->movement == MP_MOVE_NONE)
+        {
+            s->local.movement = MP_MOVE_NONE;
+            s->busy = 1;
+            return;
+        }
+        s->local.facing = it->dir;
+        s->local.stepId++;
+        s->local.movement = it->movement;
+        if (it->movement == MP_MOVE_TURN)
+        {
+            s->busy = 8;
+            return;
+        }
+        s->local.x = (s16)(s->local.x + sDx[it->dir]);
+        s->local.y = (s16)(s->local.y + sDy[it->dir]);
+        s->busy = (it->movement == MP_MOVE_WALK_FAST) ? 8 : 16;
+        return;
+    }
+    s->local.movement = MP_MOVE_NONE; // script over: standing still
+}
+
+static bool8 NetSamePresence(const struct MpPresence *a, const struct MpPresence *b)
+{
+    return a->x == b->x && a->y == b->y && a->facing == b->facing && a->movement == b->movement
+        && a->stepId == b->stepId && a->avatarState == b->avatarState;
+}
+
+static void NetSend(struct NetSim *s, u32 frame, u32 lossPct, u32 baseDelay, u32 jitter, bool8 loseFinal)
+{
+    bool8 changed = !s->sentAny || !NetSamePresence(&s->local, &s->lastSent);
+    u32 i;
+
+    if (s->sentAny && (frame - s->lastSentFrame < 3 || (!changed && frame - s->lastSentFrame < 60)))
+        return;
+    s->lastSent = s->local;
+    s->lastSent.seq = s->nextSeq++;
+    s->sentAny = TRUE;
+    s->lastSentFrame = frame;
+    if (NetRand(s) % 100 < lossPct)
+        return;
+    // "Final step lost": every update that changes something from the last step on is lost;
+    // only the keep-alives after it get through.
+    if (loseFinal && changed && s->item >= s->scriptLen - 1)
+        return;
+    for (i = 0; i < NET_INFLIGHT; i++)
+    {
+        if (!s->air[i].used)
+        {
+            s->air[i].used = TRUE;
+            s->air[i].p = s->lastSent;
+            s->air[i].at = frame + baseDelay + (jitter ? NetRand(s) % (jitter + 1) : 0);
+            return;
+        }
+    }
+}
+
+static void NetDeliver(struct NetSim *s, u32 frame)
+{
+    u32 i;
+
+    for (i = 0; i < NET_INFLIGHT; i++)
+    {
+        const struct MpPresence *p = &s->air[i].p;
+
+        if (!s->air[i].used || s->air[i].at > frame)
+            continue;
+        s->air[i].used = FALSE;
+        if (s->seqValid && p->seq <= s->lastSeq)
+            continue; // stale (reordered or duplicate): dropped like MpSeqAcceptable
+        s->seqValid = TRUE;
+        s->lastSeq = p->seq;
+        s->latest = *p;
+        s->hasLatest = TRUE;
+        if (s->qCount >= MP_PRESENCE_QUEUE_SIZE)
+        {
+            s->qHead = (s->qHead + 1) % MP_PRESENCE_QUEUE_SIZE;
+            s->qCount--;
+            s->overflow = TRUE;
+        }
+        s->queue[(s->qHead + s->qCount) % MP_PRESENCE_QUEUE_SIZE] = *p;
+        s->qCount++;
+    }
+}
+
+static bool8 NetPop(struct NetSim *s, struct MpPresence *out)
+{
+    if (s->qCount == 0)
+        return FALSE;
+    *out = s->queue[s->qHead];
+    s->qHead = (s->qHead + 1) % MP_PRESENCE_QUEUE_SIZE;
+    s->qCount--;
+    return TRUE;
+}
+
+static void NetSnap(struct NetSim *s, const struct MpPresence *to)
+{
+    if (s->avBusy > 0)
+        s->midStepSnaps++;
+    s->av.x = to->x;
+    s->av.y = to->y;
+    s->av.facing = to->facing;
+    s->av.lastStepId = to->stepId;
+    s->av.snaps++;
+    s->hasPending = FALSE;
+}
+
+static void NetStart(struct NetSim *s, u8 action)
+{
+    SimApply(&s->av, action);
+    s->avBusy = MpAvatar_ActionFrames(action);
+}
+
+static s16 NetBehind(const struct NetSim *s)
+{
+    s16 dx = (s16)(s->latest.x - s->av.x), dy = (s16)(s->latest.y - s->av.y);
+
+    return (s16)((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy));
+}
+
+// One MpReplay tick.
+static void NetReplayTick(struct NetSim *s)
+{
+    struct MpPresence raw;
+    u8 plan, action;
+    u32 guard;
+
+    if (!s->hasLatest)
+        return;
+    if (!s->spawned)
+    {
+        s->spawned = TRUE;
+        s->av.x = s->latest.x;
+        s->av.y = s->latest.y;
+        s->av.facing = s->latest.facing;
+        s->av.lastStepId = s->latest.stepId;
+        s->qCount = 0;
+        s->overflow = FALSE;
+        return;
+    }
+    if (s->avBusy > 0 && --s->avBusy > 0)
+        return; // still stepping: nothing starts, not even a snap
+    if (s->overflow || MpAvatar_IsTooFarBehind(s->av.x, s->av.y, &s->latest))
+    {
+        s->qCount = 0;
+        s->overflow = FALSE;
+        NetSnap(s, &s->latest);
+        return;
+    }
+    for (guard = 0; guard < MP_PRESENCE_QUEUE_SIZE + 1; guard++)
+    {
+        if (!s->hasPending)
+        {
+            if (!NetPop(s, &raw))
+            {
+                if (!MpAvatar_IsIdlePresence(&s->latest))
+                    return;
+                plan = MpAvatar_PlanIdle(s->av.x, s->av.y, s->av.facing, &s->latest, &action);
+                if (plan == MP_AVATAR_PLAN_SNAP)
+                    NetSnap(s, &s->latest);
+                else if (plan == MP_AVATAR_PLAN_ACTION)
+                {
+                    s->av.lastStepId = s->latest.stepId;
+                    NetStart(s, action);
+                }
+                return;
+            }
+            s->pending = raw;
+            s->hasPending = TRUE;
+        }
+        plan = MpAvatar_Plan(s->av.x, s->av.y, s->av.facing, &s->pending, s->pending.stepId != s->av.lastStepId, &action);
+        if (plan == MP_AVATAR_PLAN_SNAP)
+        {
+            NetSnap(s, &s->pending);
+            return;
+        }
+        s->av.lastStepId = s->pending.stepId;
+        if (plan == MP_AVATAR_PLAN_ACTION)
+        {
+            if (s->pending.x != s->av.x || s->pending.y != s->av.y)
+                action = MpAvatar_CatchUpAction(action, NetBehind(s));
+            NetStart(s, action);
+            return;
+        }
+        s->hasPending = FALSE;
+    }
+}
+
+// Runs the script through the network; TRUE if the avatar ends exactly on the sender's
+// tile and facing, idle (no step running, nothing pending or queued), never snapped mid-step.
+static bool8 NetRun(const struct NetScriptItem *script, u32 len, u32 seed, u32 lossPct,
+                    u32 baseDelay, u32 jitter, bool8 loseFinal, bool8 clearQueueAtEnd, u32 *snapsOut)
+{
+    static struct NetSim s;
+    u32 f;
+
+    memset(&s, 0, sizeof(s));
+    s.rng = seed;
+    s.script = script;
+    s.scriptLen = len;
+    P(&s.local, 10, 10, DIR_SOUTH, MP_MOVE_NONE, MP_AVATAR_ON_FOOT, 0);
+    for (f = 0; f < NET_FRAMES; f++)
+    {
+        NetSenderTick(&s);
+        NetSend(&s, f, (f < 30) ? 0 : lossPct, baseDelay, jitter, loseFinal);
+        NetDeliver(&s, f);
+        // A drained queue with the latest presence one tile ahead (e.g. dropped untranslatable
+        // entries): only MpAvatar_PlanIdle can bring the avatar home.
+        if (clearQueueAtEnd && f == NET_FRAMES - 400)
+        {
+            s.qCount = 0;
+            s.hasPending = FALSE;
+            if (s.avBusy == 0)
+            {
+                s.av.x = (s16)(s.local.x - 1);
+                s.av.y = s.local.y;
+            }
+        }
+        NetReplayTick(&s);
+    }
+    *snapsOut = s.av.snaps;
+    return s.av.x == s.local.x && s.av.y == s.local.y && s.av.facing == s.local.facing
+        && s.avBusy == 0 && !s.hasPending && s.qCount == 0 && s.midStepSnaps == 0
+        && s.local.movement == MP_MOVE_NONE;
+}
+
+static void TestNetworkConditions(void)
+{
+    static const struct NetScriptItem sScript[] =
+    {
+        { MP_MOVE_NONE, 0, 40 },
+        { MP_MOVE_WALK, DIR_EAST, 6 },
+        { MP_MOVE_NONE, 0, 20 },
+        { MP_MOVE_WALK_FAST, DIR_NORTH, 7 },
+        { MP_MOVE_TURN, DIR_WEST, 1 },
+        { MP_MOVE_WALK, DIR_WEST, 3 },
+        { MP_MOVE_NONE, 0, 5 },
+        { MP_MOVE_WALK_FAST, DIR_SOUTH, 4 },
+        { MP_MOVE_WALK, DIR_EAST, 1 },  // the final step (lost in the loseFinal runs)
+    };
+    static const struct { const char *name; u32 loss, base, jitter; } sNets[] =
+    {
+        { "LAN",                       0,  1,  1 },
+        { "delayed 200 ms",            0, 12,  0 },
+        { "jitter 0-250 ms (reorder)", 0,  4, 15 },
+        { "5% loss",                   5,  6,  3 },
+        { "20% loss + jitter",        20,  6, 12 },
+    };
+    u32 failuresBefore = sFail;
+    u32 n, seed, mode, snaps;
+    u8 action;
+    struct MpPresence t;
+
+    // Pure pieces.
+    P(&t, 5, 5, DIR_NORTH, MP_MOVE_NONE, MP_AVATAR_ON_FOOT, 3);
+    A_CHECK(MpAvatar_PlanIdle(5, 5, DIR_NORTH, &t, &action) == MP_AVATAR_PLAN_DONE, "idle on the tile: done");
+    A_CHECK(MpAvatar_PlanIdle(5, 5, DIR_EAST, &t, &action) == MP_AVATAR_PLAN_ACTION && action == MOVEMENT_ACTION_FACE_UP,
+            "idle on the tile, wrong facing: face");
+    A_CHECK(MpAvatar_PlanIdle(5, 6, DIR_NORTH, &t, &action) == MP_AVATAR_PLAN_ACTION && action == MOVEMENT_ACTION_WALK_NORMAL_UP,
+            "idle one tile off: short walk");
+    A_CHECK(MpAvatar_PlanIdle(6, 6, DIR_NORTH, &t, &action) == MP_AVATAR_PLAN_SNAP, "idle two tiles off (diagonal): snap");
+    A_CHECK(MpAvatar_PlanIdle(5, 9, DIR_NORTH, &t, &action) == MP_AVATAR_PLAN_SNAP, "idle far off: snap");
+    A_CHECK(MpAvatar_IsIdlePresence(&t), "NONE is idle");
+    t.movement = MP_MOVE_WALK;
+    A_CHECK(!MpAvatar_IsIdlePresence(&t), "a walk is not idle");
+    A_CHECK(MpAvatar_CatchUpAction(MOVEMENT_ACTION_WALK_NORMAL_LEFT, 1) == MOVEMENT_ACTION_WALK_NORMAL_LEFT, "catch-up: 1 behind, same speed");
+    A_CHECK(MpAvatar_CatchUpAction(MOVEMENT_ACTION_WALK_NORMAL_LEFT, 2) == MOVEMENT_ACTION_WALK_FAST_LEFT, "catch-up: walk -> fast");
+    A_CHECK(MpAvatar_CatchUpAction(MOVEMENT_ACTION_WALK_FAST_UP, 2) == MOVEMENT_ACTION_WALK_FAST_UP, "catch-up: fast steps unchanged");
+    A_CHECK(MpAvatar_CatchUpAction(MOVEMENT_ACTION_WALK_FAST_DOWN, 1) == MOVEMENT_ACTION_WALK_FAST_DOWN, "catch-up: fast step 1 behind unchanged");
+    A_CHECK(MpAvatar_CatchUpAction(MOVEMENT_ACTION_PLAYER_RUN_DOWN, 2) == MOVEMENT_ACTION_PLAYER_RUN_DOWN, "catch-up: running unchanged");
+    A_CHECK(MpAvatar_CatchUpAction(MOVEMENT_ACTION_JUMP_2_DOWN, 3) == MOVEMENT_ACTION_JUMP_2_DOWN, "catch-up: jumps unchanged");
+
+    // Every network x final step delivered / lost / queue drained, 3 fixed seeds each.
+    for (n = 0; n < sizeof(sNets) / sizeof(sNets[0]); n++)
+    {
+        for (mode = 0; mode < 3; mode++)
+        {
+            for (seed = 0; seed < 3; seed++)
+            {
+                bool8 ok = NetRun(sScript, sizeof(sScript) / sizeof(sScript[0]), 0xB008u + seed * 7919u,
+                                  sNets[n].loss, sNets[n].base, sNets[n].jitter, mode == 1, mode == 2, &snaps);
+
+                if (!ok)
+                {
+                    sFail++;
+                    MP_LOG("selftest: FAIL: net '%s' %s seed %u: avatar not idle on the reported tile\n",
+                           sNets[n].name, (mode == 0) ? "all steps" : (mode == 1) ? "final step lost" : "queue drained",
+                           (unsigned)seed);
+                }
+                if (n == 0 && mode == 0 && snaps != 0)
+                {
+                    sFail++;
+                    MP_LOG("selftest: FAIL: LAN replay snapped %u times\n", (unsigned)snaps);
+                }
+            }
+        }
+    }
+    Report("BUG-008 idle convergence under delay, jitter, reordering and loss", failuresBefore);
+}
+
 u32 MpSelftest_Avatar(void)
 {
     sFail = 0;
@@ -433,5 +806,6 @@ u32 MpSelftest_Avatar(void)
     TestConnections();
     TestDenyTable();
     TestDoorsAndLedges();
+    TestNetworkConditions();
     return sFail;
 }

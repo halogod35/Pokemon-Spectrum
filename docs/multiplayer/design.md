@@ -221,6 +221,12 @@ PS-031 each frame: MP_GetPlayer(slot)->presence (where), MP_PopRemotePresence (s
 
 A `stepId` gap or `presenceOverflow` means steps were missed; PS-031 catches up or snaps
 (more than 2 tiles behind, or `MP_MOVE_WARP`). Remote avatars are never saved (AD-10, PS-014).
+**BUG-008 (internet jitter / loss):** nothing starts while a step is still animating, not even a
+snap (a snap mid-step used to leave the sprite half a tile off for good), and a snap stops any
+held movement. A normal walk started 2+ tiles behind is replayed at WALK_FAST (bounded catch-up).
+When the queue is empty and the player is idle (NONE / TURN / hop, keep-alives included), the
+avatar converges on exactly the reported tile with a turn, a 1-tile walk or a snap; on the tile,
+its sprite is re-aligned to the grid if needed (judged while the local camera is at rest).
 
 ## 4. Build integration
 

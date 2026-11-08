@@ -40,6 +40,7 @@
 #include "field_effect_helpers.h"
 #include "field_player_avatar.h"
 #include "field_weather.h"
+#include "field_camera.h" // BUG-008: gFieldCamera (sprite alignment)
 #include "field_door.h"
 #include "fieldmap.h"
 #include "metatile_behavior.h"
@@ -518,7 +519,14 @@ static void MpSnap(struct MpAvatar *av, const struct MpPresence *to)
     struct ObjectEvent *obj = &gObjectEvents[av->objectEventId];
     u8 elevation = MpElevationAt(to->x, to->y);
 
+    // BUG-008: MoveObjectEventToMapCoords sets the coords and the sprite position but leaves
+    // a held movement running. A step that kept running after the snap moved the sprite by
+    // its remaining pixels and left it off the grid (half a tile) for good, because the
+    // coords already said "arrived". Stop it first, and clear the jump / hop offset.
+    ObjectEventClearHeldMovementIfActive(obj);
     MoveObjectEventToMapCoords(obj, to->x + MAP_OFFSET, to->y + MAP_OFFSET);
+    gSprites[obj->spriteId].x2 = 0;
+    gSprites[obj->spriteId].y2 = 0;
     obj->currentElevation = elevation;
     obj->previousElevation = elevation;
     ObjectEventTurn(obj, MpFacingOf(to));
@@ -593,15 +601,94 @@ static bool8 MpSpawn(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
 // Replay
 // ---------------------------------------------------------------------------
 
+static s16 MpTilesBetween(s16 x, s16 y, const struct MpPresence *p)
+{
+    s16 dx = (s16)(p->x - x);
+    s16 dy = (s16)(p->y - y);
+
+    return (s16)(((dx < 0) ? -dx : dx) + ((dy < 0) ? -dy : dy));
+}
+
+// BUG-008: TRUE if the (standing) avatar's sprite sits exactly where
+// MoveObjectEventToMapCoords puts an object on its currentCoords (x2/y2 are not judged: a
+// surfing rider bobs with its blob), and
+// previousCoords == currentCoords. Only judged while the local camera is at rest (between
+// tiles the camera's sub-tile offset is still being applied), otherwise assumed aligned.
+static bool8 MpSpriteAligned(const struct ObjectEvent *obj)
+{
+    const struct Sprite *sprite = &gSprites[obj->spriteId];
+    const struct ObjectEventGraphicsInfo *info = GetObjectEventGraphicsInfo(obj->graphicsId);
+    s16 ex, ey;
+
+    if (obj->previousCoords.x != obj->currentCoords.x || obj->previousCoords.y != obj->currentCoords.y)
+        return FALSE;
+    if (gFieldCamera.x != 0 || gFieldCamera.y != 0)
+        return TRUE;
+    SetSpritePosToMapCoords(obj->currentCoords.x, obj->currentCoords.y, &ex, &ey);
+    ex += 8;
+    ey += 16 - (info->height >> 1);
+    return sprite->x == ex && sprite->y == ey;
+}
+
+// BUG-008: the avatar is standing and its queue is empty. If its player is idle, converge on
+// exactly the reported tile: turn, or a short walk from an adjacent tile, otherwise a snap;
+// on the tile, make sure the sprite is on the grid. This also recovers a lost final step
+// (the next keep-alive, or the latest presence itself, carries the tile).
+static void MpConverge(u8 slot, struct MpAvatar *av, const struct MpPresence *latest, s16 x, s16 y)
+{
+    struct ObjectEvent *obj = &gObjectEvents[av->objectEventId];
+    u8 plan, action;
+
+    if (!MpAvatar_IsIdlePresence(latest))
+        return;
+    MpSetAvatarState(slot, av, latest->avatarState);
+    plan = MpAvatar_PlanIdle(x, y, obj->facingDirection, latest, &action);
+    if (plan == MP_AVATAR_PLAN_SNAP)
+    {
+        MpSnap(av, latest);
+        MP_DLOG("avatar slot %u idle off its tile, snapped to (%d,%d)\n", (unsigned)slot, (int)latest->x, (int)latest->y);
+    }
+    else if (plan == MP_AVATAR_PLAN_ACTION)
+    {
+        av->lastStepId = latest->stepId;
+        if (latest->x != x || latest->y != y)
+        {
+            MpDoorBeforeStep(slot, av, x, y, latest->x, latest->y);
+            MP_DLOG("avatar slot %u idle one tile off, walking to (%d,%d)\n", (unsigned)slot, (int)latest->x, (int)latest->y);
+        }
+        ObjectEventSetHeldMovement(obj, action);
+    }
+    else if (!MpSpriteAligned(obj))
+    {
+        MpSnap(av, latest);
+        MP_DLOG("avatar slot %u sprite off the grid, re-aligned on (%d,%d)\n", (unsigned)slot, (int)latest->x, (int)latest->y);
+    }
+}
+
 // `latest` is the player's latest presence translated into the current map's frame.
 static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player, const struct MpPresence *latest)
 {
     struct ObjectEvent *obj = &gObjectEvents[av->objectEventId];
-    s16 x = obj->currentCoords.x - MAP_OFFSET;
-    s16 y = obj->currentCoords.y - MAP_OFFSET;
+    s16 x, y;
     struct MpPresence raw;
     u8 plan, action;
     u32 guard;
+
+    if (obj->frozen)
+        return; // defensive: FreezeObjectEvent never freezes avatars since PS-035
+    // BUG-008: nothing (not even a snap) starts before the current step has finished. With
+    // internet jitter, updates arrive in bursts and the avatar is often more than 2 tiles
+    // behind while mid-step; snapping then left the sprite half a tile off. A step is at
+    // most 32 frames, so a deferred snap is at most that late.
+    if (obj->heldMovementActive)
+    {
+        if (!obj->heldMovementFinished)
+            return; // still stepping
+        ObjectEventClearHeldMovement(obj);
+        MpDoorAfterStep(slot, av); // PS-036: hide inside a door / close it behind
+    }
+    x = obj->currentCoords.x - MAP_OFFSET;
+    y = obj->currentCoords.y - MAP_OFFSET;
 
     if (player->presenceOverflow || MpAvatar_IsTooFarBehind(x, y, latest))
     {
@@ -611,22 +698,16 @@ static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
         MP_DLOG("avatar slot %u snapped to (%d,%d)\n", (unsigned)slot, (int)latest->x, (int)latest->y);
         return;
     }
-    if (obj->frozen)
-        return; // defensive: FreezeObjectEvent never freezes avatars since PS-035
-    if (obj->heldMovementActive)
-    {
-        if (!obj->heldMovementFinished)
-            return; // still stepping
-        ObjectEventClearHeldMovement(obj);
-        MpDoorAfterStep(slot, av); // PS-036: hide inside a door / close it behind
-    }
 
     for (guard = 0; guard < MP_PRESENCE_QUEUE_SIZE + 1; guard++)
     {
         if (!av->hasPending)
         {
             if (!MP_PopRemotePresence(slot, &raw))
+            {
+                MpConverge(slot, av, latest, x, y); // BUG-008: nothing left to replay
                 return;
+            }
             // Queued on a map that is not visible from here (before / after a visit
             // elsewhere): not replayable, skip it.
             if (!MpTranslate(&raw, &av->pending))
@@ -652,6 +733,8 @@ static void MpReplay(u8 slot, struct MpAvatar *av, const struct MpPlayer *player
                 MpAvatar_StepCoords(MpAvatar_DirectionOf((s16)(av->pending.x - x), (s16)(av->pending.y - y)),
                                     x, y, 1, &destX, &destY);
                 MpDoorBeforeStep(slot, av, x, y, destX, destY);
+                // BUG-008: bounded catch-up after a burst (a late normal walk goes fast).
+                action = MpAvatar_CatchUpAction(action, MpTilesBetween(x, y, latest));
             }
             ObjectEventSetHeldMovement(obj, action);
             return;

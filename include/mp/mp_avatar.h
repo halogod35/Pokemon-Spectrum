@@ -52,6 +52,27 @@ u8 MpAvatar_Plan(s16 fromX, s16 fromY, u8 facing, const struct MpPresence *targe
 // TRUE if the avatar on (x, y) is so far from the latest presence that it should snap.
 bool8 MpAvatar_IsTooFarBehind(s16 x, s16 y, const struct MpPresence *latest);
 
+// BUG-008. TRUE if `p` says the player is standing still: no step in flight (MP_MOVE_NONE,
+// a turn, or an in-place hop). Keep-alives repeat the last value, so they are idle too
+// once the player has stopped.
+bool8 MpAvatar_IsIdlePresence(const struct MpPresence *p);
+
+// BUG-008. Convergence plan for an avatar standing on (x, y) with nothing left to replay
+// while its player is idle at `latest`: DONE if on the tile and facing the right way,
+// ACTION with a FACE_* (same tile) or a 1-tile WALK_NORMAL (adjacent tile), SNAP otherwise.
+u8 MpAvatar_PlanIdle(s16 x, s16 y, u8 facing, const struct MpPresence *latest, u8 *action);
+
+// BUG-008. Bounded catch-up for a 1-tile step `action` started while the avatar is `behind`
+// tiles (Manhattan) from the player's latest position. A normal walk 2 or more behind is
+// a whole 16-frame step late (a burst after jitter), so it becomes WALK_FAST (same walking
+// animation, twice the speed). Everything else is unchanged: 8-frame and faster steps are
+// 2 behind from ordinary latency alone, and speeding them up would stutter. Further than
+// MP_AVATAR_SNAP_TILES is a snap, not a catch-up.
+u8 MpAvatar_CatchUpAction(u8 action, s16 behind);
+
+// BUG-008 (selftest): game frames a MOVEMENT_ACTION_* used by the replay takes.
+u8 MpAvatar_ActionFrames(u8 action);
+
 // PS-032. Map-local (x, y) on a map connected to the current one in `direction`
 // (CONNECTION_SOUTH/NORTH/WEST/EAST) with the connection's `offset`, translated into
 // current-map coordinates, exactly as fieldmap.c lays connected maps out. FALSE for any

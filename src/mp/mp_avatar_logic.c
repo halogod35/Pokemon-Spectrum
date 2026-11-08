@@ -140,6 +140,68 @@ bool8 MpAvatar_IsTooFarBehind(s16 x, s16 y, const struct MpPresence *latest)
 }
 
 // ---------------------------------------------------------------------------
+// BUG-008: idle convergence and bounded catch-up
+// ---------------------------------------------------------------------------
+
+bool8 MpAvatar_IsIdlePresence(const struct MpPresence *p)
+{
+    return p->movement == MP_MOVE_NONE || p->movement == MP_MOVE_TURN || p->movement == MP_MOVE_JUMP_IN_PLACE;
+}
+
+u8 MpAvatar_PlanIdle(s16 x, s16 y, u8 facing, const struct MpPresence *latest, u8 *action)
+{
+    s16 dx = (s16)(latest->x - x);
+    s16 dy = (s16)(latest->y - y);
+    s16 dist = (s16)(MpAbs(dx) + MpAbs(dy));
+    u8 targetFacing = (latest->facing >= DIR_SOUTH && latest->facing <= DIR_EAST) ? latest->facing : DIR_SOUTH;
+
+    *action = MOVEMENT_ACTION_NONE;
+    if (dist == 0)
+    {
+        if (facing == targetFacing)
+            return MP_AVATAR_PLAN_DONE;
+        *action = MpDirAction(MOVEMENT_ACTION_FACE_DOWN, targetFacing);
+        return MP_AVATAR_PLAN_ACTION;
+    }
+    if (dist == 1)
+    {
+        *action = MpDirAction(MOVEMENT_ACTION_WALK_NORMAL_DOWN, MpAvatar_DirectionOf(dx, dy));
+        return MP_AVATAR_PLAN_ACTION;
+    }
+    return MP_AVATAR_PLAN_SNAP;
+}
+
+static bool8 MpInBlock(u8 action, u8 firstDown)
+{
+    return action >= firstDown && action < firstDown + 4;
+}
+
+u8 MpAvatar_CatchUpAction(u8 action, s16 behind)
+{
+    if (behind < 2)
+        return action;
+    if (MpInBlock(action, MOVEMENT_ACTION_WALK_NORMAL_DOWN))
+        return (u8)(MOVEMENT_ACTION_WALK_FAST_DOWN + (action - MOVEMENT_ACTION_WALK_NORMAL_DOWN));
+    return action;
+}
+
+u8 MpAvatar_ActionFrames(u8 action)
+{
+    if (MpInBlock(action, MOVEMENT_ACTION_WALK_NORMAL_DOWN))
+        return 16;
+    if (MpInBlock(action, MOVEMENT_ACTION_WALK_FAST_DOWN) || MpInBlock(action, MOVEMENT_ACTION_PLAYER_RUN_DOWN))
+        return 8;
+    if (MpInBlock(action, MOVEMENT_ACTION_WALK_FASTER_DOWN))
+        return 4;
+    if (MpInBlock(action, MOVEMENT_ACTION_JUMP_2_DOWN))
+        return 32;
+    if (MpInBlock(action, MOVEMENT_ACTION_JUMP_IN_PLACE_DOWN)
+     || MpInBlock(action, MOVEMENT_ACTION_ACRO_WHEELIE_HOP_FACE_DOWN))
+        return 16;
+    return 1; // FACE_*
+}
+
+// ---------------------------------------------------------------------------
 // PS-032: connected maps
 // ---------------------------------------------------------------------------
 
