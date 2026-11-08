@@ -400,3 +400,31 @@ symbols fail the link loudly, which is intended.
 | PS-030 | `mp_presence.c`, capture hook, PRESENCE parser semantics, `MP_IsValidMap` table |
 | PS-031 | Avatars from `MP_GetPlayer` + `MP_PopRemotePresence` (localIds `0xE0 + slot` are free: the highest existing localIds are 236–240 for the Berry Blender, 127 camera and 255 player) |
 | PS-033 | Notices from events, PLAYERS list from `MP_GetPlayer`. Badge count = popcount of `summary.badges`. |
+
+## PS-047: link receive-path hardening (as implemented)
+
+The decomp's link code trusted the peer. Every fix sits at the decomp consumer, marked
+`// MP: PS-047`, so it holds whatever transport delivered the data. A rejected value is
+neutralised (dropped, zeroed or clamped) and reported with `MP_LinkRejectData()`
+(`mp_link_cable.c`), which sets the cable's hardware-error bit, so the game's own link-error
+path ends the activity. Validators for game structures are in `src/mp/mp_link_validate.c`
+(API in `mp.h`): `MP_ValidateMon`, `MP_ValidateParty`, `MP_SanitizeBattleMon`,
+`MP_SanitizeLinkPlayer`, `MP_SanitizeTrainerCard`, `MP_SanitizeMail`, `MP_SanitizeLanguage`.
+
+| Where | Check |
+|---|---|
+| `link.c` ProcessRecvCmds `INIT_BLOCK` / `CONT_BLOCK` | size <= 0x4000; CONT with no block in progress ignored; every write bounded by its buffer |
+| `link.c` `SEND_BLOCK_REQ` | type < 5 (was an out-of-bounds read whose target memory was sent to the peer) |
+| `link.c` magic strings, `ConvertLinkPlayerName` | memcmp instead of strcmp; name terminated (5 chars for Japanese), language, gender, battler id clamped |
+| `battle_controllers.c` TryReceiveLinkBattleData | message size fits the 0x100 block buffer |
+| `battle_controllers.c` copy task | battler < 4, size <= 0x200, inside the 0x1000 ring, player id < 4; attacker/target/effect battler kept < 4; then `MpLinkIsBattleMsgSafe` per message type |
+| `MpLinkIsBattleMsgSafe` | refuses DMA3TRANSFER / GET-SETRAWMONDATA / PLAYBGM / CMD32 (never emitted); checks party slots, moves, species, items, string / song / animation / environment ids; clamps message-data and party-order indices; CHOSENMONRETURNVALUE slot <= 6 |
+| `battle_main.c`, `battle_script_commands.c` | gEnemyParty (and multi parties) validated; action < table size, move slot < 4, targets < 4, item < ITEMS_COUNT, switch slot < 6; function-pointer table indices bounded; BattlePokemon replies sanitized |
+| `battle_message.c` | text buffers terminated; placeholder expansion bounded, indices checked, unknown types stop (used to loop forever) |
+| `battle_controller_player.c` | DMA3TRANSFER is a no-op; raw mon data offsets bounded |
+| `trade.c` | partner party and mail validated before use |
+| `trainer_card.c` ShowTrainerCardInLink | stars 0..4, gender 0..1, name, language, FRLG icon species and stickers |
+| host bus (`mp_link.c`) | pre-filter `MpLink_IsCmdAllowed` (protocol.md 6.12) |
+
+Tested by `--mp-selftest` group "hardening" (`mp_selftest_hardening.c`) plus one bus case in
+the link group.

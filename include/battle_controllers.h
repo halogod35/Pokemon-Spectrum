@@ -251,6 +251,11 @@ void HandleLinkBattleSetup(void);
 void SetUpBattleVarsAndBirchZigzagoon(void);
 void InitBattleControllers(void);
 void TryReceiveLinkBattleData(void);
+// MP: PS-047, --mp-selftest only (battle_controllers.c): the link receive path on a test ring.
+void MP_BattleLinkSelftestBegin(u8 *ring);
+void MP_BattleLinkSelftestRunCopy(void);
+u16 MP_BattleLinkSelftestRingEnd(void);
+void MP_BattleLinkSelftestEnd(void);
 void PrepareBufferDataTransferLink(u8 bufferId, u16 size, u8 *data);
 
 // emitters

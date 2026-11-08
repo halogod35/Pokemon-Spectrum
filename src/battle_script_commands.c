@@ -47,6 +47,7 @@
 #include "constants/items.h"
 #include "constants/map_types.h"
 #include "constants/moves.h"
+#include "mp/mp.h" // MP: PS-047 link receive-path hardening
 #include "constants/party_menu.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
@@ -4653,6 +4654,9 @@ static void Cmd_switchindataupdate(void)
 
     for (i = 0; i < sizeof(struct BattlePokemon); i++)
         monData[i] = gBattleBufferB[gActiveBattler][4 + i];
+    // MP: PS-047. A GetMonData reply: over a link it comes from the peer.
+    if (!MP_SanitizeBattleMon(&gBattleMons[gActiveBattler]))
+        MP_LinkRejectData("switch-in mon data out of range");
 
     gBattleMons[gActiveBattler].types[0] = gSpeciesInfo[gBattleMons[gActiveBattler].species].types[0];
     gBattleMons[gActiveBattler].types[1] = gSpeciesInfo[gBattleMons[gActiveBattler].species].types[1];
@@ -5683,7 +5687,7 @@ static void Cmd_updatebattlermoves(void)
             struct BattlePokemon *bufferPoke = (struct BattlePokemon *) &gBattleBufferB[gActiveBattler][4];
             for (i = 0; i < MAX_MON_MOVES; i++)
             {
-                gBattleMons[gActiveBattler].moves[i] = bufferPoke->moves[i];
+                gBattleMons[gActiveBattler].moves[i] = (bufferPoke->moves[i] < MOVES_COUNT) ? bufferPoke->moves[i] : MOVE_NONE; // MP: PS-047
                 gBattleMons[gActiveBattler].pp[i] = bufferPoke->pp[i];
             }
             gBattlescriptCurrInstr += 2;

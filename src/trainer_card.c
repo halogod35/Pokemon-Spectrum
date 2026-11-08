@@ -32,6 +32,7 @@
 #include "constants/rgb.h"
 #include "constants/trainers.h"
 #include "constants/union_room.h"
+#include "mp/mp.h" // MP: PS-047 link receive-path hardening
 #ifdef PORTABLE
 #include "menu_helpers.h"
 #endif
@@ -1828,7 +1829,10 @@ void ShowTrainerCardInLink(u8 cardId, void (*callback)(void))
     sData->callback2 = callback;
     sData->isLink = TRUE;
     sData->trainerCard = gTrainerCards[cardId];
-    sData->language = gLinkPlayers[cardId].language;
+    sData->language = MP_SanitizeLanguage(gLinkPlayers[cardId].language); // MP: PS-047
+    // MP: PS-047. A link card came from the peer (cable or a PS-042 message): stars and gender
+    // index palette and pic tables, the FRLG fields index icon and sticker tables.
+    MP_SanitizeTrainerCard(&sData->trainerCard);
     SetMainCallback2(CB2_InitTrainerCard);
 }
 

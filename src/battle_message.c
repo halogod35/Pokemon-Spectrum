@@ -20,6 +20,7 @@
 #include "text.h"
 #include "trainer_hill.h"
 #include "window.h"
+#include "constants/abilities.h" // MP: PS-047 (ABILITIES_COUNT)
 #include "constants/battle_dome.h"
 #include "constants/battle_string_ids.h"
 #include "constants/frontier_util.h"
@@ -1980,6 +1981,11 @@ void BufferStringBattle(u16 stringID)
         gBattleTextBuff2[i] = gBattleMsgDataPtr->textBuffs[1][i];
         gBattleTextBuff3[i] = gBattleMsgDataPtr->textBuffs[2][i];
     }
+    // MP: PS-047. Over a link these come from the peer: make sure every buffer ends, both as a
+    // string (EOS) and as a placeholder list (B_BUFF_EOS, the same 0xFF byte).
+    gBattleTextBuff1[TEXT_BUFF_ARRAY_COUNT - 1] = EOS;
+    gBattleTextBuff2[TEXT_BUFF_ARRAY_COUNT - 1] = EOS;
+    gBattleTextBuff3[TEXT_BUFF_ARRAY_COUNT - 1] = EOS;
 
     switch (stringID)
     {
@@ -2761,6 +2767,67 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
     return dstID;
 }
 
+// MP: PS-047. The text buffers (TEXT_BUFF_ARRAY_COUNT bytes) arrive from the link master in
+// every PRINTSTRING message. Checks that the placeholder at src[srcID] fits in the buffer and
+// that its index is inside the table it selects. An unknown type used to loop forever.
+static bool8 MpIsTextBuffEntryOk(const u8 *src, u32 srcID)
+{
+    u32 need;
+
+    switch (src[srcID])
+    {
+    case B_BUFF_STRING:
+    case B_BUFF_MOVE:
+    case B_BUFF_SPECIES:
+    case B_BUFF_ITEM:
+        need = 3;
+        break;
+    case B_BUFF_NUMBER:
+        if (srcID + 3 > TEXT_BUFF_ARRAY_COUNT)
+            return FALSE;
+        if (src[srcID + 1] != 1 && src[srcID + 1] != 2 && src[srcID + 1] != 4)
+            return FALSE;
+        if (src[srcID + 2] > 10) // digits for ConvertIntToDecimalStringN
+            return FALSE;
+        need = 3 + src[srcID + 1];
+        break;
+    case B_BUFF_TYPE:
+    case B_BUFF_STAT:
+    case B_BUFF_NEGATIVE_FLAVOR:
+    case B_BUFF_ABILITY:
+        need = 2;
+        break;
+    case B_BUFF_MON_NICK_WITH_PREFIX:
+    case B_BUFF_MON_NICK:
+        need = 3;
+        break;
+    default:
+        return FALSE;
+    }
+    if (srcID + need > TEXT_BUFF_ARRAY_COUNT)
+        return FALSE;
+
+    switch (src[srcID])
+    {
+    case B_BUFF_STRING:
+        return T1_READ_16(&src[srcID + 1]) >= BATTLESTRINGS_TABLE_START && T1_READ_16(&src[srcID + 1]) < BATTLESTRINGS_COUNT;
+    case B_BUFF_MOVE:
+        return T1_READ_16(&src[srcID + 1]) < MOVES_COUNT;
+    case B_BUFF_TYPE:
+        return src[srcID + 1] < NUMBER_OF_MON_TYPES;
+    case B_BUFF_STAT:
+        return src[srcID + 1] < NUM_BATTLE_STATS;
+    case B_BUFF_NEGATIVE_FLAVOR:
+        return src[srcID + 1] < FLAVOR_COUNT;
+    case B_BUFF_ABILITY:
+        return src[srcID + 1] < ABILITIES_COUNT;
+    case B_BUFF_MON_NICK_WITH_PREFIX:
+    case B_BUFF_MON_NICK:
+        return src[srcID + 1] < MAX_BATTLERS_COUNT && src[srcID + 2] < PARTY_SIZE;
+    }
+    return TRUE; // B_BUFF_NUMBER, B_BUFF_SPECIES and B_BUFF_ITEM are range-checked by their consumers
+}
+
 static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
 {
     u32 srcID = 1;
@@ -2769,8 +2836,10 @@ static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
     u16 hword;
 
     *dst = EOS;
-    while (src[srcID] != B_BUFF_EOS)
+    while (srcID < TEXT_BUFF_ARRAY_COUNT && src[srcID] != B_BUFF_EOS) // MP: PS-047 bound
     {
+        if (!MpIsTextBuffEntryOk(src, srcID)) // MP: PS-047
+            break;
         switch (src[srcID])
         {
         case B_BUFF_STRING: // battle string

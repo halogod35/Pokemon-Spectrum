@@ -555,7 +555,7 @@ id order. Valid: `groupId != 0`, `busEpoch != 0`, 2 <= N <= 4 and `length == 8 +
 | `OPEN(g, seq)` | `g` not the sender's group → ignore. If the bus is up it ends (`BUS_END`). Mark open with `seq`, send `STATUS(openMask)` to all members. If a start is pending and all are open, start the bus. |
 | `CLOSE(g, seq)` | Ignore unless open with that `seq`. Mark closed, cancel a pending start, end the bus if up (`BUS_END(epoch)` to all members), send `STATUS`. |
 | `START(g, seq)` | Only from link id 0, open with that `seq`, bus not up; else ignore. All open → **start the bus**: new epoch, empty queues, `BUS_START(epoch, member's seq)` to each member. Otherwise remember the start until all are open. |
-| `CMD(g, epoch, cmd)` | Ignore unless the bus `g`/`epoch` is up. Queue it for the sender's link id (128 per member). Queue full → the group ends with `END(OVERFLOW)` to all members. |
+| `CMD(g, epoch, cmd)` | Ignore unless the bus `g`/`epoch` is up. Queue it for the sender's link id (128 per member). Queue full → the group ends with `END(OVERFLOW)` to all members. **PS-047 pre-filter** (host behaviour, no wire change): an `INIT_BLOCK` (`0xBBBB`) whose size word is above `0x4000`, or a `SEND_BLOCK_REQ` (`0xCCCC`) whose type is 5 or more, is never queued; the group ends with `END(LEFT)` to all members, sender included. |
 | a player leaves the table | Requests that include the slot get `END(0, LOST)`; its group ends with `END(LOST)` to the others. |
 
 Rows: once per `MP_Update`, for every group whose bus is up, while any member's queue is not

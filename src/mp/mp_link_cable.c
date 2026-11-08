@@ -17,6 +17,7 @@
 // (gLinkStatus stays 0, so the Cable Club times out exactly as before).
 
 #include "global.h"
+#include "decompress.h"
 #include "link.h"
 #include "main.h"
 #include "overworld.h"
@@ -28,6 +29,11 @@
 // The bus carries CMD_LENGTH words per member and at most MAX_LINK_PLAYERS members.
 typedef char MpLinkCmdLengthCheck[(CMD_LENGTH == MP_LINK_CMD_WORDS) ? 1 : -1];
 typedef char MpLinkMembersCheck[(MAX_LINK_PLAYERS == MP_LINK_MAX_MEMBERS) ? 1 : -1];
+// PS-047: the bus pre-filter (mp_link.c) mirrors these link.c / decompress.h values.
+typedef char MpLinkInitBlockCheck[(LINKCMD_INIT_BLOCK == MP_LINKCMD_INIT_BLOCK) ? 1 : -1];
+typedef char MpLinkBlockReqCheck[(LINKCMD_SEND_BLOCK_REQ == MP_LINKCMD_SEND_BLOCK_REQ) ? 1 : -1];
+typedef char MpLinkBlockReqCountCheck[(BLOCK_REQ_SIZE_40 + 1 == MP_LINK_BLOCK_REQ_COUNT) ? 1 : -1];
+typedef char MpLinkMaxBlockCheck[(sizeof(gDecompressionBuffer) == MP_LINK_MAX_BLOCK_SIZE) ? 1 : -1];
 
 u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_LENGTH])
 {
@@ -147,6 +153,28 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
     status |= (u32)gLink.hardwareError << LINK_STAT_ERROR_HARDWARE_SHIFT;
     status |= (u32)gLink.queueFull << LINK_STAT_ERROR_QUEUE_FULL_SHIFT;
     return status;
+}
+
+// ---------------------------------------------------------------------------
+// PS-047: data from a peer that the game must not use
+// ---------------------------------------------------------------------------
+
+static u32 sLinkRejectCount;
+
+void MP_LinkRejectData(const char *what)
+{
+    sLinkRejectCount++;
+    if (sLinkRejectCount <= 20 || sLinkRejectCount % 10000 == 0) // a hostile peer can repeat this every frame
+        MP_LOG("link: rejected data from the link partner (%s, #%u); ending the link activity\n", what, (unsigned)sLinkRejectCount);
+    // Like a cable fault: the next MP_LinkMain1 reports LINK_STAT_ERROR_HARDWARE and LinkMain2
+    // runs the game's link-error path. CloseLink() zeroes gLink, which clears it again.
+    if (gLink.state >= LINK_STATE_HANDSHAKE)
+        gLink.hardwareError = TRUE;
+}
+
+u32 MP_LinkGetRejectCount(void)
+{
+    return sLinkRejectCount;
 }
 
 // ---------------------------------------------------------------------------

@@ -37,5 +37,8 @@ void MpPlayerData_MakeTestMon(u8 *raw, u16 species, u8 level, u32 personality);
 // two game instances in one process (MP_LinkSelftestState), the host as sequencer only and as
 // a member; player-data exchange, SendBlock, stall + catch-up, re-open, disconnect.
 u32 MpSelftest_Link(void);
+// PS-047: the hardened link receive path: link.c ProcessRecvCmds, the battle link receive
+// path and controller filter, MP_ValidateMon and friends, text buffers, the bus pre-filter.
+u32 MpSelftest_LinkHardening(void);
 
 #endif // GUARD_MP_MP_SELFTEST_H
