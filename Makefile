@@ -125,7 +125,7 @@ ifeq ($(PORTABLE),1)
 
   ifeq ($(TARGET_OS),WINDOWS)
     OS_CFLAGS :=
-    OS_LFLAGS := -lwinmm -lxinput
+    OS_LFLAGS := -lwinmm -lxinput -Wl,-Map,pokeemerald.map # MP: map file for the crash reporter (BUG-003)
     BUILD_FEXTENSION := .exe
   else
     OS_CFLAGS :=

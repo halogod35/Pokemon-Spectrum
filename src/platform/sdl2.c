@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <xinput.h>
 #include <io.h>      // MP: _commit() for the crash-safe save (PS-014)
+#include <stdint.h>  // MP: uintptr_t for the crash reporter
 #else
 #include <unistd.h>  // MP: fsync() for the crash-safe save (PS-014)
 #endif
@@ -79,10 +80,60 @@ static int ParsePlatformArgs(int argc, char **argv);
 
 static void UpdateInternalClock(void);
 
+#ifdef _WIN32
+// MP: crash reporter (BUG-003). On an unhandled exception, print the faulting address and a
+// stack of return addresses as offsets from the exe's base, to the console and to
+// pokeemerald_crash.txt next to the exe. Match the offsets against pokeemerald.map (shipped with
+// the CI artifact): offset + 0x140000000 (64-bit) or + 0x400000 (32-bit) = the address in the map.
+static void MpCrashWrite(FILE *out, EXCEPTION_POINTERS *info, void **frames, USHORT count)
+{
+    uintptr_t base = (uintptr_t)GetModuleHandleA(NULL);
+    uintptr_t at = (uintptr_t)info->ExceptionRecord->ExceptionAddress;
+    USHORT i;
+
+    fprintf(out, "\n=== POKEMON SPECTRUM CRASH ===\n");
+    fprintf(out, "exception 0x%08lX at exe+0x%llx (address %p, exe base %p)\n",
+            (unsigned long)info->ExceptionRecord->ExceptionCode,
+            (unsigned long long)(at - base), (void *)at, (void *)base);
+    if (info->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION
+     && info->ExceptionRecord->NumberParameters >= 2)
+        fprintf(out, "access violation: %s address %p\n",
+                info->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
+                (void *)info->ExceptionRecord->ExceptionInformation[1]);
+    fprintf(out, "stack (exe offsets; frames outside the exe are DLLs):\n");
+    for (i = 0; i < count; i++)
+    {
+        uintptr_t f = (uintptr_t)frames[i];
+
+        fprintf(out, "  #%02u exe+0x%llx\n", (unsigned int)i, (unsigned long long)(f - base));
+    }
+    fprintf(out, "=== end of crash report ===\n");
+    fflush(out);
+}
+
+static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
+{
+    void *frames[48];
+    USHORT count = CaptureStackBackTrace(0, 48, frames, NULL);
+    FILE *file = fopen("pokeemerald_crash.txt", "w");
+
+    MpCrashWrite(stderr, info, frames, count);
+    if (file != NULL)
+    {
+        MpCrashWrite(file, info, frames, count);
+        fclose(file);
+    }
+    MessageBoxA(NULL, "Pokemon Spectrum crashed.\n\nThe details were saved to pokeemerald_crash.txt next to the game.\nPlease send that file (and the console text) to the developers.",
+                "Pokemon Spectrum crash", MB_OK | MB_ICONERROR);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     // Open an output console on Windows
 #ifdef _WIN32
+    SetUnhandledExceptionFilter(MpCrashHandler); // MP: crash reporter (BUG-003)
     AllocConsole() ;
     AttachConsole( GetCurrentProcessId() ) ;
     freopen( "CON", "w", stdout ) ;
