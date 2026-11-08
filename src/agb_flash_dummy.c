@@ -47,7 +47,9 @@ u16 EraseFlashChip_DUMMY(void)
 
 u16 EraseFlashSector_DUMMY(u16 sectorNum)
 {
-    u8 clearBuffer[0x1000] = { 0xFF };
+    u8 clearBuffer[0x1000];
+
+    memset(clearBuffer, 0xFF, sizeof(clearBuffer)); // MP: BUG-003 review. "= { 0xFF }" only set byte 0; erased flash is all 0xFF
     return ProgramFlashSector_DUMMY(sectorNum, &clearBuffer[0]);
 }
 

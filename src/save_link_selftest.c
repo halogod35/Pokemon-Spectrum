@@ -53,6 +53,15 @@ static bool8 LoadFileIntoFlash(const char *path)
     return ReadWholeFile(path, FLASH_BASE, sizeof(FLASH_BASE)) == (s32)sizeof(FLASH_BASE);
 }
 
+// An unsigned trade slot next to the good slot loads the good slot. Vanilla reports that as
+// SAVE_STATUS_ERROR ("the previous save file will be loaded"), which is still a correct rollback.
+static bool8 MpLsLoadedOld(void)
+{
+    u8 status = LoadGameSave(SAVE_NORMAL);
+
+    return status == SAVE_STATUS_OK || status == SAVE_STATUS_ERROR;
+}
+
 // Runs the trade save up to (signed == FALSE) or including the signature.
 static void RunLinkSave(bool8 sign)
 {
@@ -92,7 +101,7 @@ u32 SaveSelftest_LinkSave(const char *path)
     gSaveBlock2Ptr->playerTrainerId[0] = 2;  // the "post-trade" marker
     IncrementGameStat(GAME_STAT_POKEMON_TRADES);
     RunLinkSave(FALSE);
-    LS_CHECK(LoadGameSave(SAVE_NORMAL) == SAVE_STATUS_OK && gSaveBlock2Ptr->playerTrainerId[0] == 1 && gSaveCounter == counter);
+    LS_CHECK(MpLsLoadedOld() && gSaveBlock2Ptr->playerTrainerId[0] == 1 && gSaveCounter == counter);
     LS_CHECK(LoadFileIntoFlash(path) && LoadGameSave(SAVE_NORMAL) == SAVE_STATUS_OK && gSaveBlock2Ptr->playerTrainerId[0] == 1);
 
     // The trade again, this time signed: valid in memory and on disk.
