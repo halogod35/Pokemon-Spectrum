@@ -529,7 +529,7 @@ u16 MpProto_WriteInteract(u8 *buf, u16 cap, u8 type, const struct MpMsgInteract 
 }
 
 // ---------------------------------------------------------------------------
-// TRAINER_CARD_DATA (PS-042, protocol.md 6.12)
+// TRAINER_CARD_DATA (PS-042, protocol.md 6.13)
 // ---------------------------------------------------------------------------
 
 static u16 MpClampU16(u16 value, u16 max)
@@ -677,7 +677,7 @@ u16 MpProto_WriteTrainerCardData(u8 *buf, u16 cap, const struct MpMsgTrainerCard
 }
 
 // ---------------------------------------------------------------------------
-// PARTY_DATA (PS-043, protocol.md 6.13)
+// PARTY_DATA (PS-043, protocol.md 6.14)
 // ---------------------------------------------------------------------------
 
 u8 MpProto_ParsePartyData(const u8 *payload, u32 len, struct MpMsgPartyData *out)
@@ -738,5 +738,225 @@ u16 MpProto_WritePartyData(u8 *buf, u16 cap, const struct MpMsgPartyData *msg)
     MpWriteU8(&w, 0);
     for (i = 0; i < monCount; i++)
         MpWriteBytes(&w, msg->mons[i], MP_MON_WIRE_SIZE);
+    return MpFinishWrite(&w);\n}\n\n// ---------------------------------------------------------------------------\n// LINK_* (PS-046, protocol.md 6.12)
+// ---------------------------------------------------------------------------
+
+u8 MpProto_LinkMaskCount(u8 mask)
+{
+    u8 count = 0;
+    u32 i;
+
+    for (i = 0; i < MP_LINK_MAX_MEMBERS; i++)
+    {
+        if (mask & (1 << i))
+            count++;
+    }
+    return count;
+}
+
+// A member mask: only slots 0..3, and 2..4 members.
+static bool8 MpIsValidLinkMask(u8 mask)
+{
+    return (mask & ~0x0F) == 0 && MpProto_LinkMaskCount(mask) >= 2;
+}
+
+bool8 MpProto_IsLinkCtlType(u8 type)
+{
+    switch (type)
+    {
+    case MP_MSG_LINK_JOIN:
+    case MP_MSG_LINK_LEAVE:
+    case MP_MSG_LINK_GROUP:
+    case MP_MSG_LINK_END:
+    case MP_MSG_LINK_OPEN:
+    case MP_MSG_LINK_CLOSE:
+    case MP_MSG_LINK_START:
+    case MP_MSG_LINK_STATUS:
+    case MP_MSG_LINK_BUS_START:
+    case MP_MSG_LINK_BUS_END:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+u8 MpProto_ParseLinkCtl(u8 type, const u8 *payload, u32 len, struct MpMsgLinkCtl *out)
+{
+    struct MpMsgLinkCtl m;
+    u8 result;
+
+    memset(out, 0, sizeof(*out));
+    if (!MpProto_IsLinkCtlType(type))
+        return MP_PARSE_ERR_BAD_FIELD;
+    result = MpCheckExactSize(payload, len, MP_LINK_CTL_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+    m.groupId = payload[0];
+    m.arg1 = payload[1];
+    m.arg2 = payload[2];
+    // payload[3] is reserved
+
+    switch (type)
+    {
+    case MP_MSG_LINK_JOIN:
+        if (!MpIsValidLinkMask(m.arg1))
+            return MP_PARSE_ERR_BAD_FIELD;
+        m.groupId = 0;
+        m.arg2 = 0;
+        break;
+    case MP_MSG_LINK_LEAVE:
+        m.groupId = m.arg1 = m.arg2 = 0;
+        break;
+    case MP_MSG_LINK_GROUP:
+        if (m.groupId == 0 || !MpIsValidLinkMask(m.arg1) || m.arg2 >= MpProto_LinkMaskCount(m.arg1))
+            return MP_PARSE_ERR_BAD_FIELD;
+        break;
+    case MP_MSG_LINK_END:
+        if (m.arg1 == 0)
+            return MP_PARSE_ERR_BAD_FIELD;
+        m.arg2 = 0;
+        break;
+    case MP_MSG_LINK_OPEN:
+    case MP_MSG_LINK_CLOSE:
+    case MP_MSG_LINK_START:
+        if (m.groupId == 0)
+            return MP_PARSE_ERR_BAD_FIELD;
+        m.arg2 = 0;
+        break;
+    case MP_MSG_LINK_STATUS:
+        if (m.groupId == 0 || (m.arg1 & ~0x0F) != 0)
+            return MP_PARSE_ERR_BAD_FIELD;
+        m.arg2 = 0;
+        break;
+    case MP_MSG_LINK_BUS_START:
+        if (m.groupId == 0 || m.arg1 == 0)
+            return MP_PARSE_ERR_BAD_FIELD;
+        break;
+    case MP_MSG_LINK_BUS_END:
+        if (m.groupId == 0 || m.arg1 == 0)
+            return MP_PARSE_ERR_BAD_FIELD;
+        m.arg2 = 0;
+        break;
+    }
+    *out = m;
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteLinkCtl(u8 *buf, u16 cap, u8 type, const struct MpMsgLinkCtl *msg)
+{
+    struct MpWriter w;
+
+    if (!MpProto_IsLinkCtlType(type))
+        return 0;
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, type, MP_PROTOCOL_VERSION, MP_LINK_CTL_SIZE);
+    MpWriteU8(&w, msg->groupId);
+    MpWriteU8(&w, msg->arg1);
+    MpWriteU8(&w, msg->arg2);
+    MpWriteU8(&w, 0);
+    return MpFinishWrite(&w);
+}
+
+u8 MpProto_ParseLinkCmd(const u8 *payload, u32 len, struct MpMsgLinkCmd *out)
+{
+    struct MpMsgLinkCmd m;
+    struct MpReader r;
+    u16 any = 0;
+    u8 result;
+    u32 i;
+
+    memset(out, 0, sizeof(*out));
+    result = MpCheckExactSize(payload, len, MP_LINK_CMD_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+    MpReader_Init(&r, payload, len);
+    m.groupId = MpReadU8(&r);
+    m.busEpoch = MpReadU8(&r);
+    MpReadU16(&r); // reserved
+    for (i = 0; i < MP_LINK_CMD_WORDS; i++)
+    {
+        m.cmd[i] = MpReadU16(&r);
+        any |= m.cmd[i];
+    }
+    if (r.error)
+        return MP_PARSE_ERR_TRUNCATED;
+    if (m.groupId == 0 || m.busEpoch == 0 || any == 0)
+        return MP_PARSE_ERR_BAD_FIELD;
+    *out = m;
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteLinkCmd(u8 *buf, u16 cap, const struct MpMsgLinkCmd *msg)
+{
+    struct MpWriter w;
+    u32 i;
+
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_LINK_CMD, MP_PROTOCOL_VERSION, MP_LINK_CMD_SIZE);
+    MpWriteU8(&w, msg->groupId);
+    MpWriteU8(&w, msg->busEpoch);
+    MpWriteU16(&w, 0);
+    for (i = 0; i < MP_LINK_CMD_WORDS; i++)
+        MpWriteU16(&w, msg->cmd[i]);
+    return MpFinishWrite(&w);
+}
+
+u8 MpProto_ParseLinkRow(const u8 *payload, u32 len, struct MpMsgLinkRow *out)
+{
+    struct MpMsgLinkRow m;
+    struct MpReader r;
+    u32 i, j;
+
+    memset(out, 0, sizeof(*out));
+    memset(&m, 0, sizeof(m));
+    if (payload == NULL || len < MP_LINK_ROW_SIZE(0))
+        return MP_PARSE_ERR_TRUNCATED;
+    m.count = payload[2];
+    if (m.count < 2 || m.count > MP_LINK_MAX_MEMBERS)
+        return MP_PARSE_ERR_BAD_FIELD;
+    if (len < (u32)MP_LINK_ROW_SIZE(m.count))
+        return MP_PARSE_ERR_TRUNCATED;
+    if (len > (u32)MP_LINK_ROW_SIZE(m.count))
+        return MP_PARSE_ERR_OVERSIZED;
+    MpReader_Init(&r, payload, len);
+    m.groupId = MpReadU8(&r);
+    m.busEpoch = MpReadU8(&r);
+    MpReadU8(&r); // count, read above
+    MpReadU8(&r); // reserved
+    m.rowSeq = MpReadU16(&r);
+    MpReadU16(&r); // reserved
+    for (i = 0; i < m.count; i++)
+    {
+        for (j = 0; j < MP_LINK_CMD_WORDS; j++)
+            m.cmds[i][j] = MpReadU16(&r);
+    }
+    if (r.error)
+        return MP_PARSE_ERR_TRUNCATED;
+    if (m.groupId == 0 || m.busEpoch == 0)
+        return MP_PARSE_ERR_BAD_FIELD;
+    *out = m;
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg)
+{
+    struct MpWriter w;
+    u32 i, j;
+
+    if (msg->count < 2 || msg->count > MP_LINK_MAX_MEMBERS)
+        return 0;
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_LINK_ROW, MP_PROTOCOL_VERSION, MP_LINK_ROW_SIZE(msg->count));
+    MpWriteU8(&w, msg->groupId);
+    MpWriteU8(&w, msg->busEpoch);
+    MpWriteU8(&w, msg->count);
+    MpWriteU8(&w, 0);
+    MpWriteU16(&w, msg->rowSeq);
+    MpWriteU16(&w, 0);
+    for (i = 0; i < msg->count; i++)
+    {
+        for (j = 0; j < MP_LINK_CMD_WORDS; j++)
+            MpWriteU16(&w, msg->cmds[i][j]);
+    }
     return MpFinishWrite(&w);
 }

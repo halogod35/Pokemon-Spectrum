@@ -45,6 +45,7 @@ struct PlatformArgs
     u8 mpRole;                                   // PLATFORM_MP_ROLE_*
     bool8 mpDebug;                               // --mp-debug
     bool8 mpSelftest;                            // --mp-selftest (MP: PS-011)
+    bool8 mpLinkTest;                            // --mp-link-test (MP: PS-046 virtual link cable harness)
     bool8 debugSlowSave;                         // --debug-slow-save (MP: PS-014, kill-during-save test)
     bool8 saveSelftest;                          // --save-selftest (MP: PS-014)
     bool8 hasFakeProtocol;                       // --mp-fake-protocol given (MP: PS-012)

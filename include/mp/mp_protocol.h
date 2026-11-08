@@ -36,12 +36,27 @@
 #define MP_MSG_INTERACT_REQUEST     0x40    // requester -> host -> target
 #define MP_MSG_INTERACT_RESPONSE    0x41    // target -> host -> requester (or host -> requester on its own)
 #define MP_MSG_INTERACT_CANCEL      0x42    // requester -> host -> target (or host -> target on its own)
-// PS-042 (protocol.md 6.12), channel 0, reliable: the data that comes with an ACCEPTED
+// PS-042 (protocol.md 6.13), channel 0, reliable: the data that comes with an ACCEPTED
 // TRAINER_CARD request, sent just before the RESPONSE and routed like it.
 #define MP_MSG_TRAINER_CARD_DATA    0x43    // target -> host -> requester
-// PS-043 (protocol.md 6.13): the party that comes with an ACCEPTED VIEW_PARTY request, in
+// PS-043 (protocol.md 6.14): the party that comes with an ACCEPTED VIEW_PARTY request, in
 // 1..2 parts of up to 3 raw mons each, sent just before the RESPONSE and routed like it.
 #define MP_MSG_PARTY_DATA           0x44    // target -> host -> requester
+// Virtual link cable (PS-046, protocol.md 6.12). All on channel 0 (reliable, ordered).
+#define MP_MSG_LINK_JOIN        0x60    // C -> H
+#define MP_MSG_LINK_LEAVE       0x61    // C -> H
+#define MP_MSG_LINK_GROUP       0x62    // H -> C
+#define MP_MSG_LINK_END         0x63    // H -> C
+#define MP_MSG_LINK_OPEN        0x64    // C -> H
+#define MP_MSG_LINK_CLOSE       0x65    // C -> H
+#define MP_MSG_LINK_START       0x66    // C -> H (link id 0 only)
+#define MP_MSG_LINK_STATUS      0x67    // H -> C
+#define MP_MSG_LINK_BUS_START   0x68    // H -> C
+#define MP_MSG_LINK_BUS_END     0x69    // H -> C
+#define MP_MSG_LINK_CMD         0x6A    // C -> H
+#define MP_MSG_LINK_ROW         0x6B    // H -> C
+#define MP_MSG_LINK_FIRST       0x60    // reserved LINK_* range (protocol.md 4)
+#define MP_MSG_LINK_LAST        0x7F
 #define MP_MSG_DEBUG_ECHO       0xF0    // --mp-selftest only
 
 #define MP_DEBUG_ECHO_MAX_PAYLOAD 64
@@ -56,6 +71,11 @@
 #define MP_BYE_SIZE             4
 #define MP_PING_SIZE            4
 #define MP_PRESENCE_SIZE        16
+#define MP_LINK_CTL_SIZE        4       // every LINK_* control message
+#define MP_LINK_CMD_WORDS       8       // == CMD_LENGTH in include/link.h
+#define MP_LINK_MAX_MEMBERS     4       // == MAX_LINK_PLAYERS in include/link.h
+#define MP_LINK_CMD_SIZE        (4 + 2 * MP_LINK_CMD_WORDS)                 // 20
+#define MP_LINK_ROW_SIZE(n)     (8 + 2 * MP_LINK_CMD_WORDS * (n))           // 8 + 16n
 #define MP_INTERACT_SIZE        8       // all three INTERACT_* messages
 #define MP_TRAINER_CARD_DATA_SIZE 56    // PS-042: 4-byte routing prefix + 52-byte card
 // PS-043 PARTY_DATA: 8-byte prefix + monCount * 100. A whole party (601 bytes with a count)
@@ -200,6 +220,38 @@ struct MpMsgPartyData
     u8 partIndex;       // 0..MP_PARTY_PART_COUNT(partyCount) - 1
     u8 monCount;        // min(3, partyCount - partIndex * 3)
     u8 mons[MP_PARTY_MONS_PER_PART][MP_MON_WIRE_SIZE];
+};\n\n// LINK_* control messages (protocol.md 6.12). One 4-byte layout: groupId, arg1, arg2,
+// reserved. What arg1/arg2 mean depends on the type:
+//   JOIN      arg1 = member slot mask (2..4 bits of 0x0F)        groupId ignored
+//   LEAVE     -                                                  groupId ignored
+//   GROUP     arg1 = member slot mask, arg2 = recipient link id  groupId != 0
+//   END       arg1 = reason (MP_LINK_END_*, != 0)                groupId 0 = request refused
+//   OPEN / CLOSE / START   arg1 = the member's open sequence     groupId != 0
+//   STATUS    arg1 = open mask by link id (< 0x10)               groupId != 0
+//   BUS_START arg1 = bus epoch (!= 0), arg2 = recipient's open sequence
+//   BUS_END   arg1 = bus epoch (!= 0)
+// Ignored fields parse as 0.
+struct MpMsgLinkCtl
+{
+    u8 groupId;
+    u8 arg1;
+    u8 arg2;
+};
+
+struct MpMsgLinkCmd
+{
+    u8 groupId;
+    u8 busEpoch;
+    u16 cmd[MP_LINK_CMD_WORDS];     // never all zero
+};
+
+struct MpMsgLinkRow
+{
+    u8 groupId;
+    u8 busEpoch;
+    u8 count;                       // link members, 2..4
+    u16 rowSeq;
+    u16 cmds[MP_LINK_MAX_MEMBERS][MP_LINK_CMD_WORDS]; // [link id]; rows >= count are 0
 };
 
 // Header: 4 <= len <= MP_MAX_PACKET_SIZE and length == len - 4. Type/version/state
@@ -230,12 +282,12 @@ u8 MpProto_ParsePresence(const u8 *payload, u32 len, struct MpMsgPresence *out);
 // PS-042 TRAINER_CARD); RESPONSE result ACCEPTED..UNAVAILABLE.
 // The result byte of REQUEST / CANCEL and the reserved bytes 5..7 are ignored (parse as 0).
 u8 MpProto_ParseInteract(u8 type, const u8 *payload, u32 len, struct MpMsgInteract *out);
-// TRAINER_CARD_DATA (PS-042, protocol.md 6.12): exactly 56 bytes; slot < 4; epoch != 0;
+// TRAINER_CARD_DATA (PS-042, protocol.md 6.13): exactly 56 bytes; slot < 4; epoch != 0;
 // gender 0/1, stars 0..4 and the name (5.1.1) or BAD_FIELD / BAD_SUMMARY. Counters are
 // clamped to the MP_CARD_MAX_* limits, easy chat words outside a valid group become
 // EC_EMPTY_WORD, reserved bytes and flag bits are ignored.
 u8 MpProto_ParseTrainerCardData(const u8 *payload, u32 len, struct MpMsgTrainerCardData *out);
-// PARTY_DATA (PS-043, protocol.md 6.13): the layout only. len >= 8; slot < 4; epoch != 0;
+// PARTY_DATA (PS-043, protocol.md 6.14): the layout only. len >= 8; slot < 4; epoch != 0;
 // partyCount <= 6; partIndex < MP_PARTY_PART_COUNT(partyCount); monCount exactly
 // min(3, partyCount - partIndex * 3); len == 8 + 100 * monCount (TRUNCATED / OVERSIZED
 // otherwise). The mons are copied as they are: the receiver checks each one with
@@ -265,6 +317,17 @@ u16 MpProto_WriteTrainerCardData(u8 *buf, u16 cap, const struct MpMsgTrainerCard
 // Writes msg->monCount (clamped to 3) mons; reserved bytes 0. The caller fills the fields
 // consistently (MpInteract does), so what it writes passes the parser.
 u16 MpProto_WritePartyData(u8 *buf, u16 cap, const struct MpMsgPartyData *msg);
+
+// LINK_* (PS-046). MpProto_IsLinkCtlType: one of the 4-byte control types.
+bool8 MpProto_IsLinkCtlType(u8 type);
+u8 MpProto_ParseLinkCtl(u8 type, const u8 *payload, u32 len, struct MpMsgLinkCtl *out);
+u16 MpProto_WriteLinkCtl(u8 *buf, u16 cap, u8 type, const struct MpMsgLinkCtl *msg);
+u8 MpProto_ParseLinkCmd(const u8 *payload, u32 len, struct MpMsgLinkCmd *out);
+u16 MpProto_WriteLinkCmd(u8 *buf, u16 cap, const struct MpMsgLinkCmd *msg);
+u8 MpProto_ParseLinkRow(const u8 *payload, u32 len, struct MpMsgLinkRow *out);
+u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg);
+// Number of set bits in the low 4 bits (link masks).
+u8 MpProto_LinkMaskCount(u8 mask);
 
 // RFC 1982 serial-number "newer than" for u16 sequence numbers (protocol.md 6.8).
 bool8 MpSeqIsNewer(u16 s, u16 last);

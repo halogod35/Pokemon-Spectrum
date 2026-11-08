@@ -80,6 +80,35 @@ Game code including them is a review failure.
   (`MP_RemoveRemoteAvatars()` at the start of `SaveObjectEvents`, with PS-014's filter kept as a
   backstop on `MP_AVATAR_LOCAL_ID_BASE`).
 
+**As implemented in PS-046 (virtual link cable, seam (b) of `research/PS-040-link-report.md`):**
+- The PC `HandleLinkConnection()` is now real (`src/link.c`, the `#else` branch of the original
+  `#ifndef PORTABLE` block, marked `// MP:`; the stub in `src/stub.c` is gone). It calls
+  `MP_LinkMain1()` where the GBA calls the SIO `LinkMain1()`, then the original `LinkMain2()`.
+  Everything above (`ProcessRecvCmds`, `SendBlock`, the player-data exchange, standby,
+  close-link, trade, link battle) is unchanged decomp code.
+- `src/mp/mp_link_cable.c` (game side): `MP_LinkMain1` drives `gLink.state` like the SIO version,
+  fills `gRecvCmds` with one row per tick (own command included), writes the link id into the
+  `REG_SIOCNT` id bits (so `GetMultiplayerId()` works), keeps `gLink.recvQueue.count` /
+  `gLastRecvQueueCount` (capped at 50) and builds the `gLinkStatus` word. It also holds the
+  `--mp-link-test` driver.
+- `src/mp/mp_link.c` (session side, no game state) + `include/mp/mp_link.h`: the host's link
+  groups and row sequencer ("the bus", protocol.md 6.12) and the member side (request, open
+  sequence, receive queue of 256 rows, 10 s echo watchdog). State is per session instance in
+  static arrays, outside `struct MpSession`, so a member's "cable open" survives `MpBeginSession`.
+  The host's own member uses direct calls.
+- Hooks: `mp_server.c` (LINK_* dispatch, `MpLink_HostOnSlotLeft` in `MpServerRemovePlayer`,
+  `MpLink_HostUpdate` at the end of `MpServer_Update`), `mp_client.c` (LINK_* dispatch),
+  `mp_session.c` (reset / session start / session end). `LinkVSync()` (`src/link.c`) returns at
+  once on PC (`// MP:`): there are no serial interrupts, so its lag detection would always fire.
+- Public API (`mp.h`): `MP_LinkJoin(slotMask)`, `MP_LinkLeave`, `MP_LinkGetState`,
+  `MP_LinkGetLinkId`, `MP_LinkGetEndReason`. Callers (PS-044/045) join first and only call
+  `OpenLink()` once the state is GROUPED. Without a group nothing is ever received
+  (single-player behaves as with the old stub: `gLinkStatus` stays 0).
+- Selftest group `src/mp/mp_selftest_link.c` (`MpSelftest_Link`): LINK_* parser fuzzing, then
+  two complete link stacks in one process. `MP_LinkSelftestState()` (`src/link.c`, `// MP:`)
+  saves and restores all of link.c's state per game instance, so the real `OpenLink`,
+  player-data exchange, `SendBlock` and link-error path run on both "GBAs".
+
 ### 2.1 Internal interfaces (contract for PS-011 / PS-013)
 
 **Transport** (`mp_transport.h`, PS-011). No ENet types leak out. Peers are small integer ids.

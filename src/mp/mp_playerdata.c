@@ -165,7 +165,7 @@ void MpPlayerData_ShowTrainerCard(const struct MpTrainerCard *card, void (*callb
 }
 
 // ---------------------------------------------------------------------------
-// PS-043: party (raw struct Pokemon, protocol.md 6.13)
+// PS-043: party (raw struct Pokemon, protocol.md 6.14)
 // ---------------------------------------------------------------------------
 
 // The remote party while its summary screen is open. Never gPlayerParty / gEnemyParty, never

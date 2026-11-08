@@ -27,6 +27,7 @@
 #include "link_rfu.h"
 #include "constants/rgb.h"
 #include "constants/trade.h"
+#include "mp/mp.h" // MP: PS-046 virtual link cable
 
 // Window IDs for the link error screens
 enum {
@@ -1811,6 +1812,70 @@ bool8 HandleLinkConnection(void)
     }
     return FALSE;
 }
+#else
+// MP: PS-046. The PC has no SIO hardware: MP_LinkMain1 (src/mp/mp_link_cable.c), the virtual
+// link cable, plays the part of LinkMain1. Everything from LinkMain2 up is the original code.
+// (This replaces the stub that was in src/stub.c.) Wireless stays disconnected on PC
+// (IsWirelessAdapterConnected returns FALSE), so gWirelessCommType is always 0 here.
+// When this function returns TRUE the callbacks are skipped
+bool8 HandleLinkConnection(void)
+{
+    MP_LinkTestTick(); // MP: --mp-link-test driver (does nothing without the flag)
+    if (gWirelessCommType == 0)
+    {
+        gLinkStatus = MP_LinkMain1(&gShouldAdvanceLinkState, gSendCmd, gRecvCmds);
+        LinkMain2(&gMain.heldKeys);
+        if ((gLinkStatus & LINK_STAT_RECEIVED_NOTHING) && IsSendingKeysOverCable() == TRUE)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+// MP: PS-046, --mp-selftest only. Saves (load == FALSE) or restores (load == TRUE) every piece
+// of link state this file owns, plus gLinkVSyncDisabled and REG_SIOCNT, so the selftest can run
+// two complete link stacks ("two GBAs") in one process. Returns the bytes needed; does
+// nothing if `cap` is smaller.
+u32 MP_LinkSelftestState(u8 *buf, u32 cap, bool8 load)
+{
+    static const struct { void *ptr; u32 size; } sVars[] =
+    {
+#define MP_LINK_VAR(v) { (void *)&(v), sizeof(v) }
+        MP_LINK_VAR(sBlockSend), MP_LINK_VAR(sBlockRecv), MP_LINK_VAR(sBlockSendDelayCounter),
+        MP_LINK_VAR(sDummy1), MP_LINK_VAR(sDummy2), MP_LINK_VAR(sPlayerDataExchangeStatus),
+        MP_LINK_VAR(sDummy3), MP_LINK_VAR(sLinkTestLastBlockSendPos), MP_LINK_VAR(sLinkTestLastBlockRecvPos),
+        MP_LINK_VAR(sNumVBlanksWithoutSerialIntr), MP_LINK_VAR(sSendBufferEmpty), MP_LINK_VAR(sSendNonzeroCheck),
+        MP_LINK_VAR(sRecvNonzeroCheck), MP_LINK_VAR(sChecksumAvailable), MP_LINK_VAR(sHandshakePlayerCount),
+        MP_LINK_VAR(gLinkPartnersHeldKeys), MP_LINK_VAR(gLocalLinkPlayerBlock), MP_LINK_VAR(gLinkErrorOccurred),
+        MP_LINK_VAR(gRemoteLinkPlayersNotReceived), MP_LINK_VAR(gBlockReceivedStatus), MP_LINK_VAR(gLinkHeldKeys),
+        MP_LINK_VAR(gRecvCmds), MP_LINK_VAR(gLinkStatus), MP_LINK_VAR(gLinkDummy1), MP_LINK_VAR(gLinkDummy2),
+        MP_LINK_VAR(gReadyToExitStandby), MP_LINK_VAR(gReadyToCloseLink), MP_LINK_VAR(gReadyCloseLinkType),
+        MP_LINK_VAR(gSuppressLinkErrorMessage), MP_LINK_VAR(gWirelessCommType), MP_LINK_VAR(gSavedLinkPlayerCount),
+        MP_LINK_VAR(gSendCmd), MP_LINK_VAR(gSavedMultiplayerId), MP_LINK_VAR(gReceivedRemoteLinkPlayers),
+        MP_LINK_VAR(gLinkCallback), MP_LINK_VAR(gShouldAdvanceLinkState), MP_LINK_VAR(gBlockRequestType),
+        MP_LINK_VAR(gLastSendQueueCount), MP_LINK_VAR(gLink), MP_LINK_VAR(gLastRecvQueueCount),
+        MP_LINK_VAR(gLinkSavedIme), MP_LINK_VAR(gBerryBlenderKeySendAttempts), MP_LINK_VAR(gBlockRecvBuffer),
+        MP_LINK_VAR(gBlockSendBuffer), MP_LINK_VAR(sLinkOpen), MP_LINK_VAR(gLinkType), MP_LINK_VAR(sTimeOutCounter),
+        MP_LINK_VAR(gLocalLinkPlayer), MP_LINK_VAR(gLinkPlayers), MP_LINK_VAR(sSavedLinkPlayers),
+        MP_LINK_VAR(sLinkErrorBuffer), MP_LINK_VAR(sReadyCloseLinkAttempts), MP_LINK_VAR(gLinkVSyncDisabled),
+#undef MP_LINK_VAR
+        { (void *)REG_ADDR_SIOCNT, sizeof(u16) },
+    };
+    u32 i, pos, total = 0;
+
+    for (i = 0; i < ARRAY_COUNT(sVars); i++)
+        total += sVars[i].size;
+    if (buf == NULL || cap < total)
+        return total;
+    for (i = 0, pos = 0; i < ARRAY_COUNT(sVars); i++)
+    {
+        if (load)
+            memcpy(sVars[i].ptr, buf + pos, sVars[i].size);
+        else
+            memcpy(buf + pos, sVars[i].ptr, sVars[i].size);
+        pos += sVars[i].size;
+    }
+    return total;
+}
 #endif
 
 void SetWirelessCommType1(void)
@@ -2094,6 +2159,10 @@ static void DequeueRecvCmds(u16 (*recvCmds)[CMD_LENGTH])
 
 void LinkVSync(void)
 {
+    // MP: PS-046. No SIO hardware on PC, so no serial interrupts: this lag detection would
+    // always fire once the virtual cable is established. The virtual cable reports link
+    // health itself (hardware-error bit on disconnect, watchdog), see MP_LinkMain1.
+    return;
     if (gLink.isMaster)
     {
         switch (gLink.state)

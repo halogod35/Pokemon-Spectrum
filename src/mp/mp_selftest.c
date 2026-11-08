@@ -345,6 +345,8 @@ s32 MP_RunSelftest(void)
     sFailures += MpSelftest_Interact();
     // PS-042: TRAINER_CARD_DATA parser, the card built from a save, and the view scenario.
     sFailures += MpSelftest_View();
+    // PS-046: virtual link cable (parsers + the real link stack on two in-process game instances).
+    sFailures += MpSelftest_Link();
     MpTransport_Shutdown();
 
     if (sFailures == 0)

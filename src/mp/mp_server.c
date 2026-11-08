@@ -5,6 +5,7 @@
 #include <string.h>
 #include "mp/mp_session_internal.h"
 #include "mp/mp_summary.h"
+#include "mp/mp_link.h"
 
 static u8 sServerBuf[MP_MAX_PACKET_SIZE];
 
@@ -78,6 +79,7 @@ static void MpServerRemovePlayer(u8 peer, u8 reason)
     MpSession_ClearSlot(slot);
     p->slot = MP_SLOT_NONE;
     p->state = MP_HOST_PEER_NONE;
+    MpLink_HostOnSlotLeft(slot); // PS-046: its link group ends for the others
 
     len = MpProto_WritePlayerLeft(sServerBuf, sizeof(sServerBuf), &left);
     MpServerBroadcast(sServerBuf, len, MP_CHANNEL_CONTROL, TRUE, peer);
@@ -335,14 +337,21 @@ static void MpServerHandlePlayerMessage(u8 peer, u8 channel, const struct MpMsgH
     case MP_MSG_INTERACT_REQUEST:   // PS-041 (protocol.md 6.11)
     case MP_MSG_INTERACT_RESPONSE:
     case MP_MSG_INTERACT_CANCEL:
-    case MP_MSG_TRAINER_CARD_DATA:  // PS-042 (protocol.md 6.12)
-    case MP_MSG_PARTY_DATA:         // PS-043 (protocol.md 6.13)
+    case MP_MSG_TRAINER_CARD_DATA:  // PS-042 (protocol.md 6.13)
+    case MP_MSG_PARTY_DATA:         // PS-043 (protocol.md 6.14)
         if (channel != MP_CHANNEL_CONTROL)
             MpServerMalformed(peer, "INTERACT wrong channel");
         else if (!MpInteract_OnHostReceive(peer, hdr->type, payload, len, now))
             MpServerMalformed(peer, "INTERACT");
         break;
     default:
+        // PS-046: virtual link cable (protocol.md 6.12)
+        if (hdr->type >= MP_MSG_LINK_FIRST && hdr->type <= MP_MSG_LINK_LAST)
+        {
+            if (p->slot >= MP_MAX_PLAYERS || !MpLink_OnHostReceive(p->slot, channel, hdr->type, payload, len))
+                MpServerMalformed(peer, "LINK message");
+            break;
+        }
         MpServerMalformed(peer, "unexpected message type");
         break;
     }
@@ -443,6 +452,7 @@ void MpServer_Update(u32 now)
         }
     }
     MpSession_TrySendLocalUpdate(now);
+    MpLink_HostUpdate(); // PS-046: emit link rows
 }
 
 void MpServer_BroadcastBye(u8 byeReason)

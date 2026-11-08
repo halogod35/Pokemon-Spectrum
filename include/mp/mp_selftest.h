@@ -33,5 +33,9 @@ u32 MpPlayerData_SelfTest(void);
 // PS-043 selftest helper (mp_playerdata.c): a valid raw mon (MP_MON_WIRE_SIZE bytes) made by
 // CreateMon with a fixed personality, IVs and OT, without touching the real save.
 void MpPlayerData_MakeTestMon(u8 *raw, u16 species, u8 level, u32 personality);
+// PS-046: LINK_* parser fuzzing and the virtual link cable on the real link stack (link.c):
+// two game instances in one process (MP_LinkSelftestState), the host as sequencer only and as
+// a member; player-data exchange, SendBlock, stall + catch-up, re-open, disconnect.
+u32 MpSelftest_Link(void);
 
 #endif // GUARD_MP_MP_SELFTEST_H

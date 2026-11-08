@@ -17,7 +17,7 @@
 //    refusals and rate limits are answered (UNAVAILABLE / BUSY) and are not "malformed"; only
 //    messages that fail to parse count towards the malformed budget (protocol.md 8.2).
 //
-// PS-042 (protocol.md 6.12): kind TRAINER_CARD. The target's session answers by itself, with
+// PS-042 (protocol.md 6.13): kind TRAINER_CARD. The target's session answers by itself, with
 // no prompt: TRAINER_CARD_DATA (the card from gMpLocalTrainerCardFunc), then RESPONSE
 // ACCEPTED, both on the reliable ordered channel, so the data always arrives first. The host
 // forwards the data only along a live route (sender = the route's target, one data message
@@ -26,7 +26,7 @@
 // local result BAD_DATA if the data was missing or invalid. TRAINER_CARD requests do not
 // make the target "busy" for trade / battle requests and are not refused when it is.
 //
-// PS-043 (protocol.md 6.13): kind VIEW_PARTY is prompted like a trade. When the target answers
+// PS-043 (protocol.md 6.14): kind VIEW_PARTY is prompted like a trade. When the target answers
 // ACCEPTED, its session sends the party as 1..2 PARTY_DATA parts (up to 3 raw 100-byte mons
 // each; a whole party does not fit in one 512-byte packet), then the RESPONSE. The host
 // forwards the parts in order along the route; the requester checks every mon with
