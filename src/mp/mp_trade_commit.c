@@ -175,6 +175,7 @@ static void MpTcMarkPartnerAborted(struct MpTradeCommitHost *h, const struct MpT
     q->partner = slot;
     q->reason = r->reason;
     q->startMs = 0;
+    q->tradeId = r->tradeId;
 }
 
 void MpTradeCommit_HostReady(struct MpTradeCommitHost *h, u8 slot, u8 groupId, u8 seq, u32 tradeId, bool8 groupOk, u8 partner, u32 now, MpTradeCommitSendFunc send)

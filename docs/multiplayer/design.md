@@ -428,3 +428,20 @@ path ends the activity. Validators for game structures are in `src/mp/mp_link_va
 
 Tested by `--mp-selftest` group "hardening" (`mp_selftest_hardening.c`) plus one bus case in
 the link group.
+
+## Trade journal (PS-050)
+
+Goal: after any crash or disconnect during a direct trade, both saves end "traded" or "not traded" (no loss, no duplication). The wire format and rules are in protocol.md 6.15/6.16.
+
+- **Durable order per side:** journal READY → READY to the host → (COMMIT) journal COMMIT → save signed and stored → journal deleted once the partner knows. A final ABORT deletes the journal; IN_DOUBT keeps it.
+- **Code:**
+  - `src/mp/mp_trade_journal.c`: pure (record, file format, trade id, resolve rules, message binding).
+  - `src/mp/mp_trade_commit.c`: host decision ring, `TRADE_RECOVER` routing, and the receive queue.
+  - `src/mp/mp_trade.c` (game side): file I/O, checks on load, party and box inspection, roll forward in the field, notices.
+  - `src/platform/file_atomic.c`: crash-safe small files.
+- **Hooks (all `// MP: PS-050`):**
+  - `trade.c`: before `TradeMons` (stage), state 41 (write READY), state 43 (COMMIT before the signature; delete on a final ABORT).
+  - `overworld.c`: `CB2_ContinueSavedGame` (load the journal).
+  - `mp_ui.c`: per-frame recovery, and the field notice / roll forward.
+- **Never rolled back:** a signed save always means the outcome was COMMIT, so the only repair is rolling the unsigned side forward from its own journal (the received mon's bytes are stored there). Network messages only choose between "COMMIT" and "neither"; they never carry a mon.
+- **Pending journal:** blocks new trades. The player sees "A trade with NAME isn't finished" after loading, and the result when it resolves. A damaged journal is kept and reported, never dropped.

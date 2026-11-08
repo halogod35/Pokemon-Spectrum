@@ -119,8 +119,9 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 | `0x69` | `LINK_BUS_END` | H → C | 0 | 4 | IN_SESSION |
 | `0x6A` | `LINK_CMD` | C → H | 0 | 20 | IN_SESSION |
 | `0x6B` | `LINK_ROW` | H → C | 0 | 8 + 16·N (N = 2..4) | IN_SESSION |
-| `0x6C` | `TRADE_COMMIT` | both (READY C → H; COMMIT / ABORT H → C) | 0 | 4 | IN_SESSION (PS-044, 6.15) |
-| `0x6D`–`0x7F` | reserved: `LINK_*` | | 0 | | |
+| `0x6C` | `TRADE_COMMIT` | both (READY C → H; COMMIT / ABORT H → C) | 0 | 8 | IN_SESSION (PS-044, 6.15) |
+| `0x6D` | `TRADE_RECOVER` | both (routed by the host) | 0 | 32 | IN_SESSION (PS-050, 6.16) |
+| `0x6E`–`0x7F` | reserved: `LINK_*` | | 0 | | |
 | `0x80`–`0xEF` | reserved | | | | |
 | `0xF0` | `DEBUG_ECHO` | both | 0 | 0..64 | only under `--mp-selftest` (PS-011). Session code drops it. |
 | `0xF1`–`0xFE` | reserved: debug | | | | |
@@ -584,7 +585,7 @@ A,B -> H  CMD(g, e, cmd) ...              H -> A,B  ROW(g, e, n, {cmdA, cmdB}) .
 A,B -> H  CLOSE(g, seq)                   H -> A,B  BUS_END(g, e), STATUS(g, ...)
 ```
 
-Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x6D`–`0x7F` type; `0x6C` is 6.15):
+Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x6E`–`0x7F` type; `0x6C` is 6.15, `0x6D` 6.16):
 dropped and counted against the 8.2 budget. Stale (other group, old epoch, old sequence): silent.
 
 ### 6.13 `TRAINER_CARD_DATA` (0x43) — both directions, channel 0, payload 56 bytes
@@ -740,7 +741,7 @@ on a private static `struct Pokemon[6]` (`ShowPokemonSummaryScreen(SUMMARY_MODE_
 the battle mode, so moves cannot be reordered); Up / Down switches mons, B returns to the field.
 An empty party only shows "NAME has no POKéMON.".
 
-### 6.15 `TRADE_COMMIT` (0x6C) — both directions, channel 0, payload 4 bytes (PS-044)
+### 6.15 `TRADE_COMMIT` (0x6C) — both directions, channel 0, payload 8 bytes (PS-044; `tradeId` since PS-050)
 
 The host-arbitrated commit of a direct trade's save (Director ruling on PS-044). A direct trade
 (TRADE request accepted, PS-041) runs Emerald's own trade over the virtual cable (6.12) in a
@@ -755,6 +756,7 @@ between "unsigned" and "signed" is replaced by this exchange.
 | 1 | 1 | u8 | `groupId` | the link group of the trade, `!= 0` |
 | 2 | 1 | u8 | `seq` | the trade's number in that group (1, 2, ... each member counts its own READYs), `!= 0` |
 | 3 | 1 | u8 | `reason` | ABORT: 1 GROUP_ENDED, 2 TIMEOUT, 3 MISMATCH; READY / COMMIT: 0. Anything else rejected |
+| 4 | 4 | u32 | `tradeId` | READY: the journal's trade id (6.16), `!= 0`; the host aborts both (MISMATCH) if the two READYs of a round differ, and remembers its decision per trade id. COMMIT / ABORT: 0 (ignored) |
 
 **Member.** Once its save is written except for the signature, it sends READY(groupId, seq) and
 waits. The game keeps link errors from leaving the trade screen while it waits
@@ -793,8 +795,87 @@ the signature left. So:
   one Pokémon is then in both saves (duplicated) and the other in neither (lost). The window is
   about one round trip from the moment the second READY reaches the host, on the side whose
   connection drops: a client's network or process dying in that interval, or the host process
-  dying between flushing COMMIT and signing its own save (one frame). Closing it completely
-  needs a durable trade journal that resolves the in-doubt side on reconnect (not implemented).
+  dying between flushing COMMIT and signing its own save (one frame). **PS-050 closes it** with
+  the trade journal (6.16): the in-doubt side keeps a READY journal and resolves it later.
+
+### 6.16 `TRADE_RECOVER` (0x6D) — both directions, channel 0, payload 32 bytes (PS-050)
+
+**The journal** (`<save>.trade`, written crash-safe like the save: tmp + sync + atomic
+replace; layout in `src/mp/mp_trade_journal.c`, 156 bytes with magic, version and FNV-1a
+checksum). It holds the trade id, both trainer ids, the partner's name, both mons' identity
+(personality, OT id, species), our party slot, and the received mon's 100 bytes (after any
+trade evolution). States and the order of durable writes per side:
+
+1. **READY** is written before READY is sent. The save on disk is the pre-trade one.
+2. On COMMIT, **COMMIT** is written *before* the signature. Then the save is signed and
+   stored (BUG-003: `LinkFullSave_SetLastSectorSignature` writes the file).
+3. A final ABORT deletes the journal. An IN_DOUBT ABORT keeps it READY.
+4. A COMMIT journal is deleted once the partner says it knows (COMMITTED / NONE_HAS / NONE_HASNOT).
+
+`tradeId` = FNV-1a over (trainer id, given personality, given OT id) of both sides, the lower
+trainer id first (never 0). Both sides compute it alike before READY. A pending journal blocks
+new trades.
+
+| Offset | Size | Type | Field | Rule |
+|---|---|---|---|---|
+| 0 | 1 | u8 | `slot` | C → H: target slot, or `0xFF` (ask the host only). H → C: the sender's slot, or `0xFF` (the host's own decision) |
+| 1 | 1 | u8 | `status` | 1 READY, 2 COMMITTED, 3 NONE_HAS, 4 NONE_HASNOT, 5 BUSY, 6 DAMAGED, 7 ABORTED (host only) |
+| 2 | 1 | u8 | `flags` | bit 0: please reply; other bits 0 |
+| 3 | 1 | u8 | reserved | 0 |
+| 4 | 4 | u32 | `tradeId` | `!= 0` |
+| 8 | 4 | u32 | `senderTid` | the sender's full trainer id |
+| 12 | 4 | u32 | `receiverTid` | |
+| 16 | 8 | u32×2 | sender's given mon | personality, OT id |
+| 24 | 8 | u32×2 | sender's received mon | personality, OT id |
+
+**Validation (AD-9).**
+- The host drops messages whose `senderTid` isn't the sender's session trainer id. It routes
+  only to a target whose trainer id is `receiverTid`.
+- The receiver requires:
+  - `tradeId` == the id its fields give;
+  - `receiverTid` == its own;
+  - for a relayed message, that the sending slot's trainer id is `senderTid`;
+  - for any action on its journal, an exact match of the trade id, both trainer ids and both mons.
+- Nothing from the network is ever applied as a Pokémon. Rolling forward uses only the mon
+  stored in our own journal (validated with `MP_ValidateMon` on load). A journal file is parsed
+  as untrusted input and must belong to this save's trainer id. A damaged journal is kept and
+  shown, and is never guessed about.
+
+**Statuses** (what a side reports about a trade):
+- READY / COMMITTED: from its journal. BUSY while that trade is still live.
+- Without a journal for it: NONE_HAS if its party or boxes contain the mon the asker gave,
+  else NONE_HASNOT.
+
+**Rules** (`MpTradeJournal_Resolve`). A signed save always means the outcome is COMMIT, so a
+save is only ever rolled **forward**:
+
+| My journal | Other side says | Action |
+|---|---|---|
+| READY | COMMITTED, NONE_HAS | write COMMIT, then apply the trade in the field (replace the given mon, found by identity in the party or boxes, with the stored one; Pokédex seen/caught; trade stat) and save |
+| READY | READY, NONE_HASNOT, ABORTED (host) | delete: nobody signed, and nobody can learn COMMIT any more |
+| COMMIT | COMMITTED, NONE_HAS, NONE_HASNOT | delete (once applied) |
+| any | BUSY, DAMAGED, other | keep |
+
+**Routing.**
+- Pending sides send their status every ~2 s with "reply". They send to the partner's slot
+  when it is in the session (found by trainer id), else to the host only.
+- The host first sends its remembered decision for that trade id (a ring of its last 8
+  COMMIT/ABORT decisions, keyed by READY's `tradeId`; READYs outside a real group are not
+  recorded) to the sender *and* the target. Only then does it relay the message.
+- Since the ring only ever loses entries, everyone hears the host's decision before any
+  partner status about that trade while the host still remembers it. So the READY + READY →
+  delete rule can't race a COMMIT learned from the host.
+
+**Guarantee.** Every combination of a crash at each step (before READY, after READY, after
+COMMIT and before signing, after signing and before the journal is deleted), on the client or
+the host, with in-flight decisions delivered or lost, ends with both saves traded or both not,
+and no journal left. This is checked by `MpSelftest_Trade`'s crash simulation over the real rules.
+- If the partner never comes back, the journal stays and is shown ("A trade with NAME isn't
+  finished"). It is only resolved early by the host's remembered decision.
+- Residual risks:
+  - the player moves or releases the traded mon before resolution, so the mon can't be found:
+    the journal is kept as damaged;
+  - a peer that lies (outside the friends-only trust model).
 
 ---
 
@@ -873,6 +954,7 @@ or speed-up does not cause timeouts. The network is still pumped while the game 
 | `BYE` | remove client, broadcast `PLAYER_LEFT` |
 | `LINK_JOIN` `LINK_LEAVE` `LINK_OPEN` `LINK_CLOSE` `LINK_START` `LINK_CMD` | link bus (6.12): not forwarded as such; the host answers with `LINK_GROUP` / `END` / `STATUS` / `BUS_START` / `BUS_END` / `ROW` |
 | `TRADE_COMMIT` READY | trade commit arbiter (6.15): not forwarded; the host answers `TRADE_COMMIT` COMMIT / ABORT to the members |
+| `TRADE_RECOVER` | journal recovery (6.16): its own remembered decision first (to sender and target), then routed to the target with `slot` = the sender |
 | anything else | drop, count malformed |
 
 The host's own presence and summary changes are sent by the host to every client directly
@@ -1042,9 +1124,9 @@ The build hash `0x12345678` is an illustrative value (a real one is an FNV-1a re
 Packet = 36 bytes:
 
 ```
-01 06 20 00                 header: type HELLO, version 6, length 32
+01 07 20 00                 header: type HELLO, version 7, length 32
 50 53 4D 50                 magic "PSMP"
-06 00                       protocolVersion 6
+07 00                       protocolVersion 7
 00 00                       reserved
 78 56 34 12                 buildHash 0x12345678
 00                          buildFlags
@@ -1070,3 +1152,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 4 | PS-042 | INTERACT `kind` 3 TRAINER_CARD (answered by the target's session, no prompt, never busy) and `TRAINER_CARD_DATA` (0x43, 56 bytes, field by field, validated and clamped; 6.13), routed like the RESPONSE it precedes, one per route. Local result `MP_INTERACT_RESULT_BAD_DATA`. Version bumped to 3: a version-2 peer would reject kind 3 as malformed. *(If PS-046's `LINK_*` change lands first and takes 3, this becomes the next number.)* |
 | 5 | PS-043 | INTERACT `kind` 4 VIEW_PARTY (prompted, like a trade) and `PARTY_DATA` (0x44): the party as raw 100-byte `struct Pokemon`s in 1–2 parts of up to 3 (a full party does not fit in one 512-byte packet), sent before the ACCEPTED RESPONSE, forwarded in order along the route; every mon validated by the requester (6.14.1), any bad mon rejects the whole party (BAD_DATA). *(Renumber after PS-046 as above.)* |
 | 6 | PS-044 | `TRADE_COMMIT` (0x6C, 6.15) in the `LINK_*` range: the host-arbitrated commit of a direct trade's save (READY / COMMIT / ABORT). Version bumped to 6: a version-5 peer would count `0x6C` as malformed. Worked example (10) updated to version 6. |
+| 7 | PS-050 | Trade journal recovery: `TRADE_COMMIT` grows to 8 bytes (`tradeId`), new `TRADE_RECOVER` (0x6D, 32 bytes, 6.16). The post-trade save is written to disk at the signature (BUG-003). Version bumped to 7. |

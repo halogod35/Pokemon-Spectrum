@@ -18,7 +18,9 @@
 #include "mp/mp_selftest.h"
 #include "mp/mp_session_internal.h"
 #include "mp/mp_trade_commit.h"
+#include "mp/mp_trade_journal.h"
 #include "mp/mp_transport.h"
+#include "platform.h"
 
 static u32 sFail;
 
@@ -1147,5 +1149,9 @@ u32 MpSelftest_Trade(void)
     TestPureLogic();
     TestPureFuzz();
     TestInProcess();
+    // PS-050 trade journal
+    TestJournalRecord();
+    TestJournalRules();
+    TestJournalCrashes();
     return sFail;
 }
