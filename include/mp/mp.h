@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      6       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044).
+#define MP_PROTOCOL_VERSION      7       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -621,7 +621,7 @@ enum
 #define MP_TRADE_COMMIT_TIMEOUT_MS  15000
 // Member: sends READY for the next trade of the current link group. FALSE (and the state is
 // ABORT, NOT_GROUPED) if we are not GROUPED.
-bool8 MP_TradeCommitReady(void);
+bool8 MP_TradeCommitReady(u32 tradeId); // PS-050: tradeId = the journal's (MpTradeJournal_ComputeId), != 0
 u8 MP_TradeCommitPoll(void);            // MP_TRADE_COMMIT_*
 u8 MP_TradeCommitGetAbortReason(void);  // MP_TRADE_ABORT_* for the last ABORT
 void MP_TradeCommitReset(void);         // back to IDLE (the round counter is kept)
@@ -635,6 +635,47 @@ bool8 MP_TradeIsDirect(void);
 void CB2_MpReturnToFieldAfterTrade(void);
 // MP: from MP_LinkPrepareErrorRecovery (link.c): a link error ended the trade; forget it.
 void MP_TradeOnLinkErrorRecovery(void);
+
+// ---------------------------------------------------------------------------
+// Trade journal (PS-050, protocol.md 6.16, design.md "Trade journal")
+// ---------------------------------------------------------------------------
+//
+// "<save>.trade" (crash-safe) records a direct trade from just before READY until both sides
+// are known to have the same outcome. Its state: READY (written before READY is sent; the save
+// on disk is the pre-trade one) or COMMIT (written when COMMIT is known, BEFORE the save is
+// signed; the trade is then applied to this save, now or at the next load). Unsure sides
+// exchange TRADE_RECOVER with the partner (and the host, which remembers its decisions) and
+// roll forward or delete the journal so both saves agree. A pending journal blocks new trades.
+enum
+{
+    MP_TJ_STATUS_NONE,
+    MP_TJ_STATUS_READY,         // my journal for it is READY: I have not signed (unsure)
+    MP_TJ_STATUS_COMMITTED,     // the trade is COMMIT on my side (journal COMMIT)
+    MP_TJ_STATUS_NONE_HAS,      // no journal for it, and I have the mon you gave (it happened)
+    MP_TJ_STATUS_NONE_HASNOT,   // no journal for it, and I do not have it (it did not happen)
+    MP_TJ_STATUS_BUSY,          // that trade is still running here: ask again
+    MP_TJ_STATUS_DAMAGED,       // my journal is unreadable: I cannot say
+    MP_TJ_STATUS_ABORTED,       // host only: its decision for that trade was ABORT
+    MP_TJ_STATUS_COUNT,
+};
+// Session side (mp_trade_commit.c): send one TRADE_RECOVER (routed through the host; to the host's
+// own game directly), and pop received ones in arrival order (queue of MP_TRADE_RECOVER_QUEUE).
+#define MP_TRADE_RECOVER_QUEUE 8
+struct MpMsgTradeRecover;
+void MP_TradeRecoverSend(const struct MpMsgTradeRecover *msg);
+bool8 MP_TradeRecoverPoll(struct MpMsgTradeRecover *out);
+// Game side (src/mp/mp_trade.c).
+void MP_TradeJournalOnLoad(void);       // MP: end of CB2_ContinueSavedGame: read and check the journal
+bool8 MP_TradeJournalIsPending(void);   // a journal is on disk (blocks new trades)
+// trade.c (// MP: PS-050): before TradeMons (the two mons and our slot), before READY (the
+// received mon after any evolution; FALSE = not written, do not send READY), on COMMIT (before
+// signing; FALSE = not written, do not sign), once signed, and on a final ABORT (not IN_DOUBT).
+struct Pokemon;
+void MP_TradeJournalStage(const struct Pokemon *given, const struct Pokemon *received, u8 partyIndex, u32 partnerTid, const u8 *partnerName);
+bool8 MP_TradeJournalWriteReady(u32 *tradeIdOut);    // the received mon is read from the staged party slot
+void MP_TradeJournalOnSigned(void);                 // the save with the trade is signed and stored
+bool8 MP_TradeJournalMarkCommit(void);
+void MP_TradeJournalOnAbort(void);
 
 // ---------------------------------------------------------------------------
 // Link receive-path hardening (PS-047, AD-9). src/mp/mp_link_validate.c

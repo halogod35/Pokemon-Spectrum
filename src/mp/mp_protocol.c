@@ -966,23 +966,28 @@ u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg)
 }
 
 // ===========================================================================
-// TRADE_COMMIT (PS-044, protocol.md 6.15)
+// TRADE_COMMIT (PS-044, protocol.md 6.15; tradeId since PS-050)
 // ===========================================================================
 
 u8 MpProto_ParseTradeCommit(const u8 *payload, u32 len, struct MpMsgTradeCommit *out)
 {
     struct MpMsgTradeCommit m;
+    struct MpReader r;
     u8 result;
 
     memset(out, 0, sizeof(*out));
     result = MpCheckExactSize(payload, len, MP_TRADE_COMMIT_SIZE);
     if (result != MP_PARSE_OK)
         return result;
-    m.op = payload[0];
-    m.groupId = payload[1];
-    m.seq = payload[2];
-    m.reason = payload[3];
+    MpReader_Init(&r, payload, len);
+    m.op = MpReadU8(&r);
+    m.groupId = MpReadU8(&r);
+    m.seq = MpReadU8(&r);
+    m.reason = MpReadU8(&r);
+    m.tradeId = MpReadU32(&r);
     if (m.op < MP_TRADE_OP_READY || m.op > MP_TRADE_OP_ABORT || m.groupId == 0 || m.seq == 0)
+        return MP_PARSE_ERR_BAD_FIELD;
+    if (m.op == MP_TRADE_OP_READY && m.tradeId == 0)
         return MP_PARSE_ERR_BAD_FIELD;
     if (m.op == MP_TRADE_OP_ABORT)
     {
@@ -1009,5 +1014,65 @@ u16 MpProto_WriteTradeCommit(u8 *buf, u16 cap, const struct MpMsgTradeCommit *ms
     MpWriteU8(&w, msg->groupId);
     MpWriteU8(&w, msg->seq);
     MpWriteU8(&w, (msg->op == MP_TRADE_OP_ABORT) ? msg->reason : 0);
+    MpWriteU32(&w, msg->tradeId);
+    return MpFinishWrite(&w);
+}
+
+// ===========================================================================
+// TRADE_RECOVER (PS-050, protocol.md 6.16)
+// ===========================================================================
+
+u8 MpProto_ParseTradeRecover(const u8 *payload, u32 len, struct MpMsgTradeRecover *out)
+{
+    struct MpMsgTradeRecover m;
+    struct MpReader r;
+    u8 result;
+    u8 reserved;
+
+    memset(out, 0, sizeof(*out));
+    result = MpCheckExactSize(payload, len, MP_TRADE_RECOVER_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+    MpReader_Init(&r, payload, len);
+    m.slot = MpReadU8(&r);
+    m.status = MpReadU8(&r);
+    m.flags = MpReadU8(&r);
+    reserved = MpReadU8(&r);
+    m.tradeId = MpReadU32(&r);
+    m.senderTid = MpReadU32(&r);
+    m.receiverTid = MpReadU32(&r);
+    m.senderGivenPersonality = MpReadU32(&r);
+    m.senderGivenOtId = MpReadU32(&r);
+    m.senderRecvPersonality = MpReadU32(&r);
+    m.senderRecvOtId = MpReadU32(&r);
+    if (r.error)
+        return MP_PARSE_ERR_TRUNCATED;
+    if ((m.slot >= MP_MAX_PLAYERS && m.slot != MP_SLOT_NONE)
+     || m.status == 0 || m.status >= MP_TJ_STATUS_COUNT
+     || (m.flags & ~MP_TRADE_RECOVER_FLAG_REPLY) != 0 || reserved != 0 || m.tradeId == 0)
+        return MP_PARSE_ERR_BAD_FIELD;
+    *out = m;
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteTradeRecover(u8 *buf, u16 cap, const struct MpMsgTradeRecover *msg)
+{
+    struct MpWriter w;
+
+    if (msg->status == 0 || msg->status >= MP_TJ_STATUS_COUNT)
+        return 0;
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_TRADE_RECOVER, MP_PROTOCOL_VERSION, MP_TRADE_RECOVER_SIZE);
+    MpWriteU8(&w, msg->slot);
+    MpWriteU8(&w, msg->status);
+    MpWriteU8(&w, msg->flags & MP_TRADE_RECOVER_FLAG_REPLY);
+    MpWriteU8(&w, 0);
+    MpWriteU32(&w, msg->tradeId);
+    MpWriteU32(&w, msg->senderTid);
+    MpWriteU32(&w, msg->receiverTid);
+    MpWriteU32(&w, msg->senderGivenPersonality);
+    MpWriteU32(&w, msg->senderGivenOtId);
+    MpWriteU32(&w, msg->senderRecvPersonality);
+    MpWriteU32(&w, msg->senderRecvOtId);
     return MpFinishWrite(&w);
 }

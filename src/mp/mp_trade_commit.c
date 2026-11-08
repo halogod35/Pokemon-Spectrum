@@ -19,6 +19,7 @@
 #include "mp/mp_protocol.h"
 #include "mp/mp_session_internal.h"
 #include "mp/mp_trade_commit.h"
+#include "mp/mp_trade_journal.h"
 #include "mp/mp_transport.h"
 
 struct MpTradeCommitMember
@@ -42,6 +43,20 @@ static struct MpTradeCommitHost sTcHost[MP_SESSION_INSTANCE_COUNT];
 static struct MpTradeCommitMember sTcMember[MP_SESSION_INSTANCE_COUNT];
 static struct MpTradeCommitDeferred sTcDeferred;   // the host's own decision, delivered after the flush
 static u8 sTcBuf[MP_MAX_PACKET_SIZE];
+
+struct MpTrQueue   // PS-050: received TRADE_RECOVER, polled by the game side
+{
+    u8 head;
+    u8 count;
+    struct MpMsgTradeRecover items[MP_TRADE_RECOVER_QUEUE];
+};
+
+static struct MpTrQueue sTrQueue[MP_SESSION_INSTANCE_COUNT];
+
+static struct MpTrQueue *MpTrQueueState(void)
+{
+    return &sTrQueue[gMpSession->instance < MP_SESSION_INSTANCE_COUNT ? gMpSession->instance : 0];
+}
 
 static struct MpTradeCommitHost *MpTcHostState(void)
 {
@@ -93,9 +108,44 @@ static const char *MpTcReasonName(u8 reason)
 // Pure decision logic
 // ===========================================================================
 
+static void MpTcRemember(struct MpTradeCommitHost *h, u32 tradeId, u8 op)
+{
+    u32 i;
+
+    if (tradeId == 0)
+        return;
+    for (i = 0; i < MP_TRADE_DECISION_RING; i++)
+    {
+        if (h->ring[i].tradeId == tradeId)
+        {
+            h->ring[i].op = op; // the latest round of an identical trade wins
+            return;
+        }
+    }
+    h->ring[h->ringNext % MP_TRADE_DECISION_RING].tradeId = tradeId;
+    h->ring[h->ringNext % MP_TRADE_DECISION_RING].op = op;
+    h->ringNext = (u8)((h->ringNext + 1) % MP_TRADE_DECISION_RING);
+}
+
+u8 MpTradeCommit_HostLookup(const struct MpTradeCommitHost *h, u32 tradeId)
+{
+    u32 i;
+
+    if (tradeId == 0)
+        return MP_TJ_STATUS_NONE;
+    for (i = 0; i < MP_TRADE_DECISION_RING; i++)
+    {
+        if (h->ring[i].tradeId == tradeId)
+            return (h->ring[i].op == MP_TRADE_OP_COMMIT) ? MP_TJ_STATUS_COMMITTED : MP_TJ_STATUS_ABORTED;
+    }
+    return MP_TJ_STATUS_NONE;
+}
+
 static void MpTcDecide(struct MpTradeCommitHost *h, u8 slot, u8 op, u8 reason, MpTradeCommitSendFunc send)
 {
     struct MpTradeCommitRec *r = &h->rec[slot];
+
+    MpTcRemember(h, r->tradeId, op);
 
     r->state = (op == MP_TRADE_OP_COMMIT) ? MP_TRADE_REC_COMMIT : MP_TRADE_REC_ABORT;
     r->reason = (op == MP_TRADE_OP_COMMIT) ? MP_TRADE_ABORT_NONE : reason;
@@ -127,7 +177,7 @@ static void MpTcMarkPartnerAborted(struct MpTradeCommitHost *h, const struct MpT
     q->startMs = 0;
 }
 
-void MpTradeCommit_HostReady(struct MpTradeCommitHost *h, u8 slot, u8 groupId, u8 seq, bool8 groupOk, u8 partner, u32 now, MpTradeCommitSendFunc send)
+void MpTradeCommit_HostReady(struct MpTradeCommitHost *h, u8 slot, u8 groupId, u8 seq, u32 tradeId, bool8 groupOk, u8 partner, u32 now, MpTradeCommitSendFunc send)
 {
     struct MpTradeCommitRec *r;
     struct MpTradeCommitRec *q;
@@ -150,10 +200,12 @@ void MpTradeCommit_HostReady(struct MpTradeCommitHost *h, u8 slot, u8 groupId, u
     r->partner = partner;
     r->reason = MP_TRADE_ABORT_NONE;
     r->startMs = now;
+    r->tradeId = tradeId;
 
     if (!groupOk || partner >= MP_MAX_PLAYERS || partner == slot)
     {
         r->partner = MP_SLOT_NONE;
+        r->tradeId = 0; // PS-050: a READY outside a real group never enters the decision ring
         MpTcDecide(h, slot, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH, send);
         return;
     }
@@ -161,6 +213,13 @@ void MpTradeCommit_HostReady(struct MpTradeCommitHost *h, u8 slot, u8 groupId, u
     q = &h->rec[partner];
     if (q->groupId != groupId || q->partner != slot)
         return; // the partner has not reached this round yet: wait
+    if (q->seq == seq && q->state == MP_TRADE_REC_READY && q->tradeId != tradeId)
+    {
+        // PS-050: same round, but the two journals describe different trades.
+        MpTcDecide(h, partner, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH, send);
+        MpTcDecide(h, slot, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH, send);
+        return;
+    }
     if (q->seq == seq)
     {
         switch (q->state)
@@ -169,6 +228,7 @@ void MpTradeCommit_HostReady(struct MpTradeCommitHost *h, u8 slot, u8 groupId, u
             // Both ready: the one decision that writes. Partner first, then the sender.
             q->state = MP_TRADE_REC_COMMIT;
             q->reason = MP_TRADE_ABORT_NONE;
+            MpTcRemember(h, tradeId, MP_TRADE_OP_COMMIT);
             send(partner, MP_TRADE_OP_COMMIT, groupId, seq, 0);
             MpTcDecide(h, slot, MP_TRADE_OP_COMMIT, 0, send); // counts the round once
             break;
@@ -264,6 +324,7 @@ static void MpTcHostSend(u8 slot, u8 op, u8 groupId, u8 seq, u8 reason)
     msg.groupId = groupId;
     msg.seq = seq;
     msg.reason = reason;
+    msg.tradeId = 0; // members match decisions by (groupId, seq)
     len = MpProto_WriteTradeCommit(sTcBuf, sizeof(sTcBuf), &msg);
     if (len != 0 && gMpSession->slotPeer[slot] != MP_PEER_NONE)
         MpSession_SendTo(gMpSession->slotPeer[slot], sTcBuf, len, MP_CHANNEL_CONTROL, TRUE);
@@ -282,7 +343,7 @@ static void MpTcHostFlushDeferred(void)
     MpTcMemberDeliver(d.op, d.groupId, d.seq, d.reason);
 }
 
-static void MpTcHostHandleReady(u8 slot, u8 groupId, u8 seq)
+static void MpTcHostHandleReady(u8 slot, u8 groupId, u8 seq, u32 tradeId)
 {
     u8 gid = 0, mask = 0, partner = MP_SLOT_NONE;
     bool8 groupOk = FALSE;
@@ -298,7 +359,7 @@ static void MpTcHostHandleReady(u8 slot, u8 groupId, u8 seq)
         groupOk = (partner != MP_SLOT_NONE);
     }
     MP_SLOG("trade commit: READY from slot %u (group %u round %u)%s\n", (unsigned)slot, (unsigned)groupId, (unsigned)seq, groupOk ? "" : " - no such 2-member group");
-    MpTradeCommit_HostReady(MpTcHostState(), slot, groupId, seq, groupOk, partner, MpTransport_GetTimeMs(), MpTcHostSend);
+    MpTradeCommit_HostReady(MpTcHostState(), slot, groupId, seq, tradeId, groupOk, partner, MpTransport_GetTimeMs(), MpTcHostSend);
     MpTcHostFlushDeferred();
 }
 
@@ -308,6 +369,7 @@ void MpTradeCommit_ResetInstance(u8 instance)
         return;
     memset(&sTcHost[instance], 0, sizeof(sTcHost[instance]));
     memset(&sTcMember[instance], 0, sizeof(sTcMember[instance]));
+    memset(&sTrQueue[instance], 0, sizeof(sTrQueue[instance]));
     sTcDeferred.valid = FALSE;
 }
 
@@ -335,6 +397,7 @@ void MpTradeCommit_OnSessionStart(void)
 
 void MpTradeCommit_OnSessionEnd(void)
 {
+    memset(MpTrQueueState(), 0, sizeof(struct MpTrQueue));
     memset(MpTcHostState(), 0, sizeof(struct MpTradeCommitHost));
     MpTcMemberSessionGone();
 }
@@ -364,7 +427,7 @@ bool8 MpTradeCommit_OnHostReceive(u8 slot, const u8 *payload, u32 len)
 
     if (slot >= MP_MAX_PLAYERS || MpProto_ParseTradeCommit(payload, len, &msg) != MP_PARSE_OK || msg.op != MP_TRADE_OP_READY)
         return FALSE;
-    MpTcHostHandleReady(slot, msg.groupId, msg.seq);
+    MpTcHostHandleReady(slot, msg.groupId, msg.seq, msg.tradeId);
     return TRUE;
 }
 
@@ -387,14 +450,14 @@ const struct MpTradeCommitHost *MpTradeCommit_DebugHost(void)
 // Public API (mp.h)
 // ===========================================================================
 
-bool8 MP_TradeCommitReady(void)
+bool8 MP_TradeCommitReady(u32 tradeId)
 {
     struct MpTradeCommitMember *m = MpTcMemberState();
     struct MpMsgTradeCommit msg;
     u8 groupId = (gMpSession->state == MP_STATE_IN_SESSION) ? MpLink_MemberGroupId() : 0;
     u16 len;
 
-    if (groupId == 0)
+    if (groupId == 0 || tradeId == 0)
     {
         m->state = MP_TRADE_COMMIT_ABORT;
         m->reason = MP_TRADE_ABORT_NOT_GROUPED;
@@ -413,13 +476,14 @@ bool8 MP_TradeCommitReady(void)
     MP_SLOG("trade commit: group %u round %u: READY\n", (unsigned)groupId, (unsigned)m->seq);
     if (gMpSession->isHost)
     {
-        MpTcHostHandleReady(gMpSession->localSlot, groupId, m->seq);
+        MpTcHostHandleReady(gMpSession->localSlot, groupId, m->seq, tradeId);
         return TRUE;
     }
     msg.op = MP_TRADE_OP_READY;
     msg.groupId = groupId;
     msg.seq = m->seq;
     msg.reason = 0;
+    msg.tradeId = tradeId;
     len = MpProto_WriteTradeCommit(sTcBuf, sizeof(sTcBuf), &msg);
     if (len != 0)
     {
@@ -447,4 +511,144 @@ void MP_TradeCommitReset(void)
 
     m->state = MP_TRADE_COMMIT_IDLE;
     m->reason = MP_TRADE_ABORT_NONE;
+}
+
+// ===========================================================================
+// TRADE_RECOVER (PS-050, protocol.md 6.16): journal recovery between the partners
+// ===========================================================================
+//
+// The host routes each message to its target slot (rewriting `slot` to the sender) and, if it
+// still remembers its decision for that trade id, first sends that decision (slot NONE) to the
+// sender and to the target. Every recipient therefore learns the host's decision before any
+// partner status about that trade, which keeps the "both READY -> neither signed" rule safe.
+// The host checks that the sender's trainer id is the one in its session table and that the
+// target's is the receiver's; the game side checks the rest (MpTradeJournal_MatchesMsg).
+
+static void MpTrQueuePush(const struct MpMsgTradeRecover *m)
+{
+    struct MpTrQueue *q = MpTrQueueState();
+
+    if (q->count >= MP_TRADE_RECOVER_QUEUE)
+    {
+        q->head = (u8)((q->head + 1) % MP_TRADE_RECOVER_QUEUE); // drop the oldest; it is resent
+        q->count--;
+    }
+    q->items[(q->head + q->count) % MP_TRADE_RECOVER_QUEUE] = *m;
+    q->count++;
+}
+
+static void MpTrHostSendTo(u8 slot, const struct MpMsgTradeRecover *m)
+{
+    u16 len;
+
+    if (slot >= MP_MAX_PLAYERS || !gMpSession->slotUsed[slot])
+        return;
+    if (slot == gMpSession->localSlot)
+    {
+        MpTrQueuePush(m);
+        return;
+    }
+    len = MpProto_WriteTradeRecover(sTcBuf, sizeof(sTcBuf), m);
+    if (len != 0 && gMpSession->slotPeer[slot] != MP_PEER_NONE)
+        MpSession_SendTo(gMpSession->slotPeer[slot], sTcBuf, len, MP_CHANNEL_CONTROL, TRUE);
+}
+
+// The same trade seen from the receiver: sender and receiver swapped.
+static void MpTrMirror(const struct MpMsgTradeRecover *m, struct MpMsgTradeRecover *out)
+{
+    *out = *m;
+    out->senderTid = m->receiverTid;
+    out->receiverTid = m->senderTid;
+    out->senderGivenPersonality = m->senderRecvPersonality;
+    out->senderGivenOtId = m->senderRecvOtId;
+    out->senderRecvPersonality = m->senderGivenPersonality;
+    out->senderRecvOtId = m->senderGivenOtId;
+}
+
+static void MpTrHostRoute(u8 from, const struct MpMsgTradeRecover *m)
+{
+    struct MpMsgTradeRecover out;
+    u8 target = m->slot;
+    bool8 targetOk;
+    u8 decision;
+
+    if (from >= MP_MAX_PLAYERS || !gMpSession->slotUsed[from] || gMpSession->players[from].summary.trainerId != m->senderTid)
+    {
+        MP_SDLOG("trade recover: dropping a message whose trainer id is not its sender's\n");
+        return;
+    }
+    targetOk = target < MP_MAX_PLAYERS && target != from && gMpSession->slotUsed[target]
+            && gMpSession->players[target].summary.trainerId == m->receiverTid;
+    decision = MpTradeCommit_HostLookup(MpTcHostState(), m->tradeId);
+    if (decision != MP_TJ_STATUS_NONE)
+    {
+        // The host's decision first, to both sides.
+        MpTrMirror(m, &out);
+        out.slot = MP_SLOT_NONE;
+        out.status = decision;
+        out.flags = 0;
+        MpTrHostSendTo(from, &out);
+        if (targetOk)
+        {
+            out = *m;
+            out.slot = MP_SLOT_NONE;
+            out.status = decision;
+            out.flags = 0;
+            MpTrHostSendTo(target, &out);
+        }
+    }
+    if (targetOk)
+    {
+        out = *m;
+        out.slot = from;
+        MpTrHostSendTo(target, &out);
+    }
+}
+
+bool8 MpTradeCommit_OnHostReceiveRecover(u8 slot, const u8 *payload, u32 len)
+{
+    struct MpMsgTradeRecover m;
+
+    if (MpProto_ParseTradeRecover(payload, len, &m) != MP_PARSE_OK || m.status == MP_TJ_STATUS_ABORTED)
+        return FALSE; // ABORTED is the host's own word
+    MpTrHostRoute(slot, &m);
+    return TRUE;
+}
+
+bool8 MpTradeCommit_OnClientReceiveRecover(const u8 *payload, u32 len)
+{
+    struct MpMsgTradeRecover m;
+
+    if (MpProto_ParseTradeRecover(payload, len, &m) != MP_PARSE_OK)
+        return FALSE;
+    MpTrQueuePush(&m);
+    return TRUE;
+}
+
+void MP_TradeRecoverSend(const struct MpMsgTradeRecover *msg)
+{
+    u16 len;
+
+    if (gMpSession->state != MP_STATE_IN_SESSION || msg->status == MP_TJ_STATUS_ABORTED)
+        return;
+    if (gMpSession->isHost)
+    {
+        MpTrHostRoute(gMpSession->localSlot, msg);
+        return;
+    }
+    len = MpProto_WriteTradeRecover(sTcBuf, sizeof(sTcBuf), msg);
+    if (len != 0)
+        MpSession_SendTo(0, sTcBuf, len, MP_CHANNEL_CONTROL, TRUE);
+}
+
+bool8 MP_TradeRecoverPoll(struct MpMsgTradeRecover *out)
+{
+    struct MpTrQueue *q = MpTrQueueState();
+
+    if (q->count == 0)
+        return FALSE;
+    *out = q->items[q->head];
+    q->head = (u8)((q->head + 1) % MP_TRADE_RECOVER_QUEUE);
+    q->count--;
+    return TRUE;
 }

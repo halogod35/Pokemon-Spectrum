@@ -51,33 +51,63 @@ static u32 Rand(void)
 }
 
 // ===========================================================================
-// 1. Parser
+// 1. Parsers (TRADE_COMMIT, TRADE_RECOVER)
 // ===========================================================================
 
-static u8 ParseBytes(u8 b0, u8 b1, u8 b2, u8 b3)
+#define TID(g, s) ((u32)(g) * 256u + (u32)(s) + 1u)     // a per-round trade id for the pure tests
+
+static u8 ParseCommit(u8 op, u8 g, u8 s, u8 reason, u32 tradeId)
 {
     struct MpMsgTradeCommit m;
-    u8 p[4];
+    u8 p[MP_TRADE_COMMIT_SIZE];
 
-    p[0] = b0;
-    p[1] = b1;
-    p[2] = b2;
-    p[3] = b3;
+    p[0] = op;
+    p[1] = g;
+    p[2] = s;
+    p[3] = reason;
+    p[4] = (u8)tradeId;
+    p[5] = (u8)(tradeId >> 8);
+    p[6] = (u8)(tradeId >> 16);
+    p[7] = (u8)(tradeId >> 24);
     return MpProto_ParseTradeCommit(p, sizeof(p), &m);
+}
+
+static void FixtureRecover(struct MpMsgTradeRecover *m)
+{
+    memset(m, 0, sizeof(*m));
+    m->slot = 2;
+    m->status = MP_TJ_STATUS_READY;
+    m->flags = MP_TRADE_RECOVER_FLAG_REPLY;
+    m->tradeId = 0xA1B2C3D4u;
+    m->senderTid = 0x00053039u;
+    m->receiverTid = 0x0001A11Cu;
+    m->senderGivenPersonality = 0x11111111u;
+    m->senderGivenOtId = 0x00053039u;
+    m->senderRecvPersonality = 0x22222222u;
+    m->senderRecvOtId = 0x0001A11Cu;
+}
+
+static bool8 RecoverEquals(const struct MpMsgTradeRecover *a, const struct MpMsgTradeRecover *b)
+{
+    return a->slot == b->slot && a->status == b->status && a->flags == b->flags && a->tradeId == b->tradeId
+        && a->senderTid == b->senderTid && a->receiverTid == b->receiverTid
+        && a->senderGivenPersonality == b->senderGivenPersonality && a->senderGivenOtId == b->senderGivenOtId
+        && a->senderRecvPersonality == b->senderRecvPersonality && a->senderRecvOtId == b->senderRecvOtId;
 }
 
 static void TestParser(void)
 {
     u32 failuresBefore = sFail;
     struct MpMsgTradeCommit in, out;
+    struct MpMsgTradeRecover rin, rout;
     struct MpMsgHeader hdr;
     u8 buf[MP_MAX_PACKET_SIZE];
-    u8 raw[16];
+    u8 raw[40];
     u16 len;
     u32 i, j, ok = 0;
     u8 op, reason;
 
-    // Round trip of every valid op / reason.
+    // TRADE_COMMIT round trip of every valid op / reason.
     for (op = MP_TRADE_OP_READY; op <= MP_TRADE_OP_ABORT; op++)
     {
         for (reason = 0; reason <= MP_TRADE_ABORT_LAST; reason++)
@@ -88,81 +118,105 @@ static void TestParser(void)
             in.groupId = 7;
             in.seq = 200;
             in.reason = reason;
+            in.tradeId = 0xDEADBEEFu;
             len = MpProto_WriteTradeCommit(buf, sizeof(buf), &in);
-            T_CHECK(len == 4 + MP_TRADE_COMMIT_SIZE, "TRADE_COMMIT writes 8 bytes");
+            T_CHECK(len == 4 + MP_TRADE_COMMIT_SIZE, "TRADE_COMMIT writes 12 bytes");
             T_CHECK(MpProto_ParseHeader(buf, len, &hdr) && hdr.type == MP_MSG_TRADE_COMMIT
                     && hdr.version == MP_PROTOCOL_VERSION && hdr.length == MP_TRADE_COMMIT_SIZE, "TRADE_COMMIT header");
-            T_CHECK(MpProto_ParseTradeCommit(buf + 4, len - 4, &out) == MP_PARSE_OK
-                    && out.op == in.op && out.groupId == 7 && out.seq == 200 && out.reason == reason, "TRADE_COMMIT round trip");
+            T_CHECK(MpProto_ParseTradeCommit(buf + 4, len - 4, &out) == MP_PARSE_OK && out.op == in.op && out.groupId == 7
+                    && out.seq == 200 && out.reason == reason && out.tradeId == 0xDEADBEEFu, "TRADE_COMMIT round trip");
         }
     }
-    T_CHECK(MP_MSG_TRADE_COMMIT >= MP_MSG_LINK_FIRST && MP_MSG_TRADE_COMMIT <= MP_MSG_LINK_LAST, "TRADE_COMMIT is in the LINK_* range");
-    T_CHECK(MP_PROTOCOL_VERSION == 6, "protocol version 6");
-
-    // Writer refuses invalid ops.
+    T_CHECK(MP_MSG_TRADE_COMMIT >= MP_MSG_LINK_FIRST && MP_MSG_TRADE_RECOVER <= MP_MSG_LINK_LAST, "TRADE_* are in the LINK_* range");
+    T_CHECK(MP_PROTOCOL_VERSION == 7, "protocol version 7");
     in.op = 0;
     T_CHECK(MpProto_WriteTradeCommit(buf, sizeof(buf), &in) == 0, "writer refuses op 0");
-    in.op = 4;
-    T_CHECK(MpProto_WriteTradeCommit(buf, sizeof(buf), &in) == 0, "writer refuses op 4");
     in.op = MP_TRADE_OP_READY;
     T_CHECK(MpProto_WriteTradeCommit(buf, 6, &in) == 0, "writer refuses a too small buffer");
-
-    // Sizes.
     memset(raw, 0, sizeof(raw));
     raw[0] = MP_TRADE_OP_READY;
     raw[1] = 1;
     raw[2] = 1;
+    raw[4] = 1;
     for (i = 0; i < MP_TRADE_COMMIT_SIZE; i++)
         T_CHECK(MpProto_ParseTradeCommit(raw, i, &out) == MP_PARSE_ERR_TRUNCATED, "short TRADE_COMMIT is TRUNCATED");
-    T_CHECK(MpProto_ParseTradeCommit(raw, MP_TRADE_COMMIT_SIZE, &out) == MP_PARSE_OK, "4-byte READY parses");
-    for (i = MP_TRADE_COMMIT_SIZE + 1; i < sizeof(raw); i++)
-        T_CHECK(MpProto_ParseTradeCommit(raw, i, &out) == MP_PARSE_ERR_OVERSIZED, "long TRADE_COMMIT is OVERSIZED");
-    T_CHECK(MpProto_ParseTradeCommit(NULL, 4, &out) != MP_PARSE_OK, "NULL payload refused");
+    T_CHECK(MpProto_ParseTradeCommit(raw, MP_TRADE_COMMIT_SIZE, &out) == MP_PARSE_OK, "8-byte READY parses");
+    T_CHECK(MpProto_ParseTradeCommit(raw, MP_TRADE_COMMIT_SIZE + 1, &out) == MP_PARSE_ERR_OVERSIZED, "long TRADE_COMMIT is OVERSIZED");
+    T_CHECK(ParseCommit(0, 1, 1, 0, 1) == MP_PARSE_ERR_BAD_FIELD, "op 0 refused");
+    T_CHECK(ParseCommit(4, 1, 1, 0, 1) == MP_PARSE_ERR_BAD_FIELD, "op 4 refused");
+    T_CHECK(ParseCommit(MP_TRADE_OP_READY, 0, 1, 0, 1) == MP_PARSE_ERR_BAD_FIELD, "group 0 refused");
+    T_CHECK(ParseCommit(MP_TRADE_OP_READY, 1, 0, 0, 1) == MP_PARSE_ERR_BAD_FIELD, "seq 0 refused");
+    T_CHECK(ParseCommit(MP_TRADE_OP_READY, 1, 1, 0, 0) == MP_PARSE_ERR_BAD_FIELD, "READY without a trade id refused");
+    T_CHECK(ParseCommit(MP_TRADE_OP_COMMIT, 1, 1, 0, 0) == MP_PARSE_OK, "COMMIT may carry trade id 0");
+    T_CHECK(ParseCommit(MP_TRADE_OP_READY, 1, 1, 1, 1) == MP_PARSE_ERR_BAD_FIELD, "READY with a reason refused");
+    T_CHECK(ParseCommit(MP_TRADE_OP_ABORT, 1, 1, 0, 1) == MP_PARSE_ERR_BAD_FIELD, "ABORT without a reason refused");
+    T_CHECK(ParseCommit(MP_TRADE_OP_ABORT, 1, 1, MP_TRADE_ABORT_IN_DOUBT, 1) == MP_PARSE_ERR_BAD_FIELD, "local-only reason refused");
+    T_CHECK(!MpTradeCommit_OnHostReceive(1, (const u8 *)"\x02\x01\x01\x00\x01\x00\x00\x00", 8), "host refuses COMMIT from a client");
+    T_CHECK(!MpTradeCommit_OnClientReceive((const u8 *)"\x01\x01\x01\x00\x01\x00\x00\x00", 8), "client refuses READY from the host");
 
-    // Field rules.
-    T_CHECK(ParseBytes(0, 1, 1, 0) == MP_PARSE_ERR_BAD_FIELD, "op 0 refused");
-    T_CHECK(ParseBytes(4, 1, 1, 0) == MP_PARSE_ERR_BAD_FIELD, "op 4 refused");
-    T_CHECK(ParseBytes(0xFF, 1, 1, 0) == MP_PARSE_ERR_BAD_FIELD, "op 0xFF refused");
-    T_CHECK(ParseBytes(MP_TRADE_OP_READY, 0, 1, 0) == MP_PARSE_ERR_BAD_FIELD, "group 0 refused");
-    T_CHECK(ParseBytes(MP_TRADE_OP_READY, 1, 0, 0) == MP_PARSE_ERR_BAD_FIELD, "seq 0 refused");
-    T_CHECK(ParseBytes(MP_TRADE_OP_READY, 1, 1, 1) == MP_PARSE_ERR_BAD_FIELD, "READY with a reason refused");
-    T_CHECK(ParseBytes(MP_TRADE_OP_COMMIT, 1, 1, 2) == MP_PARSE_ERR_BAD_FIELD, "COMMIT with a reason refused");
-    T_CHECK(ParseBytes(MP_TRADE_OP_ABORT, 1, 1, 0) == MP_PARSE_ERR_BAD_FIELD, "ABORT without a reason refused");
-    T_CHECK(ParseBytes(MP_TRADE_OP_ABORT, 1, 1, MP_TRADE_ABORT_LAST + 1) == MP_PARSE_ERR_BAD_FIELD, "ABORT with an unknown reason refused");
-    T_CHECK(ParseBytes(MP_TRADE_OP_ABORT, 1, 1, MP_TRADE_ABORT_IN_DOUBT) == MP_PARSE_ERR_BAD_FIELD, "local-only reason refused on the wire");
-    T_CHECK(ParseBytes(MP_TRADE_OP_ABORT, 0xFF, 0xFF, MP_TRADE_ABORT_TIMEOUT) == MP_PARSE_OK, "ABORT 255/255 TIMEOUT parses");
-
-    // Wrong direction (checked before any session state is touched).
-    T_CHECK(!MpTradeCommit_OnHostReceive(1, (const u8 *)"\x02\x01\x01\x00", 4), "host refuses COMMIT from a client");
-    T_CHECK(!MpTradeCommit_OnHostReceive(1, (const u8 *)"\x03\x01\x01\x01", 4), "host refuses ABORT from a client");
-    T_CHECK(!MpTradeCommit_OnHostReceive(MP_MAX_PLAYERS, (const u8 *)"\x01\x01\x01\x00", 4), "host refuses a bad slot");
-    T_CHECK(!MpTradeCommit_OnClientReceive((const u8 *)"\x01\x01\x01\x00", 4), "client refuses READY from the host");
-    T_CHECK(!MpTradeCommit_OnClientReceive((const u8 *)"\x02\x01", 2), "client refuses a short message");
-    Report("TRADE_COMMIT parser: round trip, sizes, fields, direction", failuresBefore);
+    // TRADE_RECOVER.
+    FixtureRecover(&rin);
+    len = MpProto_WriteTradeRecover(buf, sizeof(buf), &rin);
+    T_CHECK(len == 4 + MP_TRADE_RECOVER_SIZE, "TRADE_RECOVER writes 36 bytes");
+    T_CHECK(MpProto_ParseHeader(buf, len, &hdr) && hdr.type == MP_MSG_TRADE_RECOVER && hdr.length == MP_TRADE_RECOVER_SIZE, "TRADE_RECOVER header");
+    T_CHECK(MpProto_ParseTradeRecover(buf + 4, len - 4, &rout) == MP_PARSE_OK && RecoverEquals(&rin, &rout), "TRADE_RECOVER round trip");
+    memcpy(raw, buf + 4, MP_TRADE_RECOVER_SIZE);
+    for (i = 0; i < MP_TRADE_RECOVER_SIZE; i++)
+        T_CHECK(MpProto_ParseTradeRecover(raw, i, &rout) == MP_PARSE_ERR_TRUNCATED, "short TRADE_RECOVER is TRUNCATED");
+    T_CHECK(MpProto_ParseTradeRecover(raw, MP_TRADE_RECOVER_SIZE + 1, &rout) == MP_PARSE_ERR_OVERSIZED, "long TRADE_RECOVER is OVERSIZED");
+    raw[0] = 4;
+    T_CHECK(MpProto_ParseTradeRecover(raw, MP_TRADE_RECOVER_SIZE, &rout) == MP_PARSE_ERR_BAD_FIELD, "slot 4 refused");
+    raw[0] = MP_SLOT_NONE;
+    T_CHECK(MpProto_ParseTradeRecover(raw, MP_TRADE_RECOVER_SIZE, &rout) == MP_PARSE_OK, "slot NONE accepted");
+    raw[1] = 0;
+    T_CHECK(MpProto_ParseTradeRecover(raw, MP_TRADE_RECOVER_SIZE, &rout) == MP_PARSE_ERR_BAD_FIELD, "status 0 refused");
+    raw[1] = MP_TJ_STATUS_COUNT;
+    T_CHECK(MpProto_ParseTradeRecover(raw, MP_TRADE_RECOVER_SIZE, &rout) == MP_PARSE_ERR_BAD_FIELD, "status past the end refused");
+    raw[1] = MP_TJ_STATUS_READY;
+    raw[2] = 2;
+    T_CHECK(MpProto_ParseTradeRecover(raw, MP_TRADE_RECOVER_SIZE, &rout) == MP_PARSE_ERR_BAD_FIELD, "unknown flag refused");
+    raw[2] = 0;
+    raw[3] = 1;
+    T_CHECK(MpProto_ParseTradeRecover(raw, MP_TRADE_RECOVER_SIZE, &rout) == MP_PARSE_ERR_BAD_FIELD, "reserved byte refused");
+    raw[3] = 0;
+    memset(raw + 4, 0, 4);
+    T_CHECK(MpProto_ParseTradeRecover(raw, MP_TRADE_RECOVER_SIZE, &rout) == MP_PARSE_ERR_BAD_FIELD, "trade id 0 refused");
+    T_CHECK(!MpTradeCommit_OnClientReceiveRecover(raw, 10), "client refuses a short TRADE_RECOVER");
+    Report("TRADE_COMMIT / TRADE_RECOVER parsers: round trip, sizes, fields, direction", failuresBefore);
 
     // Fuzz: random lengths and bytes. Whatever parses obeys the rules and round-trips.
     failuresBefore = sFail;
     for (i = 0; i < 40000; i++)
     {
-        u32 n = Rand() % 9;
+        u32 n = (i & 1) ? MP_TRADE_COMMIT_SIZE + (Rand() % 3) - 1 : MP_TRADE_RECOVER_SIZE + (Rand() % 3) - 1;
 
         for (j = 0; j < n; j++)
-            raw[j] = (u8)((Rand() & 3) == 0 ? (Rand() % 5) : Rand());
-        if (MpProto_ParseTradeCommit(raw, n, &out) != MP_PARSE_OK)
+            raw[j] = (u8)((Rand() & 3) == 0 ? (Rand() % 8) : Rand());
+        if (i & 1)
         {
-            T_CHECK(out.op == 0 && out.groupId == 0 && out.seq == 0 && out.reason == 0, "failed parse leaves the output zeroed");
-            continue;
+            if (MpProto_ParseTradeCommit(raw, n, &out) != MP_PARSE_OK)
+                continue;
+            ok++;
+            T_CHECK(n == MP_TRADE_COMMIT_SIZE && out.op >= MP_TRADE_OP_READY && out.op <= MP_TRADE_OP_ABORT && out.groupId != 0 && out.seq != 0,
+                    "parsed TRADE_COMMIT in range");
+            len = MpProto_WriteTradeCommit(buf, sizeof(buf), &out);
+            T_CHECK(len == 4 + MP_TRADE_COMMIT_SIZE && memcmp(buf + 4, raw, n) == 0, "parsed TRADE_COMMIT writes back the same bytes");
         }
-        ok++;
-        T_CHECK(n == MP_TRADE_COMMIT_SIZE, "only 4-byte messages parse");
-        T_CHECK(out.op >= MP_TRADE_OP_READY && out.op <= MP_TRADE_OP_ABORT && out.groupId != 0 && out.seq != 0, "parsed fields in range");
-        T_CHECK((out.op == MP_TRADE_OP_ABORT) ? (out.reason >= MP_TRADE_ABORT_FIRST && out.reason <= MP_TRADE_ABORT_LAST) : (out.reason == 0),
-                "parsed reason matches the op");
-        len = MpProto_WriteTradeCommit(buf, sizeof(buf), &out);
-        T_CHECK(len == 8 && memcmp(buf + 4, raw, 4) == 0, "parsed message writes back the same bytes");
+        else
+        {
+            if (MpProto_ParseTradeRecover(raw, n, &rout) != MP_PARSE_OK)
+            {
+                T_CHECK(rout.tradeId == 0 && rout.status == 0, "failed parse leaves the output zeroed");
+                continue;
+            }
+            ok++;
+            T_CHECK(n == MP_TRADE_RECOVER_SIZE && rout.status != 0 && rout.status < MP_TJ_STATUS_COUNT && rout.tradeId != 0, "parsed TRADE_RECOVER in range");
+            len = MpProto_WriteTradeRecover(buf, sizeof(buf), &rout);
+            T_CHECK(len == 4 + MP_TRADE_RECOVER_SIZE && memcmp(buf + 4, raw, n) == 0, "parsed TRADE_RECOVER writes back the same bytes");
+        }
     }
-    T_CHECK(ok > 10, "fuzz produced valid messages too"); // ~30 expected: 1/9 lengths are 4, then op and reason must agree
-    Report("TRADE_COMMIT parser fuzz (40000 buffers)", failuresBefore);
+    T_CHECK(ok > 10, "fuzz produced valid messages too");
+    Report("TRADE_COMMIT / TRADE_RECOVER parser fuzz (40000 buffers)", failuresBefore);
 }
 
 // ===========================================================================
@@ -220,14 +274,14 @@ static void TestPureLogic(void)
     // Both ready -> COMMIT to both, the waiting partner first.
     memset(&h, 0, sizeof(h));
     ClearSent();
-    MpTradeCommit_HostReady(&h, 1, 5, 1, TRUE, 2, 1000, RecordSend);
+    MpTradeCommit_HostReady(&h, 1, 5, 1, TID(5, 1), TRUE, 2, 1000, RecordSend);
     T_CHECK(sSentCount == 0, "one READY: no decision yet");
-    MpTradeCommit_HostReady(&h, 2, 5, 1, TRUE, 1, 1100, RecordSend);
+    MpTradeCommit_HostReady(&h, 2, 5, 1, TID(5, 1), TRUE, 1, 1100, RecordSend);
     T_CHECK(sSentCount == 2 && SentIs(0, 1, MP_TRADE_OP_COMMIT, 0) && SentIs(1, 2, MP_TRADE_OP_COMMIT, 0), "both READY: COMMIT to both, partner first");
     T_CHECK(h.commits == 1 && h.aborts == 0, "one committed round counted");
     // A repeated READY (its COMMIT was lost) gets the same decision again, only to itself.
     ClearSent();
-    MpTradeCommit_HostReady(&h, 1, 5, 1, TRUE, 2, 1200, RecordSend);
+    MpTradeCommit_HostReady(&h, 1, 5, 1, TID(5, 1), TRUE, 2, 1200, RecordSend);
     T_CHECK(sSentCount == 1 && SentIs(0, 1, MP_TRADE_OP_COMMIT, 0), "repeated READY: COMMIT repeated");
     // The tick never touches decided rounds.
     ClearSent();
@@ -240,10 +294,10 @@ static void TestPureLogic(void)
     // READY of the other gets ABORT too. Nobody gets COMMIT.
     failuresBefore = sFail;
     ClearSent();
-    MpTradeCommit_HostReady(&h, 1, 5, 2, TRUE, 2, 2000, RecordSend);
+    MpTradeCommit_HostReady(&h, 1, 5, 2, TID(5, 2), TRUE, 2, 2000, RecordSend);
     MpTradeCommit_HostGroupEnded(&h, 0x06, RecordSend);
     T_CHECK(sSentCount == 1 && SentIs(0, 1, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_GROUP_ENDED), "group ended: ABORT to the ready member");
-    MpTradeCommit_HostReady(&h, 2, 5, 2, FALSE, MP_SLOT_NONE, 2100, RecordSend);
+    MpTradeCommit_HostReady(&h, 2, 5, 2, TID(5, 2), FALSE, MP_SLOT_NONE, 2100, RecordSend);
     T_CHECK(sSentCount == 2 && SentIs(1, 2, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_GROUP_ENDED), "late READY after the group ended: ABORT");
     T_CHECK(!AnyCommit(), "no COMMIT when one member dropped before both were ready");
     Report("commit logic: member drops before commit -> neither commits", failuresBefore);
@@ -252,18 +306,18 @@ static void TestPureLogic(void)
     failuresBefore = sFail;
     memset(&h, 0, sizeof(h));
     ClearSent();
-    MpTradeCommit_HostReady(&h, 0, 9, 1, TRUE, 3, 50000, RecordSend);
+    MpTradeCommit_HostReady(&h, 0, 9, 1, TID(9, 1), TRUE, 3, 50000, RecordSend);
     MpTradeCommit_HostTick(&h, 50000 + MP_TRADE_COMMIT_TIMEOUT_MS - 1, RecordSend);
     T_CHECK(sSentCount == 0, "no timeout before MP_TRADE_COMMIT_TIMEOUT_MS");
     MpTradeCommit_HostTick(&h, 50000 + MP_TRADE_COMMIT_TIMEOUT_MS, RecordSend);
     T_CHECK(sSentCount == 1 && SentIs(0, 0, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_TIMEOUT), "timeout: ABORT");
-    MpTradeCommit_HostReady(&h, 3, 9, 1, TRUE, 0, 70000, RecordSend);
+    MpTradeCommit_HostReady(&h, 3, 9, 1, TID(9, 1), TRUE, 0, 70000, RecordSend);
     T_CHECK(sSentCount == 2 && SentIs(1, 3, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_TIMEOUT), "READY after the timeout: ABORT, not COMMIT");
     T_CHECK(!AnyCommit(), "no COMMIT after a timeout");
     // Timer wrap-around (u32 milliseconds).
     memset(&h, 0, sizeof(h));
     ClearSent();
-    MpTradeCommit_HostReady(&h, 1, 2, 1, TRUE, 2, 0xFFFFFF00u, RecordSend);
+    MpTradeCommit_HostReady(&h, 1, 2, 1, TID(2, 1), TRUE, 2, 0xFFFFFF00u, RecordSend);
     MpTradeCommit_HostTick(&h, 0x00000100u, RecordSend);
     T_CHECK(sSentCount == 0, "no false timeout across the u32 wrap");
     Report("commit logic: timeout, late READY, timer wrap", failuresBefore);
@@ -272,27 +326,27 @@ static void TestPureLogic(void)
     failuresBefore = sFail;
     memset(&h, 0, sizeof(h));
     ClearSent();
-    MpTradeCommit_HostReady(&h, 1, 4, 1, TRUE, 2, 10, RecordSend);
-    MpTradeCommit_HostReady(&h, 2, 4, 2, TRUE, 1, 20, RecordSend);
+    MpTradeCommit_HostReady(&h, 1, 4, 1, TID(4, 1), TRUE, 2, 10, RecordSend);
+    MpTradeCommit_HostReady(&h, 2, 4, 2, TID(4, 2), TRUE, 1, 20, RecordSend);
     T_CHECK(sSentCount == 2 && SentIs(0, 1, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH) && SentIs(1, 2, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH),
             "members on different rounds: ABORT both");
     ClearSent();
-    MpTradeCommit_HostReady(&h, 3, 4, 1, FALSE, MP_SLOT_NONE, 30, RecordSend);
+    MpTradeCommit_HostReady(&h, 3, 4, 1, TID(4, 1), FALSE, MP_SLOT_NONE, 30, RecordSend);
     T_CHECK(sSentCount == 1 && SentIs(0, 3, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH), "READY outside a matching group: ABORT");
     ClearSent();
-    MpTradeCommit_HostReady(&h, 2, 4, 3, TRUE, 2, 40, RecordSend);
+    MpTradeCommit_HostReady(&h, 2, 4, 3, TID(4, 3), TRUE, 2, 40, RecordSend);
     T_CHECK(sSentCount == 1 && SentIs(0, 2, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH), "partner == itself: ABORT");
     ClearSent();
-    MpTradeCommit_HostReady(&h, MP_MAX_PLAYERS, 4, 1, TRUE, 1, 50, RecordSend);
-    MpTradeCommit_HostReady(&h, 1, 0, 1, TRUE, 2, 50, RecordSend);
-    MpTradeCommit_HostReady(&h, 1, 4, 0, TRUE, 2, 50, RecordSend);
+    MpTradeCommit_HostReady(&h, MP_MAX_PLAYERS, 4, 1, TID(4, 1), TRUE, 1, 50, RecordSend);
+    MpTradeCommit_HostReady(&h, 1, 0, 1, TID(0, 1), TRUE, 2, 50, RecordSend);
+    MpTradeCommit_HostReady(&h, 1, 4, 0, TID(4, 0), TRUE, 2, 50, RecordSend);
     T_CHECK(sSentCount == 0, "out-of-range slot / group 0 / seq 0 ignored");
     // A slot that left is forgotten; a new group starts clean.
     MpTradeCommit_HostForgetSlot(&h, 1);
     T_CHECK(h.rec[1].state == MP_TRADE_REC_NONE, "forgotten slot has no record");
     ClearSent();
-    MpTradeCommit_HostReady(&h, 1, 5, 1, TRUE, 2, 60, RecordSend);
-    MpTradeCommit_HostReady(&h, 2, 5, 1, TRUE, 1, 70, RecordSend);
+    MpTradeCommit_HostReady(&h, 1, 5, 1, TID(5, 1), TRUE, 2, 60, RecordSend);
+    MpTradeCommit_HostReady(&h, 2, 5, 1, TID(5, 1), TRUE, 1, 70, RecordSend);
     T_CHECK(sSentCount == 2 && SentIs(0, 1, MP_TRADE_OP_COMMIT, 0) && SentIs(1, 2, MP_TRADE_OP_COMMIT, 0), "a new group commits normally");
     Report("commit logic: mismatches and bad READYs abort", failuresBefore);
 }
@@ -373,7 +427,7 @@ static void TestPureFuzz(void)
                     m->seq += ((Rand() % 10) == 0) ? 2 : 1; // now and then a member skips a round
                     m->waiting = TRUE;
                 }
-                MpTradeCommit_HostReady(&h, slot, m->groupId, m->seq, alive && m->groupId == groupId, (u8)(3 - slot), now, FuzzSend);
+                MpTradeCommit_HostReady(&h, slot, m->groupId, m->seq, TID(m->groupId, m->seq), alive && m->groupId == groupId, (u8)(3 - slot), now, FuzzSend);
             }
             else if (r < 70)
             {
@@ -524,7 +578,7 @@ static bool8 GroupUp(u8 a, u8 b)
 static bool8 Ready(u8 instance)
 {
     Sel(instance);
-    return MP_TradeCommitReady();
+    return MP_TradeCommitReady(0x5A5A0001u);
 }
 
 static void CleanUp(void)
@@ -664,12 +718,426 @@ static void TestInProcess(void)
     PumpFor(300);
     T_CHECK(PollOf(S_HOST) == MP_TRADE_COMMIT_IDLE, "host: not ready, nothing to commit");
     Sel(S_HOST);
-    T_CHECK(!MP_TradeCommitReady() && MP_TradeCommitPoll() == MP_TRADE_COMMIT_ABORT, "host: READY after C2 left is refused");
+    T_CHECK(!MP_TradeCommitReady(0x5A5A0001u) && MP_TradeCommitPoll() == MP_TRADE_COMMIT_ABORT, "host: READY after C2 left is refused");
     ResetOf(S_HOST);
     ResetOf(S_C2);
     Report("member's session ends while it waits -> presumed ABORT", failuresBefore);
 
     CleanUp();
+}
+
+// ===========================================================================
+// 4. Trade journal (PS-050): record, file, rules, host decision ring, crash at every step
+// ===========================================================================
+
+static void FixtureJournal(struct MpTradeJournal *j)
+{
+    u32 i;
+
+    memset(j, 0, sizeof(*j));
+    j->state = MP_TJ_STATE_READY;
+    j->partyIndex = 2;
+    j->myTid = 0x00053039u;
+    j->partnerTid = 0x0001A11Cu;
+    j->partnerName[0] = 0xBB; // "A"
+    for (i = 1; i < MP_PLAYER_NAME_SIZE; i++)
+        j->partnerName[i] = 0xFF;
+    j->given.personality = 0x11111111u;
+    j->given.otId = 0x00053039u;
+    j->given.species = 67;     // MACHOKE
+    j->received.personality = 0x22222222u;
+    j->received.otId = 0x0001A11Cu;
+    j->received.species = 64;  // KADABRA
+    j->receivedFinalSpecies = 65;
+    for (i = 0; i < MP_MON_WIRE_SIZE; i++)
+        j->receivedMon[i] = (u8)(i * 7 + 3);
+    memcpy(j->receivedMon, &j->received.personality, 4); // little-endian PC builds
+    memcpy(j->receivedMon + 4, &j->received.otId, 4);
+    j->tradeId = MpTradeJournal_ComputeId(j->myTid, &j->given, j->partnerTid, &j->received);
+}
+
+static void TestJournalRecord(void)
+{
+    u32 failuresBefore = sFail;
+    struct MpTradeJournal j, k, partner;
+    struct MpMsgTradeRecover m;
+    u8 buf[MP_TJ_FILE_SIZE + 8];
+    u8 copy[MP_TJ_FILE_SIZE];
+    const char *path = "pokemon-spectrum-selftest.trade";
+    u32 i, bad = 0;
+
+    FixtureJournal(&j);
+    MpTradeJournal_Serialize(&j, buf);
+    T_CHECK(MpTradeJournal_Parse(buf, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_OK && k.tradeId == j.tradeId
+            && k.state == j.state && memcmp(k.receivedMon, j.receivedMon, MP_MON_WIRE_SIZE) == 0 && k.receivedFinalSpecies == 65, "journal round trip");
+    T_CHECK(j.tradeId != 0, "trade id is never 0");
+    // Both sides compute the same id: the partner's given is our received.
+    partner = j;
+    partner.myTid = j.partnerTid;
+    partner.partnerTid = j.myTid;
+    partner.given = j.received;
+    partner.received = j.given;
+    T_CHECK(MpTradeJournal_ComputeId(partner.myTid, &partner.given, partner.partnerTid, &partner.received) == j.tradeId, "both sides get the same trade id");
+    T_CHECK(MpTradeJournal_ComputeId(j.myTid, &j.received, j.partnerTid, &j.given) != j.tradeId, "the reverse trade has another id");
+    // Sizes, magic, checksum, every field rule.
+    T_CHECK(MpTradeJournal_Parse(buf, MP_TJ_FILE_SIZE - 1, &k) == MP_TJ_PARSE_BAD_SIZE, "short journal refused");
+    T_CHECK(MpTradeJournal_Parse(buf, MP_TJ_FILE_SIZE + 1, &k) == MP_TJ_PARSE_BAD_SIZE, "long journal refused");
+    T_CHECK(MpTradeJournal_Parse(NULL, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_BAD_SIZE, "NULL refused");
+    memcpy(copy, buf, MP_TJ_FILE_SIZE);
+    copy[0] ^= 1;
+    T_CHECK(MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_BAD_MAGIC, "bad magic refused");
+    for (i = 6; i < MP_TJ_FILE_SIZE; i++)
+    {
+        memcpy(copy, buf, MP_TJ_FILE_SIZE);
+        copy[i] ^= (u8)(1 << (i % 8));
+        if (MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_OK)
+            bad++;
+    }
+    T_CHECK(bad == 0, "every single bit flip is refused");
+    k = j; k.state = 3;        MpTradeJournal_Serialize(&k, copy);
+    T_CHECK(MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_BAD_FIELD, "bad state refused (valid checksum)");
+    k = j; k.partyIndex = 6;   MpTradeJournal_Serialize(&k, copy);
+    T_CHECK(MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_BAD_FIELD, "party index 6 refused");
+    k = j; k.tradeId ^= 1;     MpTradeJournal_Serialize(&k, copy);
+    T_CHECK(MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_BAD_FIELD, "trade id not matching the fields refused");
+    k = j; k.receivedMon[0] ^= 1; MpTradeJournal_Serialize(&k, copy);
+    T_CHECK(MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_BAD_FIELD, "stored mon that is not the received one refused");
+    k = j; k.received.species = 0xFFFF; k.tradeId = j.tradeId; MpTradeJournal_Serialize(&k, copy);
+    T_CHECK(MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_BAD_FIELD, "species out of range refused");
+    k = j; memset(k.partnerName, 0xBB, sizeof(k.partnerName)); MpTradeJournal_Serialize(&k, copy);
+    T_CHECK(MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_BAD_FIELD, "unterminated name refused");
+    for (i = 0, bad = 0; i < 20000; i++)
+    {
+        u32 n;
+
+        memcpy(copy, buf, MP_TJ_FILE_SIZE);
+        for (n = Rand() % 6 + 1; n != 0; n--)
+            copy[Rand() % MP_TJ_FILE_SIZE] = (u8)Rand();
+        if (MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_OK && memcmp(copy, buf, MP_TJ_FILE_SIZE) != 0)
+            bad++;
+    }
+    T_CHECK(bad == 0, "fuzz: no corrupted journal is accepted");
+    Report("journal record: round trip, id, sizes, checksum, fields, 20000-corruption fuzz", failuresBefore);
+
+    // Binding of recovery messages.
+    failuresBefore = sFail;
+    MpTradeJournal_FillMsg(&partner, MP_TJ_STATUS_COMMITTED, 1, 0, &m);
+    T_CHECK(MpTradeJournal_IdOfMsg(&m) == j.tradeId && MpTradeJournal_MatchesMsg(&j, &m), "the partner's message matches our journal");
+    m.senderTid ^= 1;
+    T_CHECK(!MpTradeJournal_MatchesMsg(&j, &m), "another sender trainer id does not match");
+    MpTradeJournal_FillMsg(&partner, MP_TJ_STATUS_COMMITTED, 1, 0, &m);
+    m.senderGivenPersonality ^= 1;
+    T_CHECK(!MpTradeJournal_MatchesMsg(&j, &m) && MpTradeJournal_IdOfMsg(&m) != m.tradeId, "another mon does not match, and the id no longer fits");
+    MpTradeJournal_FillMsg(&j, MP_TJ_STATUS_READY, 1, 0, &m);
+    T_CHECK(!MpTradeJournal_MatchesMsg(&j, &m), "our own message does not match our journal");
+    Report("journal: recovery messages bound to trade id, both trainer ids and both mons", failuresBefore);
+
+    // File round trip (crash-safe write, read, overwrite, delete) in the working directory.
+    failuresBefore = sFail;
+    Platform_RemoveFile(path);
+    T_CHECK(Platform_ReadSmallFile(path, copy, MP_TJ_FILE_SIZE) == -1, "missing journal reads as -1");
+    T_CHECK(Platform_WriteFileAtomic(path, buf, MP_TJ_FILE_SIZE), "journal written");
+    T_CHECK(Platform_ReadSmallFile(path, copy, MP_TJ_FILE_SIZE) == MP_TJ_FILE_SIZE && memcmp(copy, buf, MP_TJ_FILE_SIZE) == 0, "journal reads back");
+    k = j;
+    k.state = MP_TJ_STATE_COMMIT;
+    MpTradeJournal_Serialize(&k, buf);
+    T_CHECK(Platform_WriteFileAtomic(path, buf, MP_TJ_FILE_SIZE), "journal replaced (COMMIT)");
+    T_CHECK(Platform_ReadSmallFile(path, copy, MP_TJ_FILE_SIZE) == MP_TJ_FILE_SIZE && MpTradeJournal_Parse(copy, MP_TJ_FILE_SIZE, &k) == MP_TJ_PARSE_OK
+            && k.state == MP_TJ_STATE_COMMIT, "replaced journal reads back as COMMIT");
+    memset(copy, 0x5A, sizeof(copy));
+    T_CHECK(Platform_WriteFileAtomic(path, copy, sizeof(copy)) && Platform_ReadSmallFile(path, buf, MP_TJ_FILE_SIZE - 10) == MP_TJ_FILE_SIZE - 9, "an oversized file reads as cap + 1");
+    T_CHECK(Platform_RemoveFile(path) && Platform_ReadSmallFile(path, copy, MP_TJ_FILE_SIZE) == -1, "journal deleted");
+    T_CHECK(Platform_RemoveFile(path), "deleting a missing journal is fine");
+    T_CHECK(!Platform_WriteFileAtomic("pokemon-spectrum-no-such-dir/x.trade", buf, 4), "write into a missing directory fails cleanly");
+    Report("journal file: crash-safe write, read, replace, delete", failuresBefore);
+}
+
+static void TestJournalRules(void)
+{
+    u32 failuresBefore = sFail;
+    struct MpTradeCommitHost h;
+
+    // Local status.
+    T_CHECK(MpTradeJournal_LocalStatus(MP_TJ_STATE_READY, FALSE, FALSE, FALSE) == MP_TJ_STATUS_READY, "READY journal -> READY");
+    T_CHECK(MpTradeJournal_LocalStatus(MP_TJ_STATE_READY, FALSE, TRUE, FALSE) == MP_TJ_STATUS_BUSY, "READY and live -> BUSY");
+    T_CHECK(MpTradeJournal_LocalStatus(MP_TJ_STATE_COMMIT, FALSE, TRUE, FALSE) == MP_TJ_STATUS_COMMITTED, "COMMIT journal -> COMMITTED");
+    T_CHECK(MpTradeJournal_LocalStatus(MP_TJ_STATE_NONE, FALSE, FALSE, TRUE) == MP_TJ_STATUS_NONE_HAS, "no journal + their mon -> NONE_HAS");
+    T_CHECK(MpTradeJournal_LocalStatus(MP_TJ_STATE_NONE, FALSE, FALSE, FALSE) == MP_TJ_STATUS_NONE_HASNOT, "no journal, no mon -> NONE_HASNOT");
+    T_CHECK(MpTradeJournal_LocalStatus(MP_TJ_STATE_COMMIT, TRUE, FALSE, TRUE) == MP_TJ_STATUS_DAMAGED, "damaged -> DAMAGED");
+    // Resolve: READY.
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_READY, MP_TJ_STATUS_COMMITTED) == MP_TJ_ACTION_COMMIT, "READY + COMMITTED -> roll forward");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_READY, MP_TJ_STATUS_NONE_HAS) == MP_TJ_ACTION_COMMIT, "READY + NONE_HAS -> roll forward");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_READY, MP_TJ_STATUS_READY) == MP_TJ_ACTION_ABORT, "READY + READY -> neither");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_READY, MP_TJ_STATUS_NONE_HASNOT) == MP_TJ_ACTION_ABORT, "READY + NONE_HASNOT -> neither");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_READY, MP_TJ_STATUS_ABORTED) == MP_TJ_ACTION_ABORT, "READY + host ABORTED -> neither");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_READY, MP_TJ_STATUS_BUSY) == MP_TJ_ACTION_KEEP, "READY + BUSY -> wait");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_READY, MP_TJ_STATUS_DAMAGED) == MP_TJ_ACTION_KEEP, "READY + DAMAGED -> keep (never guess)");
+    // Resolve: COMMIT.
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_COMMIT, MP_TJ_STATUS_COMMITTED) == MP_TJ_ACTION_DONE, "COMMIT + COMMITTED -> done");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_COMMIT, MP_TJ_STATUS_NONE_HAS) == MP_TJ_ACTION_DONE, "COMMIT + NONE_HAS -> done");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_COMMIT, MP_TJ_STATUS_READY) == MP_TJ_ACTION_KEEP, "COMMIT + READY -> keep answering");
+    T_CHECK(MpTradeJournal_Resolve(MP_TJ_STATE_COMMIT, MP_TJ_STATUS_ABORTED) == MP_TJ_ACTION_KEEP, "COMMIT + ABORTED (impossible) -> keep");
+    Report("journal rules: local status and resolve table", failuresBefore);
+
+    // Host decision ring and trade-id agreement.
+    failuresBefore = sFail;
+    memset(&h, 0, sizeof(h));
+    ClearSent();
+    MpTradeCommit_HostReady(&h, 1, 3, 1, 0xAAAA0001u, TRUE, 2, 10, RecordSend);
+    MpTradeCommit_HostReady(&h, 2, 3, 1, 0xAAAA0001u, TRUE, 1, 20, RecordSend);
+    T_CHECK(MpTradeCommit_HostLookup(&h, 0xAAAA0001u) == MP_TJ_STATUS_COMMITTED, "ring remembers COMMIT");
+    MpTradeCommit_HostReady(&h, 1, 3, 2, 0xBBBB0002u, TRUE, 2, 30, RecordSend);
+    MpTradeCommit_HostGroupEnded(&h, 0x06, RecordSend);
+    T_CHECK(MpTradeCommit_HostLookup(&h, 0xBBBB0002u) == MP_TJ_STATUS_ABORTED, "ring remembers ABORT");
+    T_CHECK(MpTradeCommit_HostLookup(&h, 0xCCCC0003u) == MP_TJ_STATUS_NONE && MpTradeCommit_HostLookup(&h, 0) == MP_TJ_STATUS_NONE, "unknown id -> NONE");
+    ClearSent();
+    MpTradeCommit_HostReady(&h, 3, 9, 1, 0xDDDD0004u, FALSE, MP_SLOT_NONE, 40, RecordSend);
+    T_CHECK(MpTradeCommit_HostLookup(&h, 0xDDDD0004u) == MP_TJ_STATUS_NONE, "a READY outside a group is not remembered");
+    memset(&h, 0, sizeof(h));
+    ClearSent();
+    MpTradeCommit_HostReady(&h, 1, 4, 1, 0x01010101u, TRUE, 2, 10, RecordSend);
+    MpTradeCommit_HostReady(&h, 2, 4, 1, 0x02020202u, TRUE, 1, 20, RecordSend);
+    T_CHECK(sSentCount == 2 && SentIs(0, 1, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH) && SentIs(1, 2, MP_TRADE_OP_ABORT, MP_TRADE_ABORT_MISMATCH),
+            "same round, different trade ids -> ABORT both");
+    Report("host decision ring; differing trade ids abort", failuresBefore);
+}
+
+// --- Crash at every step --------------------------------------------------------------
+//
+// Two traders A and B and the host H (a third player, or A itself). The live trade runs in
+// steps; each run stops at step k with one party crashing (A, B or H; for H the decisions it
+// already sent are delivered or lost). The survivors finish what they can on their own, the
+// crashed side restarts from its disk state, and recovery runs with the real rules
+// (MpTradeJournal_LocalStatus / _Resolve) and the host's decision ring when the host survived.
+// Then: both saves have the trade, or neither, and no journal is left.
+
+enum { SIM_A, SIM_B };
+enum { SIM_STEPS = 9 };
+
+struct SimSide
+{
+    bool8 post;         // the save on disk has the trade
+    u8 journal;         // MP_TJ_STATE_*
+    u8 inbox;           // live decision delivered but not yet acted on (MP_TRADE_OP_*), 0 none
+    bool8 alive;
+};
+
+struct Sim
+{
+    struct SimSide s[2];
+    struct MpTradeCommitHost h;
+    u8 slot[2];
+};
+
+static struct Sim sSim;
+
+static void SimSend(u8 slot, u8 op, u8 groupId, u8 seq, u8 reason)
+{
+    u8 i = (slot == sSim.slot[SIM_A]) ? SIM_A : SIM_B;
+
+    if (sSim.s[i].alive)
+        sSim.s[i].inbox = op;
+}
+
+static void SimStep(u32 step)
+{
+    struct SimSide *a = &sSim.s[SIM_A], *b = &sSim.s[SIM_B];
+
+    switch (step)
+    {
+    case 0: a->journal = MP_TJ_STATE_READY; break;
+    case 1: MpTradeCommit_HostReady(&sSim.h, sSim.slot[SIM_A], 1, 1, 0x7777u, TRUE, sSim.slot[SIM_B], 0, SimSend); break;
+    case 2: b->journal = MP_TJ_STATE_READY; break;
+    case 3: MpTradeCommit_HostReady(&sSim.h, sSim.slot[SIM_B], 1, 1, 0x7777u, TRUE, sSim.slot[SIM_A], 0, SimSend); break;
+    case 4: if (a->inbox == MP_TRADE_OP_COMMIT) { a->journal = MP_TJ_STATE_COMMIT; a->inbox = 0; } break;
+    case 5: if (a->journal == MP_TJ_STATE_COMMIT) a->post = TRUE; break;
+    case 6: if (b->inbox == MP_TRADE_OP_COMMIT) { b->journal = MP_TJ_STATE_COMMIT; b->inbox = 0; } break;
+    case 7: if (b->journal == MP_TJ_STATE_COMMIT) b->post = TRUE; break;
+    case 8: // both back in the field: they tell each other COMMITTED -> DONE
+        if (a->journal == MP_TJ_STATE_COMMIT && b->journal == MP_TJ_STATE_COMMIT && a->post && b->post)
+            a->journal = b->journal = MP_TJ_STATE_NONE;
+        break;
+    }
+}
+
+static void SimAct(struct SimSide *x, u8 action)
+{
+    switch (action)
+    {
+    case MP_TJ_ACTION_COMMIT:
+        x->journal = MP_TJ_STATE_COMMIT;
+        x->post = TRUE;             // rolled forward in the field, then saved
+        break;
+    case MP_TJ_ACTION_ABORT:
+        if (x->post)
+        {
+            sFail++;
+            MP_LOG("selftest: FAIL: trade: sim: a signed save was told to abort\n");
+        }
+        x->journal = MP_TJ_STATE_NONE;
+        break;
+    case MP_TJ_ACTION_DONE:
+        if (x->post)
+            x->journal = MP_TJ_STATE_NONE;
+        break;
+    }
+}
+
+static u8 SimStatus(const struct SimSide *x)
+{
+    return MpTradeJournal_LocalStatus(x->journal, FALSE, FALSE, x->post);
+}
+
+// One recovery message from side i (and the answer), as mp_trade.c and the host do it.
+static void SimRecoverFrom(u8 i, bool8 hostRing, bool8 partnerOnline)
+{
+    struct SimSide *me = &sSim.s[i], *other = &sSim.s[i ^ 1];
+    u8 decision = hostRing ? MpTradeCommit_HostLookup(&sSim.h, 0x7777u) : MP_TJ_STATUS_NONE;
+    u8 status;
+
+    if (me->journal == MP_TJ_STATE_NONE)
+        return;
+    status = SimStatus(me);
+    if (decision != MP_TJ_STATUS_NONE)
+    {
+        SimAct(me, MpTradeJournal_Resolve(me->journal, decision));
+        if (partnerOnline && other->journal != MP_TJ_STATE_NONE)
+            SimAct(other, MpTradeJournal_Resolve(other->journal, decision));
+    }
+    if (!partnerOnline)
+        return;
+    if (other->journal != MP_TJ_STATE_NONE)
+        SimAct(other, MpTradeJournal_Resolve(other->journal, status));
+    if (me->journal != MP_TJ_STATE_NONE)
+        SimAct(me, MpTradeJournal_Resolve(me->journal, SimStatus(other)));
+}
+
+// Returns FALSE (and logs) if the run ends inconsistent.
+static bool8 SimRun(bool8 hostIsA, u32 crashStep, u8 crashed, bool8 inFlightLost, bool8 partnerReturns)
+{
+    bool8 hostAlive = TRUE;
+    bool8 signedLive;
+    u32 step, round;
+    u8 i;
+
+    memset(&sSim, 0, sizeof(sSim));
+    sSim.slot[SIM_A] = hostIsA ? 0 : 1;
+    sSim.slot[SIM_B] = hostIsA ? 1 : 2;
+    sSim.s[SIM_A].alive = sSim.s[SIM_B].alive = TRUE;
+    for (step = 0; step < crashStep && step < SIM_STEPS; step++)
+        SimStep(step);
+
+    // The crash. crashed: 0 = A, 1 = B, 2 = the host (A itself when hostIsA).
+    if (crashStep < SIM_STEPS)
+    {
+        bool8 hostDies = (crashed == 2) || (hostIsA && crashed == SIM_A);
+
+        if (crashed == SIM_A || crashed == SIM_B || (hostIsA && crashed == 2))
+        {
+            u8 dead = (crashed == 2) ? SIM_A : crashed;
+
+            sSim.s[dead].alive = FALSE;
+            sSim.s[dead].inbox = 0;
+        }
+        if (hostDies)
+        {
+            hostAlive = FALSE;
+            for (i = 0; i < 2; i++)
+            {
+                if (inFlightLost)
+                    sSim.s[i].inbox = 0;
+            }
+        }
+        else
+        {
+            // The dead trader's slot leaves: its group ends.
+            MpTradeCommit_HostGroupEnded(&sSim.h, (u8)((1 << sSim.slot[SIM_A]) | (1 << sSim.slot[SIM_B])), SimSend);
+        }
+        // Survivors finish on their own (trade.c state 43 and on).
+        for (i = 0; i < 2; i++)
+        {
+            struct SimSide *x = &sSim.s[i];
+
+            if (!x->alive)
+                continue;
+            if (x->inbox == MP_TRADE_OP_COMMIT && x->journal == MP_TJ_STATE_READY)
+                x->journal = MP_TJ_STATE_COMMIT;
+            else if (x->inbox == MP_TRADE_OP_ABORT && x->journal == MP_TJ_STATE_READY)
+                x->journal = MP_TJ_STATE_NONE;  // final ABORT: journal deleted
+            x->inbox = 0;
+            if (x->journal == MP_TJ_STATE_COMMIT)
+                x->post = TRUE;                 // signs
+            // else READY with no decision: IN_DOUBT, kept
+        }
+    }
+    signedLive = sSim.s[SIM_A].post || sSim.s[SIM_B].post;
+
+    // Restart and load: a COMMIT journal whose save lacks the trade rolls forward.
+    for (i = 0; i < 2; i++)
+    {
+        sSim.s[i].alive = TRUE;
+        if (sSim.s[i].journal == MP_TJ_STATE_COMMIT)
+            sSim.s[i].post = TRUE;
+    }
+    if (!hostAlive || hostIsA)
+        memset(&sSim.h, 0, sizeof(sSim.h)); // a new host session: no decision ring (host A restarted)
+    if (!partnerReturns)
+    {
+        // Only the crashed side is back: it may learn from the host, never guess.
+        u8 me = (crashed == SIM_B) ? SIM_B : SIM_A;
+        u8 before = sSim.s[me].journal;
+
+        for (round = 0; round < 5; round++)
+            SimRecoverFrom(me, hostAlive && !hostIsA, FALSE);
+        if (before != MP_TJ_STATE_NONE && sSim.s[me].journal == MP_TJ_STATE_NONE && !(hostAlive && !hostIsA))
+        {
+            MP_LOG("selftest: FAIL: trade: sim: journal dropped without the partner or the host\n");
+            return FALSE;
+        }
+        return TRUE;
+    }
+    for (round = 0; round < 6; round++)
+    {
+        SimRecoverFrom(SIM_A, hostAlive && !hostIsA, TRUE);
+        SimRecoverFrom(SIM_B, hostAlive && !hostIsA, TRUE);
+    }
+    if (sSim.s[SIM_A].post != sSim.s[SIM_B].post || sSim.s[SIM_A].journal != MP_TJ_STATE_NONE || sSim.s[SIM_B].journal != MP_TJ_STATE_NONE
+     || (signedLive && !sSim.s[SIM_A].post))
+    {
+        MP_LOG("selftest: FAIL: trade: sim: host%s crash %s before step %u%s: A %s/%u, B %s/%u\n", hostIsA ? "=A" : "",
+               (crashed == 2) ? "host" : (crashed == SIM_A ? "A" : "B"), (unsigned)crashStep, inFlightLost ? " (in-flight lost)" : "",
+               sSim.s[SIM_A].post ? "post" : "pre", (unsigned)sSim.s[SIM_A].journal,
+               sSim.s[SIM_B].post ? "post" : "pre", (unsigned)sSim.s[SIM_B].journal);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static void TestJournalCrashes(void)
+{
+    u32 failuresBefore = sFail;
+    u32 runs = 0, step;
+    u8 hostIsA, crashed, lost;
+
+    for (hostIsA = 0; hostIsA < 2; hostIsA++)
+        for (step = 0; step <= SIM_STEPS; step++)
+            for (crashed = 0; crashed < 3; crashed++)
+                for (lost = 0; lost < 2; lost++)
+                {
+                    runs++;
+                    if (!SimRun(hostIsA, step, crashed, lost, TRUE))
+                        sFail++;
+                }
+    T_CHECK(runs == 2 * (SIM_STEPS + 1) * 3 * 2, "every combination ran");
+    Report("journal: crash at every step (host and client, 120 runs) -> both saves agree, no journal left", failuresBefore);
+
+    failuresBefore = sFail;
+    for (hostIsA = 0; hostIsA < 2; hostIsA++)
+        for (step = 0; step < SIM_STEPS; step++)
+            for (crashed = 0; crashed < 3; crashed++)
+                if (!SimRun(hostIsA, step, crashed, FALSE, FALSE))
+                    sFail++;
+    Report("journal: partner never returns -> the journal is kept unless the host decided", failuresBefore);
 }
 
 u32 MpSelftest_Trade(void)

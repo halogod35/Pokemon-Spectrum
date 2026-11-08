@@ -104,6 +104,12 @@ const u8 gText_MpTradeNeedTwoMons[] = _("You need two or more POKéMON\nto trade
 const u8 gText_MpTradeEnigmaBerry[] = _("A POKéMON holding an ENIGMA BERRY\ncan’t be traded.");
 const u8 gText_MpTradeCantHere[] = _("You can’t trade here.");
 const u8 gText_MpTradePartnerBusy[] = _("{STR_VAR_1} can’t trade right now.");
+// MP: PS-050 trade journal
+const u8 gText_MpTradeJournalPending[] = _("A trade with {STR_VAR_1} isn’t finished.\nPlay together again to finish it.");
+const u8 gText_MpTradeJournalCompleted[] = _("The unfinished trade with {STR_VAR_1}\nhas been completed.");
+const u8 gText_MpTradeJournalCancelled[] = _("The unfinished trade with {STR_VAR_1}\nwas cancelled. Nothing changed.");
+const u8 gText_MpTradeJournalDamaged[] = _("An unfinished trade can’t be\nchecked. Its record is kept.");
+const u8 gText_MpTradeJournalBlocks[] = _("You have an unfinished trade.\nIt has to be finished first.");
 const u8 gText_WirelessNotConnected[] = _("The Wireless Adapter is not\nconnected.");
 const u8 gText_MysteryGiftCantUse[] = _("MYSTERY GIFT can't be used while\nthe Wireless Adapter is attached.");
 const u8 gText_MysteryEventsCantUse[] = _("MYSTERY EVENTS can't be used while\nthe Wireless Adapter is attached.");

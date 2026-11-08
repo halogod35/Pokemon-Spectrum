@@ -4648,6 +4648,12 @@ static void CB2_UpdateLinkTrade(void)
     {
         DestroySprite(&gSprites[sTradeAnim->monSpriteIds[TRADE_PLAYER]]);
         FreeSpriteOamMatrix(&gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]]);
+        // MP: PS-050. Remember both mons and the partner for the trade journal, before the swap.
+        if (MP_TradeIsDirect())
+            MP_TradeJournalStage(&gPlayerParty[gSelectedTradeMonPositions[TRADE_PLAYER] % PARTY_SIZE],
+                                 &gEnemyParty[gSelectedTradeMonPositions[TRADE_PARTNER] % PARTY_SIZE],
+                                 gSelectedTradeMonPositions[TRADE_PLAYER],
+                                 gLinkPlayers[GetMultiplayerId() ^ 1].trainerId, gLinkPlayers[GetMultiplayerId() ^ 1].name);
         TradeMons(gSelectedTradeMonPositions[TRADE_PLAYER], gSelectedTradeMonPositions[TRADE_PARTNER] % PARTY_SIZE);
         if (!IsWirelessTrade())
         {
@@ -4774,12 +4780,23 @@ static void CB2_SaveAndEndTrade(void)
         {
             if (MP_TradeIsDirect())
             {
+                u32 tradeId;
+
                 // MP: PS-044 host-arbitrated commit (mp.h, protocol.md 6.15) instead of the
                 // standby: the save is written except for its signature. Tell the host and wait
                 // for its decision, which arrives even if the cable dies meanwhile, so a link
                 // error must not take us to CB2_LinkError before that.
+                // MP: PS-050. First the journal (READY), durably; without it, no READY.
                 SetSuppressLinkErrorMessage(TRUE);
-                MP_TradeCommitReady();
+                if (!MP_TradeJournalWriteReady(&tradeId))
+                {
+                    SetSuppressLinkErrorMessage(FALSE);
+                    if (!HasLinkErrorOccurred())
+                        CloseLink();
+                    SetMainCallback2(CB2_LinkError); // the partner gets ABORT: nobody signs
+                    break;
+                }
+                MP_TradeCommitReady(tradeId);
                 gMain.state = 43;
                 break;
             }
@@ -4803,8 +4820,18 @@ static void CB2_SaveAndEndTrade(void)
         {
         case MP_TRADE_COMMIT_COMMIT:
             MP_TradeCommitReset();
-            LinkFullSave_SetLastSectorSignature(); // the trade is now in this save
             SetSuppressLinkErrorMessage(FALSE);
+            // MP: PS-050. Journal COMMIT before the signature: a crash in between rolls the
+            // trade forward at the next load. If it can't be written, stay unsigned (in doubt).
+            if (!MP_TradeJournalMarkCommit())
+            {
+                if (!HasLinkErrorOccurred())
+                    CloseLink();
+                SetMainCallback2(CB2_LinkError);
+                break;
+            }
+            LinkFullSave_SetLastSectorSignature(); // the trade is now in this save (and on disk)
+            MP_TradeJournalOnSigned();
             if (HasLinkErrorOccurred())
                 SetMainCallback2(CB2_LinkError); // the partner is gone; PS-048 reloads the new save
             else
@@ -4813,6 +4840,9 @@ static void CB2_SaveAndEndTrade(void)
         case MP_TRADE_COMMIT_ABORT:
             // Not signed: the previous save stays the valid one. The link-error path closes the
             // cable and PS-048's "Continue from last save" reloads it, undoing the trade.
+            // MP: PS-050. A final ABORT deletes the journal; IN_DOUBT keeps it for recovery.
+            if (MP_TradeCommitGetAbortReason() != MP_TRADE_ABORT_IN_DOUBT)
+                MP_TradeJournalOnAbort();
             MP_TradeCommitReset();
             SetSuppressLinkErrorMessage(FALSE);
             if (!HasLinkErrorOccurred())

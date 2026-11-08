@@ -588,6 +588,8 @@ bool8 MpLink_OnHostReceive(u8 slot, u8 channel, u8 type, const u8 *payload, u32 
         return TRUE;
     case MP_MSG_TRADE_COMMIT: // PS-044 (protocol.md 6.15)
         return MpTradeCommit_OnHostReceive(slot, payload, len);
+    case MP_MSG_TRADE_RECOVER: // PS-050 (protocol.md 6.16)
+        return MpTradeCommit_OnHostReceiveRecover(slot, payload, len);
     default:
         return FALSE; // host -> client types, or unassigned LINK_* numbers
     }
@@ -745,6 +747,8 @@ bool8 MpLink_OnClientReceive(u8 channel, u8 type, const u8 *payload, u32 len)
         return TRUE;
     case MP_MSG_TRADE_COMMIT: // PS-044 (protocol.md 6.15)
         return MpTradeCommit_OnClientReceive(payload, len);
+    case MP_MSG_TRADE_RECOVER: // PS-050 (protocol.md 6.16)
+        return MpTradeCommit_OnClientReceiveRecover(payload, len);
     default:
         return FALSE;
     }

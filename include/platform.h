@@ -8,6 +8,13 @@ void Platform_StoreSaveFile(void);
 // MP: BUG-003, --save-selftest: the trade's two-phase link save on a real save (save_link_selftest.c).
 // `path` must equal gPlatformArgs.savePath. Returns the number of failures.
 u32 SaveSelftest_LinkSave(const char *path);
+// MP: PS-050 (src/platform/file_atomic.c). Crash-safe small files next to the save:
+// write "<path>.tmp", flush + sync, atomic replace. FALSE on any error (the old file stays).
+bool8 Platform_WriteFileAtomic(const char *path, const void *data, u32 size);
+// Reads up to `cap` bytes. -1 if the file does not exist; cap + 1 if it is longer than cap.
+s32 Platform_ReadSmallFile(const char *path, void *buf, u32 cap);
+// TRUE if the file is gone afterwards (also when it never existed).
+bool8 Platform_RemoveFile(const char *path);
 void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size);
 void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame);
 u16 Platform_GetKeyInput(void);

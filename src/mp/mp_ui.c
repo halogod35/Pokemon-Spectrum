@@ -251,6 +251,7 @@ void MpUi_Update(void)
     }
     MpInteractUi_Update(); // PS-041: busy bookkeeping for a waiting incoming request
     MpTrade_Update(); // BUG-004: deferred link leave, never hang in a trade
+    MpTrade_JournalUpdate(); // PS-050: trade journal recovery
 }
 
 // ---------------------------------------------------------------------------
@@ -534,6 +535,9 @@ bool8 MpUi_TryShowFieldNotice(void)
      || ScriptContext_IsEnabled()
      || !IsFieldMessageBoxHidden())
     {
+        // PS-050: an unfinished trade first (it may roll the trade forward and save).
+        if (MpTrade_TryShowJournalNotice())
+            return TRUE;
         // No session error to show. An incoming trade/battle request (PS-041) comes next; it
         // blocks like a message box and locks controls itself.
         if (MpInteractUi_TryShowIncoming())

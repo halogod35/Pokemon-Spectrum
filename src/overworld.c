@@ -1780,6 +1780,7 @@ void CB2_ContinueSavedGame(void)
         CB2_ReturnToField();
     }
     MP_OnContinueSavedGame(); // MP: --host/--join auto-start (runs in the next MP_Update)
+    MP_TradeJournalOnLoad(); // MP: PS-050: an unfinished trade from before this load
 }
 
 static void FieldClearVBlankHBlankCallbacks(void)

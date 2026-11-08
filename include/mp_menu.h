@@ -65,6 +65,11 @@ void MpTrade_Start(u8 partnerSlot, const u8 *partnerName);
 // BUG-004: the deferred link leave after a trade, and the "group gone while trading" watchdog.
 // Once per frame from MpUi_Update.
 void MpTrade_Update(void);
+// PS-050 trade journal: recovery messages and periodic status (every frame, from MpUi_Update),
+// and the field part (roll forward + "unfinished trade" notices, from MpUi_TryShowFieldNotice;
+// TRUE if it showed a message and locked controls).
+void MpTrade_JournalUpdate(void);
+bool8 MpTrade_TryShowJournalNotice(void);
 
 void MpUi_ShowPlayerList(void);
 void MpUi_UpdatePlayerList(void);

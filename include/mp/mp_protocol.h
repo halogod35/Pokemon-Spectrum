@@ -56,6 +56,7 @@
 #define MP_MSG_LINK_CMD         0x6A    // C -> H
 #define MP_MSG_LINK_ROW         0x6B    // H -> C
 #define MP_MSG_TRADE_COMMIT     0x6C    // C -> H (READY), H -> C (COMMIT / ABORT). PS-044, protocol.md 6.15
+#define MP_MSG_TRADE_RECOVER    0x6D    // C -> H -> C, or H -> C (arbiter). PS-050, protocol.md 6.16
 #define MP_MSG_LINK_FIRST       0x60    // reserved LINK_* range (protocol.md 4)
 #define MP_MSG_LINK_LAST        0x7F
 #define MP_MSG_DEBUG_ECHO       0xF0    // --mp-selftest only
@@ -78,7 +79,8 @@
 #define MP_LINK_CMD_SIZE        (4 + 2 * MP_LINK_CMD_WORDS)                 // 20
 #define MP_LINK_ROW_SIZE(n)     (8 + 2 * MP_LINK_CMD_WORDS * (n))           // 8 + 16n
 #define MP_INTERACT_SIZE        8       // all three INTERACT_* messages
-#define MP_TRADE_COMMIT_SIZE    4       // PS-044: op, groupId, seq, reason
+#define MP_TRADE_COMMIT_SIZE    8       // PS-044: op, groupId, seq, reason; PS-050: tradeId
+#define MP_TRADE_RECOVER_SIZE   32      // PS-050
 #define MP_TRAINER_CARD_DATA_SIZE 56    // PS-042: 4-byte routing prefix + 52-byte card
 // PS-043 PARTY_DATA: 8-byte prefix + monCount * 100. A whole party (601 bytes with a count)
 // does not fit in one 512-byte packet, so it is split into parts of up to 3 mons (312 bytes).
@@ -274,6 +276,7 @@ struct MpMsgTradeCommit
     u8 groupId;
     u8 seq;
     u8 reason;
+    u32 tradeId;    // PS-050: the journal's trade id (READY: != 0; echoed in COMMIT / ABORT)
 };
 
 // Header: 4 <= len <= MP_MAX_PACKET_SIZE and length == len - 4. Type/version/state
@@ -348,10 +351,34 @@ u8 MpProto_ParseLinkCmd(const u8 *payload, u32 len, struct MpMsgLinkCmd *out);
 u16 MpProto_WriteLinkCmd(u8 *buf, u16 cap, const struct MpMsgLinkCmd *msg);
 u8 MpProto_ParseLinkRow(const u8 *payload, u32 len, struct MpMsgLinkRow *out);
 u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg);
-// TRADE_COMMIT (PS-044): exactly 4 bytes; op 1..3; groupId != 0; seq != 0; reason 0 for
-// READY / COMMIT and MP_TRADE_ABORT_FIRST..LAST for ABORT. The direction is checked by the caller.
+// TRADE_COMMIT (PS-044, PS-050): exactly 8 bytes; op 1..3; groupId != 0; seq != 0; reason 0 for
+// READY / COMMIT and MP_TRADE_ABORT_FIRST..LAST for ABORT; tradeId != 0 for READY. The direction is checked by the caller.
 u8 MpProto_ParseTradeCommit(const u8 *payload, u32 len, struct MpMsgTradeCommit *out);
 u16 MpProto_WriteTradeCommit(u8 *buf, u16 cap, const struct MpMsgTradeCommit *msg);
+
+// TRADE_RECOVER (PS-050, protocol.md 6.16): one side's view of a journaled trade, routed by
+// the host to the partner (and answered by the host itself when it remembers the decision).
+// slot: C -> H the target slot, or MP_SLOT_NONE (ask the host only); H -> C the sender's slot,
+// or MP_SLOT_NONE (the host's own decision). status MP_TJ_STATUS_* (mp.h). flags bit 0: reply.
+struct MpMsgTradeRecover
+{
+    u8 slot;
+    u8 status;
+    u8 flags;
+    u32 tradeId;
+    u32 senderTid;
+    u32 receiverTid;
+    u32 senderGivenPersonality;     // the mon the sender gave (the receiver got)
+    u32 senderGivenOtId;
+    u32 senderRecvPersonality;      // the mon the sender got (the receiver gave)
+    u32 senderRecvOtId;
+};
+#define MP_TRADE_RECOVER_FLAG_REPLY 0x01
+// Exactly 32 bytes; slot < 4 or MP_SLOT_NONE; status 1..MP_TJ_STATUS_COUNT-1; flags <= 1;
+// reserved 0; tradeId != 0. The binding (trade id vs. the fields, trainer ids) is checked by
+// the receiver (MpTradeJournal_*).
+u8 MpProto_ParseTradeRecover(const u8 *payload, u32 len, struct MpMsgTradeRecover *out);
+u16 MpProto_WriteTradeRecover(u8 *buf, u16 cap, const struct MpMsgTradeRecover *msg);
 
 // Number of set bits in the low 4 bits (link masks).
 u8 MpProto_LinkMaskCount(u8 mask);

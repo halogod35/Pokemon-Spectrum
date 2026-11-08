@@ -408,6 +408,11 @@ extern const u8 gText_MpTradeNeedTwoMons[];  // MP: PS-044
 extern const u8 gText_MpTradeEnigmaBerry[];  // MP: PS-044
 extern const u8 gText_MpTradeCantHere[];     // MP: PS-044
 extern const u8 gText_MpTradePartnerBusy[];  // MP: PS-044
+extern const u8 gText_MpTradeJournalPending[];    // MP: PS-050
+extern const u8 gText_MpTradeJournalCompleted[];  // MP: PS-050
+extern const u8 gText_MpTradeJournalCancelled[];  // MP: PS-050
+extern const u8 gText_MpTradeJournalDamaged[];    // MP: PS-050
+extern const u8 gText_MpTradeJournalBlocks[];     // MP: PS-050
 extern const u8 gText_WirelessNotConnected[];
 extern const u8 gText_MysteryGiftCantUse[];
 extern const u8 gText_MysteryEventsCantUse[];

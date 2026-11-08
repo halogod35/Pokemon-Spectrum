@@ -26,12 +26,24 @@ struct MpTradeCommitRec
     u8 seq;
     u8 partner;                 // the other member's slot
     u8 reason;                  // MP_TRADE_ABORT_* once ABORT
+    u32 tradeId;                // PS-050: the journal's trade id from READY
     u32 startMs;                // when READY arrived (timeout)
+};
+
+#define MP_TRADE_DECISION_RING 8
+
+// PS-050: the host remembers its last decisions by trade id (for the journal recovery).
+struct MpTradeDecision
+{
+    u32 tradeId;
+    u8 op;                      // MP_TRADE_OP_COMMIT / ABORT
 };
 
 struct MpTradeCommitHost
 {
     struct MpTradeCommitRec rec[MP_MAX_PLAYERS];
+    struct MpTradeDecision ring[MP_TRADE_DECISION_RING];
+    u8 ringNext;
     u32 commits;
     u32 aborts;
 };
@@ -43,7 +55,10 @@ typedef void (*MpTradeCommitSendFunc)(u8 slot, u8 op, u8 groupId, u8 seq, u8 rea
 // READY(groupId, seq) from `slot`. `groupOk`: the host sees `slot` in a 2-member link group with
 // that id, whose other member is `partner`. Decisions go out through `send`; for COMMIT the
 // partner is sent first and `slot` second (the wrapper reorders so the host's own slot is last).
-void MpTradeCommit_HostReady(struct MpTradeCommitHost *h, u8 slot, u8 groupId, u8 seq, bool8 groupOk, u8 partner, u32 now, MpTradeCommitSendFunc send);
+void MpTradeCommit_HostReady(struct MpTradeCommitHost *h, u8 slot, u8 groupId, u8 seq, u32 tradeId, bool8 groupOk, u8 partner, u32 now, MpTradeCommitSendFunc send);
+// PS-050: the host's remembered decision for `tradeId`: MP_TJ_STATUS_COMMITTED / _ABORTED, or
+// MP_TJ_STATUS_NONE. A COMMIT is only recorded when both members' READYs carried that trade id.
+u8 MpTradeCommit_HostLookup(const struct MpTradeCommitHost *h, u32 tradeId);
 // The link group with members `memberMask` ended: every undecided round in it is aborted.
 void MpTradeCommit_HostGroupEnded(struct MpTradeCommitHost *h, u8 memberMask, MpTradeCommitSendFunc send);
 // Timeout: undecided rounds older than MP_TRADE_COMMIT_TIMEOUT_MS are aborted.
@@ -61,6 +76,9 @@ void MpTradeCommit_HostUpdate(void);
 // TRADE_COMMIT from `slot` (host) or from the host (client). FALSE = malformed / wrong direction.
 bool8 MpTradeCommit_OnHostReceive(u8 slot, const u8 *payload, u32 len);
 bool8 MpTradeCommit_OnClientReceive(const u8 *payload, u32 len);
+// PS-050 TRADE_RECOVER (protocol.md 6.16). FALSE = malformed.
+bool8 MpTradeCommit_OnHostReceiveRecover(u8 slot, const u8 *payload, u32 len);
+bool8 MpTradeCommit_OnClientReceiveRecover(const u8 *payload, u32 len);
 
 // Selftest: the host table of the selected instance.
 const struct MpTradeCommitHost *MpTradeCommit_DebugHost(void);
