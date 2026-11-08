@@ -256,6 +256,9 @@ void MP_BattleLinkSelftestBegin(u8 *ring);
 void MP_BattleLinkSelftestRunCopy(void);
 u16 MP_BattleLinkSelftestRingEnd(void);
 void MP_BattleLinkSelftestEnd(void);
+// MP: BUG-006, --mp-selftest only: runs the link controller filter on a whole 0x200-byte row;
+// NULL if accepted (maybe clamped), else the reason it would be refused.
+const char *MP_BattleLinkSelftestCheckMsg(u8 bufferId, u8 *row);
 void PrepareBufferDataTransferLink(u8 bufferId, u16 size, u8 *data);
 
 // emitters

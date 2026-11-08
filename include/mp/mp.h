@@ -639,6 +639,8 @@ void MP_TradeOnLinkErrorRecovery(void);
 // MP: BUG-005, from trade.c's CB_InitExitCanceledTrade: both players stopped trading. Until the
 // field return, a partner that leaves (or a link error) only closes the cable; no error screen.
 void MP_TradeOnMenuExit(void);
+// BUG-007: a log line from trade.c ("trade: <what>"); the same text twice in a row is logged once.
+void MP_TradeLog(const char *what);
 
 // ---------------------------------------------------------------------------
 // Direct link battle over the cable (PS-045, src/mp/mp_battle.c, pure parts in mp_battle.h)
@@ -719,6 +721,8 @@ struct Mail;
 // open makes it report LINK_STAT_ERROR_HARDWARE, so the game's own link-error path ends the
 // activity (CB2_LinkError, recovery is PS-048). The caller still drops or neutralises the data.
 void MP_LinkRejectData(const char *what);
+// BUG-006: the same with a printf-style reason (the check, the field and the value).
+void MP_LinkRejectDataF(const char *fmt, ...);
 u32 MP_LinkGetRejectCount(void);    // since boot (selftest / --mp-debug)
 
 // A received party Pokémon. Empty slots (species NONE) are zeroed and accepted. Anything
@@ -728,6 +732,8 @@ u32 MP_LinkGetRejectCount(void);    // since boot (selftest / --mp-debug)
 bool8 MP_LinkValidateMon(struct Pokemon *mon);
 // MP_LinkValidateMon on `count` mons; FALSE if any was rejected (all are still processed).
 bool8 MP_ValidateParty(struct Pokemon *party, u32 count);
+// BUG-006/007: the reason of the last refusal by MP_LinkValidateMon / MP_ValidateParty, for the log.
+const char *MP_LinkValidateReason(void);
 // A struct BattlePokemon from the peer (switch-in data, GetMonData replies, SETMONDATA):
 // species, moves and held item out of range are cleared and give FALSE (no honest game sends
 // them). Ability, types, level, stat stages, hp and the strings are clamped silently: honest

@@ -321,8 +321,21 @@ void CB2_MpReturnToFieldAfterTrade(void)
 // restore it: without CB1_Overworld there is no player input at all (the frozen field of
 // BUG-005). Also drop the cable-room link state that the vanilla return
 // (CB2_ReturnToFieldFromMultiplayer) would hand over to the link overworld instead.
+// BUG-007: a trade.c log line; repeats of the same text are logged once.
+void MP_TradeLog(const char *what)
+{
+    static const char *sLast;
+
+    if (what == sLast)
+        return;
+    sLast = what;
+    MP_LOG("trade: %s\n", what);
+}
+
 void MpTrade_ResetFieldLinkState(void)
 {
+    MP_LOG("link: back to the field (link error during the exit: %u, link callback left: %u, group state %u)\n",
+           (unsigned)HasLinkErrorOccurred(), (unsigned)(gLinkCallback != NULL), (unsigned)MP_LinkGetState()); // BUG-007
     if (gLinkCallback != NULL)
         MP_LOG("link: clearing a leftover link callback on the way back to the field\n");
     ClearLinkCallback();
@@ -339,6 +352,7 @@ void MP_TradeOnMenuExit(void)
 {
     if (!sDirectTrade)
         return;
+    MP_LOG("trade: both stopped trading; the menu closes (link id %u)\n", (unsigned)MP_LinkGetLinkId()); // BUG-007
     sTradeExiting = TRUE;
     SetSuppressLinkErrorMessage(TRUE); // a link error now only closes the cable; the menu exits
 }
@@ -397,7 +411,8 @@ void MpTrade_Update(void)
             // BUG-005: one shot. The error screen is CB2_PrintErrorMessage, not CB2_LinkError, so
             // this used to fire again every MP_TRADE_GONE_FRAMES and restart the error screen.
             // The trade is over for us; MP_TradeOnLinkErrorRecovery finishes the clean-up on A.
-            MP_LOG("trade: the link group is gone while trading; recovering from the last save\n");
+            MP_LOG("trade: the link group is gone while trading (link state %u, end reason %u, session %u); recovering from the last save\n",
+                   (unsigned)MP_LinkGetState(), (unsigned)MP_LinkGetEndReason(), (unsigned)MP_IsActive()); // BUG-007
             sGroupGoneFrames = 0;
             sDirectTrade = FALSE;
             CloseLink();

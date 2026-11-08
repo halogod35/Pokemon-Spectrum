@@ -6,6 +6,7 @@
 // call it whatever delivered the data. MP_LinkRejectData lives in mp_link_cable.c, next to
 // the cable state it raises the error on.
 
+#include <stdio.h>
 #include "global.h"
 #include "link.h"
 #include "mail.h"
@@ -21,6 +22,13 @@
 #include "mp/mp.h"
 
 #define MP_MAX_CONTEST_RIBBON_COUNT (CONTEST_RANK_MASTER + 1) // Normal, Super, Hyper, Master
+
+// BUG-006/007: why the last MP_LinkValidateMon / MP_SanitizeMail / MP_ValidateParty refused, for the log.
+static const char *sMpValidateReason = "none";
+static u32 sMpValidateValue;
+static u32 sMpValidateSlot;
+
+#define MP_MON_REFUSE(why, v) do { sMpValidateReason = (why); sMpValidateValue = (v); ZeroMonData(mon); return FALSE; } while (0)
 
 u8 MP_SanitizeLanguage(u8 language)
 {
@@ -39,39 +47,24 @@ bool8 MP_LinkValidateMon(struct Pokemon *mon)
 
     species = GetMonData(&copy, MON_DATA_SPECIES); // decrypts, checks the checksum
     if (GetMonData(&copy, MON_DATA_SANITY_IS_BAD_EGG))
-    {
-        ZeroMonData(mon);
-        return FALSE; // bad checksum (or a Bad Egg): nothing in it can be trusted
-    }
+        MP_MON_REFUSE("bad checksum or Bad Egg", species); // nothing in it can be trusted
     if (species == SPECIES_NONE)
     {
         ZeroMonData(mon); // an empty slot; make sure nothing else is left in it
         return TRUE;
     }
     if (species >= NUM_SPECIES)
-    {
-        ZeroMonData(mon);
-        return FALSE;
-    }
+        MP_MON_REFUSE("species", species);
     if (GetMonData(&copy, MON_DATA_HELD_ITEM) >= ITEMS_COUNT)
-    {
-        ZeroMonData(mon);
-        return FALSE;
-    }
+        MP_MON_REFUSE("held item", GetMonData(&copy, MON_DATA_HELD_ITEM));
     for (i = 0; i < MAX_MON_MOVES; i++)
     {
         if (GetMonData(&copy, MON_DATA_MOVE1 + i) >= MOVES_COUNT)
-        {
-            ZeroMonData(mon);
-            return FALSE;
-        }
+            MP_MON_REFUSE("move", GetMonData(&copy, MON_DATA_MOVE1 + i));
     }
     value = GetMonData(&copy, MON_DATA_LEVEL);
     if (value < 1 || value > MAX_LEVEL)
-    {
-        ZeroMonData(mon);
-        return FALSE;
-    }
+        MP_MON_REFUSE("level", value);
 
     // Clamps: out of range but harmless once fixed.
     u8value = GetMonData(&copy, MON_DATA_LANGUAGE);
@@ -108,9 +101,21 @@ bool8 MP_ValidateParty(struct Pokemon *party, u32 count)
     for (i = 0; i < count; i++)
     {
         if (!MP_LinkValidateMon(&party[i]))
+        {
+            if (ok)
+                sMpValidateSlot = i; // the first bad one
             ok = FALSE;
+        }
     }
     return ok;
+}
+
+const char *MP_LinkValidateReason(void)
+{
+    static char sText[96];
+
+    snprintf(sText, sizeof(sText), "first bad mon in slot %u: %s = %u", (unsigned)sMpValidateSlot, sMpValidateReason, (unsigned)sMpValidateValue);
+    return sText;
 }
 
 #define MP_CLAMP_FIELD(field, limit, fallback) \
@@ -211,11 +216,21 @@ bool8 MP_SanitizeMail(struct Mail *mail)
 
     if (mail->itemId != ITEM_NONE && !ItemIsMail(mail->itemId))
     {
+        sMpValidateReason = "mail item is not a mail";
         ClearMail(mail); // the mail screens index their tables with ITEM_TO_MAIL(itemId)
         return FALSE;
     }
     mail->playerName[PLAYER_NAME_LENGTH] = EOS; // silently: not a sign of a bad peer
-    MP_CLAMP_FIELD(mail->species, NUM_SPECIES, SPECIES_NONE);
+    // BUG-007: an Unown's mail species is 30000 + its letter (SpeciesToMailSpecies): honest.
+    {
+        u16 unownLetter;
+
+        if (MailSpeciesToSpecies(mail->species, &unownLetter) >= NUM_SPECIES)
+        {
+            mail->species = SPECIES_NONE;
+            changed = TRUE;
+        }
+    }
     // The easy chat words are checked by CopyEasyChatWord (IsEasyChatWordInvalid) when shown.
     return !changed;
 }
