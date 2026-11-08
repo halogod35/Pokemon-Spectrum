@@ -1890,7 +1890,11 @@ bool8 HandleLinkConnection(void)
     {
         gLinkStatus = MP_LinkMain1(&gShouldAdvanceLinkState, gSendCmd, gRecvCmds);
         LinkMain2(&gMain.heldKeys);
-        if ((gLinkStatus & LINK_STAT_RECEIVED_NOTHING) && IsSendingKeysOverCable() == TRUE)
+        // MP: BUG-005. Only while a link group exists: without one nothing can ever arrive,
+        // and a key-sending callback left behind would skip every callback for good (a frozen
+        // game with a live session).
+        if ((gLinkStatus & LINK_STAT_RECEIVED_NOTHING) && IsSendingKeysOverCable() == TRUE
+         && MP_LinkGetState() == MP_LINK_STATE_GROUPED)
             return TRUE;
     }
     return FALSE;

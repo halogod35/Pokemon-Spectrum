@@ -635,6 +635,9 @@ bool8 MP_TradeIsDirect(void);
 void CB2_MpReturnToFieldAfterTrade(void);
 // MP: from MP_LinkPrepareErrorRecovery (link.c): a link error ended the trade; forget it.
 void MP_TradeOnLinkErrorRecovery(void);
+// MP: BUG-005, from trade.c's CB_InitExitCanceledTrade: both players stopped trading. Until the
+// field return, a partner that leaves (or a link error) only closes the cable; no error screen.
+void MP_TradeOnMenuExit(void);
 
 // ---------------------------------------------------------------------------
 // Trade journal (PS-050, protocol.md 6.16, design.md "Trade journal")

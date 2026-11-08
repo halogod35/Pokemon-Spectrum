@@ -1747,6 +1747,11 @@ static void CB_InitExitCanceledTrade(void)
 {
     if (!gPaletteFade.active)
     {
+        // MP: BUG-005. SetCloseLinkCallbackAndType does nothing while another link callback
+        // (a block send) runs; vanilla then waits in CB_ExitCanceledTrade forever. Wait for it.
+        if (MP_TradeIsDirect() && !gWirelessCommType && gLinkCallback != NULL)
+            return;
+        MP_TradeOnMenuExit(); // MP: BUG-005: the partner leaving is a normal end from here on
         if (gWirelessCommType)
             SetLinkStandbyCallback();
         else

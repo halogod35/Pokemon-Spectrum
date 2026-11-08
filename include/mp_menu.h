@@ -65,6 +65,9 @@ void MpTrade_Start(u8 partnerSlot, const u8 *partnerName);
 // BUG-004: the deferred link leave after a trade, and the "group gone while trading" watchdog.
 // Once per frame from MpUi_Update.
 void MpTrade_Update(void);
+// BUG-005: back to a plain field after a direct link activity: CB1_Overworld (player input),
+// no link callback, no remote link players, link errors not suppressed.
+void MpTrade_ResetFieldLinkState(void);
 // PS-050 trade journal: recovery messages and periodic status (every frame, from MpUi_Update),
 // and the field part (roll forward + "unfinished trade" notices, from MpUi_TryShowFieldNotice;
 // TRUE if it showed a message and locked controls).

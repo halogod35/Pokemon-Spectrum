@@ -109,8 +109,8 @@ STUB_FUNC(void rfu_NI_checkCommFailCounter())
 STUB_FUNC(void rfu_REQ_noise())
 STUB_FUNC(void AgbRFU_checkID())
 */
-STUB_FUNC_BLOCK(u32 VerifyFlashSectorNBytes(u16 sectorNum, u8 *src, u32 n), return 0;)
-STUB_FUNC_BLOCK(u32 VerifyFlashSector(u16 sectorNum, u8 *src), return 0;)
+STUB_FUNC_QUIET_BLOCK(u32 VerifyFlashSectorNBytes(u16 sectorNum, u8 *src, u32 n), return 0;) // MP: BUG-005: quiet, it ran on every save
+STUB_FUNC_QUIET_BLOCK(u32 VerifyFlashSector(u16 sectorNum, u8 *src), return 0;) // MP: BUG-005: quiet, it ran on every save
 /*
 STUB_FUNC(void Sio32IDInit())
 STUB_FUNC(void Sio32IDMain())

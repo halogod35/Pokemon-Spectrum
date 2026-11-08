@@ -79,6 +79,7 @@ static u16 sGroupGoneFrames = 0;       // BUG-004: watchdog, the group is gone w
 
 #define MP_TRADE_LEAVE_GRACE_FRAMES     180 // ~3 s for the partner to finish its close handshake
 #define MP_TRADE_GONE_FRAMES            180 // ~3 s for the trade's own link-error path
+static bool8 sTradeExiting = FALSE;    // BUG-005: the trade menu is closing (both cancelled)
 static u8 sTradePartner = MP_SLOT_NONE;
 static u8 sTradePartnerName[MP_PLAYER_NAME_SIZE];
 
@@ -281,6 +282,8 @@ void MpTrade_Start(u8 partnerSlot, const u8 *partnerName)
     u32 i;
 
     sTradePartner = partnerSlot;
+    sTradeExiting = FALSE;
+    sGroupGoneFrames = 0;
     for (i = 0; i < MP_PLAYER_NAME_SIZE - 1 && partnerName[i] != EOS; i++)
         sTradePartnerName[i] = partnerName[i];
     for (; i < MP_PLAYER_NAME_SIZE; i++)
@@ -305,10 +308,39 @@ void CB2_MpReturnToFieldAfterTrade(void)
     // would end the group under it. MpTrade_Update leaves once both cables are closed.
     sLeavePending = TRUE;
     sLeaveTimer = 0;
+    sTradeExiting = FALSE;
+    MpTrade_ResetFieldLinkState();
     StopMapMusic();
     ScriptContext_Init();
     gFieldCallback = FieldCB_ReturnToFieldNoScriptCheckMusic; // unlocks controls, unfreezes NPCs
     CB2_ReturnToField();
+}
+
+// BUG-005. Back to a plain single-player field after a direct link activity (trade, PS-045
+// battle). CB2_StartCreateTradeMenu leaves gMain.callback1 NULL and CB2_ReturnToField does not
+// restore it: without CB1_Overworld there is no player input at all (the frozen field of
+// BUG-005). Also drop the cable-room link state that the vanilla return
+// (CB2_ReturnToFieldFromMultiplayer) would hand over to the link overworld instead.
+void MpTrade_ResetFieldLinkState(void)
+{
+    if (gLinkCallback != NULL)
+        MP_LOG("link: clearing a leftover link callback on the way back to the field\n");
+    ClearLinkCallback();
+    gReceivedRemoteLinkPlayers = FALSE;
+    SetSuppressLinkErrorMessage(FALSE);
+    ResetAllMultiplayerState();
+    SetMainCallback1(CB1_Overworld);
+}
+
+// BUG-005: from trade.c's CB_InitExitCanceledTrade. Both players chose to stop trading. From
+// here on a partner that goes away is a normal end, not an error: the last trade, if any, is
+// already in the save.
+void MP_TradeOnMenuExit(void)
+{
+    if (!sDirectTrade)
+        return;
+    sTradeExiting = TRUE;
+    SetSuppressLinkErrorMessage(TRUE); // a link error now only closes the cable; the menu exits
 }
 
 void MP_TradeOnLinkErrorRecovery(void)
@@ -316,6 +348,7 @@ void MP_TradeOnLinkErrorRecovery(void)
     if (sDirectTrade)
         MP_LOG("trade: ended by a link error; the last save is reloaded\n");
     sDirectTrade = FALSE;
+    sTradeExiting = FALSE;
     sLeavePending = FALSE; // MP_LinkPrepareErrorRecovery leaves the group itself
     sGroupGoneFrames = 0;
     MP_TradeCommitReset();
@@ -337,6 +370,9 @@ void MpTrade_Update(void)
         if (MP_LinkGetState() == MP_LINK_STATE_NONE || (!info.open && info.openCount == 0)
          || ++sLeaveTimer > MP_TRADE_LEAVE_GRACE_FRAMES)
         {
+            // BUG-005: say why, so a play-test log shows whether the partner closed in time.
+            MP_LOG("trade: leaving the link group (%s)\n", (MP_LinkGetState() == MP_LINK_STATE_NONE) ? "already gone"
+                   : (sLeaveTimer > MP_TRADE_LEAVE_GRACE_FRAMES) ? "partner still open after the grace time" : "both cables closed");
             sLeavePending = FALSE;
             MP_LinkLeave();
         }
@@ -346,10 +382,24 @@ void MpTrade_Update(void)
      && (!MP_IsActive() || MP_LinkGetState() != MP_LINK_STATE_GROUPED)
      && MP_TradeCommitPoll() != MP_TRADE_COMMIT_WAITING)
     {
-        if (++sGroupGoneFrames > MP_TRADE_GONE_FRAMES)
+        if (sTradeExiting)
         {
+            // BUG-005: both chose to stop and the partner finished first (or vanished). Close
+            // the cable so the menu's own exit runs (CB_ExitCanceledTrade): a normal end.
+            if (gReceivedRemoteLinkPlayers)
+            {
+                MP_LOG("trade: the partner left while the trade menu was closing; leaving normally\n");
+                CloseLink();
+            }
+        }
+        else if (++sGroupGoneFrames > MP_TRADE_GONE_FRAMES)
+        {
+            // BUG-005: one shot. The error screen is CB2_PrintErrorMessage, not CB2_LinkError, so
+            // this used to fire again every MP_TRADE_GONE_FRAMES and restart the error screen.
+            // The trade is over for us; MP_TradeOnLinkErrorRecovery finishes the clean-up on A.
             MP_LOG("trade: the link group is gone while trading; recovering from the last save\n");
             sGroupGoneFrames = 0;
+            sDirectTrade = FALSE;
             CloseLink();
             SetMainCallback2(CB2_LinkError);
         }
