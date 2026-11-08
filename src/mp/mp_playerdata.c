@@ -267,7 +267,9 @@ void MpPlayerData_ShowParty(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE], u8 count, voi
 void MpPlayerData_MakeTestMon(u8 *raw, u16 species, u8 level, u32 personality)
 {
     struct SaveBlock2 *realSave2 = gSaveBlock2Ptr;
+    struct SaveBlock1 *realSave1 = gSaveBlock1Ptr;
     static struct SaveBlock2 sOtSave; // CreateMon copies the OT name / gender from SaveBlock2
+    static struct SaveBlock1 sLocSave; // CreateBoxMon reads the current map for the met location
     struct Pokemon mon;
 
     memset(&sOtSave, 0, sizeof(sOtSave));
@@ -276,9 +278,12 @@ void MpPlayerData_MakeTestMon(u8 *raw, u16 species, u8 level, u32 personality)
     sOtSave.playerName[1] = CHAR_E;
     sOtSave.playerName[2] = CHAR_S;
     sOtSave.playerName[3] = CHAR_T;
+    memset(&sLocSave, 0, sizeof(sLocSave)); // map 0.0 is a valid map header
     gSaveBlock2Ptr = &sOtSave;
+    gSaveBlock1Ptr = &sLocSave;
     CreateMon(&mon, species, level, 10, TRUE, personality, OT_ID_PRESET, 0x00051234);
     gSaveBlock2Ptr = realSave2;
+    gSaveBlock1Ptr = realSave1;
     memcpy(raw, &mon, MP_MON_WIRE_SIZE);
 }
 
