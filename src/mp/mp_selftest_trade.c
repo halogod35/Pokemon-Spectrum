@@ -130,7 +130,7 @@ static void TestParser(void)
         }
     }
     T_CHECK(MP_MSG_TRADE_COMMIT >= MP_MSG_LINK_FIRST && MP_MSG_TRADE_RECOVER <= MP_MSG_LINK_LAST, "TRADE_* are in the LINK_* range");
-    T_CHECK(MP_PROTOCOL_VERSION == 7, "protocol version 7");
+    T_CHECK(MP_PROTOCOL_VERSION >= 7, "protocol version 7 or later (PS-050; 8 since PS-045)");
     in.op = 0;
     T_CHECK(MpProto_WriteTradeCommit(buf, sizeof(buf), &in) == 0, "writer refuses op 0");
     in.op = MP_TRADE_OP_READY;

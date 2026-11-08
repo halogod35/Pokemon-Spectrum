@@ -351,6 +351,8 @@ s32 MP_RunSelftest(void)
     sFailures += MpSelftest_LinkHardening();
     // PS-044: host-arbitrated trade commit (parsers, decision logic, host + 2 clients).
     sFailures += MpSelftest_Trade();
+    // PS-045: direct link battle (party rules, BATTLE_DOUBLE parser, start flow, group end).
+    sFailures += MpSelftest_Battle();
     MpTransport_Shutdown();
 
     if (sFailures == 0)

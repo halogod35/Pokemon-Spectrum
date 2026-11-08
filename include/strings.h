@@ -413,6 +413,13 @@ extern const u8 gText_MpTradeJournalCompleted[];  // MP: PS-050
 extern const u8 gText_MpTradeJournalCancelled[];  // MP: PS-050
 extern const u8 gText_MpTradeJournalDamaged[];    // MP: PS-050
 extern const u8 gText_MpTradeJournalBlocks[];     // MP: PS-050
+extern const u8 gText_MpIncomingDoubleBattle[];   // MP: PS-045
+extern const u8 gText_MpBattleCantHere[];         // MP: PS-045
+extern const u8 gText_MpBattlePartnerBusy[];      // MP: PS-045
+extern const u8 gText_MpBattleNoMons[];           // MP: PS-045
+extern const u8 gText_MpBattleNeedTwoMons[];      // MP: PS-045
+extern const u8 gText_MpBattleLinkFailed[];       // MP: PS-045
+extern const u8 gText_MpBattleSaveFailed[];       // MP: PS-045
 extern const u8 gText_WirelessNotConnected[];
 extern const u8 gText_MysteryGiftCantUse[];
 extern const u8 gText_MysteryEventsCantUse[];

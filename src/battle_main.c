@@ -2306,7 +2306,9 @@ static void EndLinkBattleInSteps(void)
 
             for (i = 0; i < battlerCount && (gLinkPlayers[i].version & 0xFF) == VERSION_EMERALD; i++);
 
-            if (!gSaveBlock2Ptr->frontier.disableRecordBattle && i == battlerCount)
+            // MP: PS-045. No "record this battle?" for a direct battle: it needs a second linkup
+            // (Task_ReconnectWithLinkPlayers) and writes a recorded battle into the save.
+            if (!gSaveBlock2Ptr->frontier.disableRecordBattle && i == battlerCount && !MP_BattleIsDirect())
             {
                 if (FlagGet(FLAG_SYS_FRONTIER_PASS))
                 {

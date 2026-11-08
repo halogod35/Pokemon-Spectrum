@@ -110,6 +110,14 @@ const u8 gText_MpTradeJournalCompleted[] = _("The unfinished trade with {STR_VAR
 const u8 gText_MpTradeJournalCancelled[] = _("The unfinished trade with {STR_VAR_1}\nwas cancelled. Nothing changed.");
 const u8 gText_MpTradeJournalDamaged[] = _("An unfinished trade can’t be\nchecked. Its record is kept.");
 const u8 gText_MpTradeJournalBlocks[] = _("You have an unfinished trade.\nIt has to be finished first.");
+// MP: PS-045 direct link battle
+const u8 gText_MpIncomingDoubleBattle[] = _("{STR_VAR_1} wants a DOUBLE\nBATTLE. Accept?");
+const u8 gText_MpBattleCantHere[] = _("You can’t battle here.");
+const u8 gText_MpBattlePartnerBusy[] = _("{STR_VAR_1} can’t battle right now.");
+const u8 gText_MpBattleNoMons[] = _("You have no POKéMON that\ncan battle.");
+const u8 gText_MpBattleNeedTwoMons[] = _("You need two POKéMON that can\nbattle for a DOUBLE BATTLE.");
+const u8 gText_MpBattleLinkFailed[] = _("Couldn’t link up with {STR_VAR_1}.\nThe battle was cancelled.");
+const u8 gText_MpBattleSaveFailed[] = _("The game couldn’t be saved.\nThe battle was cancelled.");
 const u8 gText_WirelessNotConnected[] = _("The Wireless Adapter is not\nconnected.");
 const u8 gText_MysteryGiftCantUse[] = _("MYSTERY GIFT can't be used while\nthe Wireless Adapter is attached.");
 const u8 gText_MysteryEventsCantUse[] = _("MYSTERY EVENTS can't be used while\nthe Wireless Adapter is attached.");

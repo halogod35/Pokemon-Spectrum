@@ -34,6 +34,7 @@
 #include "constants/cable_club.h"
 #include "constants/songs.h"
 #include "constants/trainers.h"
+#include "mp/mp.h" // MP: PS-045 direct link battle
 
 static const struct WindowTemplate sWindowTemplate_LinkPlayerCount = {
     .bg = 0,
@@ -1012,7 +1013,12 @@ void CB2_ReturnFromCableClubBattle(void)
         }
     }
 
-    if (InUnionRoom() == TRUE)
+    if (MP_BattleIsDirect()) // MP: PS-045. A direct battle (from the overworld) returns to the normal field.
+    {
+        MP_BattleOnBattleEnd();
+        gMain.savedCallback = CB2_MpReturnToFieldAfterBattle;
+    }
+    else if (InUnionRoom() == TRUE)
         gMain.savedCallback = CB2_ReturnFromUnionRoomBattle;
     else
         gMain.savedCallback = CB2_ReturnToFieldFromMultiplayer;

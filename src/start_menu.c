@@ -1435,7 +1435,10 @@ static void Task_SaveAfterLinkBattle(u8 taskId)
             }
             break;
         case 1:
-            SetContinueGameWarpStatusToDynamicWarp();
+            // MP: PS-045. A direct battle saves at the player's position, as a normal save: the
+            // dynamic warp (the Cable Club's way back out) does not apply and is left untouched.
+            if (!MP_BattleIsDirect())
+                SetContinueGameWarpStatusToDynamicWarp();
             WriteSaveBlock2();
             *state = 2;
             break;

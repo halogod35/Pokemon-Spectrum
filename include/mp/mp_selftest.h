@@ -44,5 +44,9 @@ u32 MpSelftest_LinkHardening(void);
 // fuzz) and host + 2 clients in process: both ready -> both commit; a member that drops before
 // commit -> neither commits; in doubt -> presumed abort.
 u32 MpSelftest_Trade(void);
+// PS-045 direct link battle: party rules, INTERACT kind BATTLE_DOUBLE (every kind byte, fuzz),
+// the linkup state machine (pure + random-input fuzz), and in process a link group that ends
+// (or a partner that leaves the session) during the start.
+u32 MpSelftest_Battle(void);
 
 #endif // GUARD_MP_MP_SELFTEST_H

@@ -441,6 +441,29 @@ static void TestScenario(void)
     I_CHECK(sSeen[I_C2].resultSlot == MP_HOST_SLOT && sSeen[I_C2].result == MP_INTERACT_RESULT_DECLINED, "C2: the host declined");
     Report("request -> decline", failuresBefore);
 
+    // --- PS-045: a DOUBLE BATTLE request keeps its kind both ways ---
+    failuresBefore = sFail;
+    WaitGap();
+    {
+        struct InteractSeen saved[INSTANCES];
+        u8 requestsBefore = sSeen[I_C2].requests;
+        u8 resultsBefore = sSeen[I_C1].results;
+
+        memcpy(saved, sSeen, sizeof(saved)); // the later sections count events from here
+
+        Sel(I_C1);
+        I_CHECK(MP_SendInteractRequest(2, MP_INTERACT_BATTLE_DOUBLE), "C1 asks C2 for a double battle");
+        I_CHECK(Wait(CondRequests, I_C2, (u8)(requestsBefore + 1), 2000), "C2 receives the double battle request");
+        I_CHECK(sSeen[I_C2].requestSlot == 1 && sSeen[I_C2].requestKind == MP_INTERACT_BATTLE_DOUBLE, "C2 sees kind BATTLE_DOUBLE");
+        Sel(I_C2);
+        MP_RespondInteract(MP_INTERACT_RESULT_ACCEPTED);
+        I_CHECK(Wait(CondResults, I_C1, (u8)(resultsBefore + 1), 2000), "C1 gets the double battle result");
+        I_CHECK(sSeen[I_C1].resultSlot == 2 && sSeen[I_C1].resultKind == MP_INTERACT_BATTLE_DOUBLE
+             && sSeen[I_C1].result == MP_INTERACT_RESULT_ACCEPTED, "C1: C2 accepted the double battle");
+        memcpy(sSeen, saved, sizeof(saved));
+    }
+    Report("double battle request (PS-045)", failuresBefore);
+
     // --- busy: the target is already being asked; then an explicit BUSY answer ---
     failuresBefore = sFail;
     WaitGap();

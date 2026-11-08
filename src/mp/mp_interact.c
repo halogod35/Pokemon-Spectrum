@@ -44,7 +44,7 @@ u8 (*gMpLocalPartyFunc)(u8 mons[PARTY_SIZE][MP_MON_WIRE_SIZE]) = MP_BuildLocalPa
 
 static u8 sInteractBuf[MP_MAX_PACKET_SIZE];
 
-static const char *const sKindNames[MP_INTERACT_KIND_COUNT] = { "none", "trade", "battle", "trainer card", "party" };
+static const char *const sKindNames[MP_INTERACT_KIND_COUNT] = { "none", "trade", "battle", "trainer card", "party", "double battle" };
 static const char *const sResultNames[MP_INTERACT_RESULT_COUNT] =
 {
     "none", "accepted", "declined", "busy", "timeout", "unavailable", "cancelled", "bad data",

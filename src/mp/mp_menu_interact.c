@@ -18,8 +18,10 @@
 //   - TRADE / BATTLE: MP_SendInteractRequest, "Waiting for NAME... (B) CANCEL", then the
 //     outcome (accepted / declined / busy / timed out / unavailable). PS-044: TRADE is only
 //     sent if both can trade (MpTrade_CheckLocal / _CheckPartner), and on ACCEPTED both sides
-//     hand over to MpTrade_Start (src/mp/mp_trade.c). BATTLE still says "isn't available yet"
-//     (PS-045 plugs in at MpInteractUi_OnAccepted).
+//     hand over to MpTrade_Start (src/mp/mp_trade.c). PS-045: BATTLE first asks SINGLE BATTLE /
+//     DOUBLE BATTLE (kind BATTLE / BATTLE_DOUBLE), is only sent if both can battle in that mode
+//     (MpBattle_CheckLocal / _CheckPartner), and on ACCEPTED both hand over to MpBattle_Start
+//     (src/mp/mp_battle.c).
 //   - B / EXIT closes it. If the player leaves or the session ends, it closes with a message.
 //
 // Target side
@@ -52,6 +54,7 @@
 #include "constants/field_weather.h"
 #include "constants/songs.h"
 #include "mp/mp.h"
+#include "mp/mp_battle.h"
 #include "mp/mp_playerdata.h"
 #include "mp_menu.h"
 
@@ -86,6 +89,18 @@ static const struct WindowTemplate sMenuWindowTemplate =
     .tilemapTop = 1,
     .width = 11,
     .height = 13,
+    .paletteNum = 15,
+    .baseBlock = 0x29
+};
+
+// PS-045: the battle mode menu replaces the player menu, so it reuses its tiles (13 x 4 = 52).
+static const struct WindowTemplate sBattleModeWindowTemplate =
+{
+    .bg = 0,
+    .tilemapLeft = 16,
+    .tilemapTop = 1,
+    .width = 13,
+    .height = 4,
     .paletteNum = 15,
     .baseBlock = 0x29
 };
@@ -204,6 +219,8 @@ static const u8 *IncomingText(u8 kind)
     {
     case MP_INTERACT_BATTLE:
         return gText_MpIncomingBattle;
+    case MP_INTERACT_BATTLE_DOUBLE: // PS-045
+        return gText_MpIncomingDoubleBattle;
     case MP_INTERACT_VIEW_PARTY:
         return gText_MpIncomingViewParty;
     default:
@@ -230,6 +247,8 @@ enum
     MENU_STATE_MESSAGE_CLOSE,   // a message; A/B closes everything
     MENU_STATE_MESSAGE_REOPEN,  // a message; A/B goes back to the menu
     MENU_STATE_FADE_TO_VIEW,    // PS-042: fading out to the trainer card / summary screen
+    MENU_STATE_BATTLE_MODE_OPEN,    // PS-045: SINGLE BATTLE / DOUBLE BATTLE
+    MENU_STATE_BATTLE_MODE_INPUT,
 };
 
 #define tState data[0]
@@ -286,6 +305,14 @@ static void ShowMenuMessage(u8 taskId, const u8 *text, u8 nextState)
     ShowMessageWithName(sMenuName, text);
 }
 
+static void SendMenuRequest(u8 taskId)
+{
+    if (!MP_SendInteractRequest(sMenuSlot, sMenuKind))
+        ShowMenuMessage(taskId, gText_MpRequestFailed, MENU_STATE_MESSAGE_CLOSE);
+    else
+        ShowMenuMessage(taskId, gText_MpWaitingFor, MENU_STATE_WAITING);
+}
+
 static void HandleMenuInput(u8 taskId)
 {
     s8 choice;
@@ -308,6 +335,12 @@ static void HandleMenuInput(u8 taskId)
     }
     sMenuCursor = (u8)choice;
     RemoveMenuWindow();
+    if (choice == MENU_ITEM_BATTLE)
+    {
+        // PS-045: SINGLE or DOUBLE first (as the Cable Club asks); the request carries the mode.
+        gTasks[taskId].tState = MENU_STATE_BATTLE_MODE_OPEN;
+        return;
+    }
     switch (choice)
     {
     case MENU_ITEM_TRAINER_CARD:    // PS-042: no prompt on their side, the card comes back at once
@@ -334,12 +367,60 @@ static void HandleMenuInput(u8 taskId)
                 break;
             }
         }
-        if (!MP_SendInteractRequest(sMenuSlot, sMenuKind))
-            ShowMenuMessage(taskId, gText_MpRequestFailed, MENU_STATE_MESSAGE_CLOSE);
-        else
-            ShowMenuMessage(taskId, gText_MpWaitingFor, MENU_STATE_WAITING);
+        SendMenuRequest(taskId);
         break;
     }
+}
+
+// PS-045: the battle mode menu, after BATTLE.
+static void DrawBattleModeMenu(void)
+{
+    sMenuWindowId = AddWindow(&sBattleModeWindowTemplate);
+    if (sMenuWindowId == WINDOW_NONE)
+        return;
+    LoadMessageBoxAndBorderGfx();
+    PutWindowTilemap(sMenuWindowId);
+    DrawStdWindowFrame(sMenuWindowId, FALSE);
+    FillWindowPixelBuffer(sMenuWindowId, PIXEL_FILL(TEXT_COLOR_WHITE));
+    AddTextPrinterParameterized(sMenuWindowId, FONT_NORMAL, gText_SingleBattle, 8, 1, TEXT_SKIP_DRAW, NULL);
+    AddTextPrinterParameterized(sMenuWindowId, FONT_NORMAL, gText_DoubleBattle, 8, 1 + MENU_LINE, TEXT_SKIP_DRAW, NULL);
+    InitMenuNormal(sMenuWindowId, FONT_NORMAL, 0, 1, MENU_LINE, 2, 0);
+    CopyWindowToVram(sMenuWindowId, COPYWIN_FULL);
+}
+
+static void HandleBattleModeInput(u8 taskId)
+{
+    const u8 *problem;
+    s8 choice;
+
+    if (!TargetStillHere())
+    {
+        RemoveMenuWindow();
+        ShowMenuMessage(taskId, gText_MpPlayerGone, MENU_STATE_MESSAGE_CLOSE);
+        return;
+    }
+    choice = Menu_ProcessInput();
+    if (choice == MENU_NOTHING_CHOSEN)
+        return;
+    RemoveMenuWindow();
+    if (choice == MENU_B_PRESSED)
+    {
+        PlaySE(SE_SELECT);
+        gTasks[taskId].tState = MENU_STATE_OPEN; // back to the player menu
+        return;
+    }
+    sMenuKind = (choice == 1) ? MP_INTERACT_BATTLE_DOUBLE : MP_INTERACT_BATTLE;
+    sMenuResult = MP_INTERACT_RESULT_NONE;
+    // Don't ask if one of us can't battle anyway (the Cable Club's party rules, busy states).
+    problem = MpBattle_CheckLocal(sMenuKind);
+    if (problem == NULL)
+        problem = MpBattle_CheckPartner(sMenuSlot);
+    if (problem != NULL)
+    {
+        ShowMenuMessage(taskId, problem, MENU_STATE_MESSAGE_CLOSE);
+        return;
+    }
+    SendMenuRequest(taskId);
 }
 
 static void ShowResult(u8 taskId)
@@ -373,6 +454,14 @@ static void ShowResult(u8 taskId)
             sMenuActive = FALSE;
             DestroyTask(taskId);
             MpTrade_Start(sMenuSlot, sMenuName);
+            break;
+        }
+        if (MP_IsBattleKind(sMenuKind))
+        {
+            // PS-045: hand over to the battle (controls stay locked, the NPCs frozen).
+            sMenuActive = FALSE;
+            DestroyTask(taskId);
+            MpBattle_Start(sMenuSlot, sMenuName, sMenuKind);
             break;
         }
         end = StringCopy(sText, gText_MpResultAccepted);
@@ -414,6 +503,18 @@ static void Task_MpInteractMenu(u8 taskId)
         break;
     case MENU_STATE_INPUT:
         HandleMenuInput(taskId);
+        break;
+    case MENU_STATE_BATTLE_MODE_OPEN:   // PS-045
+        DrawBattleModeMenu();
+        if (sMenuWindowId == WINDOW_NONE)
+        {
+            CloseMenu(taskId);
+            return;
+        }
+        tState = MENU_STATE_BATTLE_MODE_INPUT;
+        break;
+    case MENU_STATE_BATTLE_MODE_INPUT:
+        HandleBattleModeInput(taskId);
         break;
     case MENU_STATE_WAITING:
         if (!IsFieldMessageBoxHidden())
@@ -560,13 +661,15 @@ static void Task_MpIncomingPrompt(u8 taskId)
             MP_RespondInteract(MP_INTERACT_RESULT_ACCEPTED);
             ClosePrompt(taskId);
         }
-        else if (choice == 0 && sIncomingKind == MP_INTERACT_TRADE)
+        else if (choice == 0 && (sIncomingKind == MP_INTERACT_TRADE || MP_IsBattleKind(sIncomingKind)))
         {
-            // PS-044: check that we can trade before saying yes, then hand over to the trade.
-            const u8 *problem = MpTrade_CheckLocal();
+            // PS-044 / PS-045: check that we can trade / battle (in that mode) before saying
+            // yes, then hand over to the trade / battle.
+            bool8 battle = MP_IsBattleKind(sIncomingKind);
+            const u8 *problem = battle ? MpBattle_CheckLocal(sIncomingKind) : MpTrade_CheckLocal();
 
             if (problem == NULL)
-                problem = MpTrade_CheckPartner(sIncomingSlot);
+                problem = battle ? MpBattle_CheckPartner(sIncomingSlot) : MpTrade_CheckPartner(sIncomingSlot);
             if (problem != NULL)
             {
                 MP_RespondInteract(MP_INTERACT_RESULT_DECLINED);
@@ -580,7 +683,11 @@ static void Task_MpIncomingPrompt(u8 taskId)
                 sIncomingShown = FALSE;
                 sIncomingWithdrawn = 0;
                 DestroyTask(taskId);
-                MpTrade_Start(sIncomingSlot, sIncomingName); // controls stay locked, the NPCs frozen
+                // Controls stay locked, the NPCs frozen.
+                if (battle)
+                    MpBattle_Start(sIncomingSlot, sIncomingName, sIncomingKind);
+                else
+                    MpTrade_Start(sIncomingSlot, sIncomingName);
             }
         }
         else if (choice == 0)

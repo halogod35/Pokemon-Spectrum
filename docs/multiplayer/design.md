@@ -445,3 +445,23 @@ Goal: after any crash or disconnect during a direct trade, both saves end "trade
   - `mp_ui.c`: per-frame recovery, and the field notice / roll forward.
 - **Never rolled back:** a signed save always means the outcome was COMMIT, so the only repair is rolling the unsigned side forward from its own journal (the received mon's bytes are stored there). Network messages only choose between "COMMIT" and "neither"; they never carry a mon.
 - **Pending journal:** blocks new trades. The player sees "A trade with NAME isn't finished" after loading, and the result when it resolves. A damaged journal is kept and reported, never dropped.
+
+## Direct link battle (PS-045)
+
+`src/mp/mp_battle.c`. Pure parts are in `include/mp/mp_battle.h` (selftest `mp_selftest_battle.c`).
+
+- **Request.** PLAYER menu → BATTLE → SINGLE BATTLE / DOUBLE BATTLE. That sends INTERACT kind `BATTLE` (single) or `BATTLE_DOUBLE` (protocol 8). Both sides check before asking or saying YES (`MpBattle_CheckLocal` / `_CheckPartner`):
+  - plain overworld, not a denied map, not linking, no pending trade journal;
+  - the Cable Club's party rules: SINGLE needs one POKéMON that isn't an egg; DOUBLE needs two non-eggs with HP left (`GetMonsStateToDoubles`). There's no level rule, as in the colosseum.
+- **Start (both sides).** Save, `MP_LinkJoin`, then `MP_BattleFlowStep`: GROUPED → `OpenLinkTimed` with `LINKTYPE_SINGLE/DOUBLE_BATTLE` → the master advances the handshake → the exchange. A single/double mismatch gives `DIFF_SELECTIONS` and fails. Then `SaveLinkPlayers(2)`, `HealPlayerParty` / `SavePlayerParty` / `LoadPlayerBag`, and the steps of `Task_StartWiredCableClubBattle`, then `CB2_InitBattle`.
+- **Battle handshake.** `HandleLinkBattleSetup` reopens the link. On the GBA the master's `LinkVSync` starts that handshake by itself; the PC cable starts it only on `gShouldAdvanceLinkState`. `MpBattle_Update` therefore calls `CheckShouldAdvanceLinkState` on link id 0 until the link players arrive.
+- **End.** Vanilla up to `CB2_ReturnFromCableClubBattle`: `LoadPlayerParty`, `SavePlayerBag`, fans, `UpdatePlayerLinkBattleRecords` (trainer card W/L), then the post-battle link save. "// MP:" hooks then:
+  - go to `CB2_MpReturnToFieldAfterBattle`, which calls `MpTrade_ResetFieldLinkState` (BUG-005), returns to the normal field and leaves the group once both cables are closed;
+  - save at the player's position (no dynamic warp);
+  - skip the Frontier "record this battle?" step.
+- **Disconnects.** The cable's hardware error → `CB2_LinkError` → PS-048 "Continue from last save". The pre-battle save is reloaded, so an interrupted battle records nothing. `MpBattle_Update` has a one-shot watchdog for a group that is gone while the battle's link is still open.
+- **Latent GBA-only bugs fixed:**
+  - `CB2_LinkError` left `BattleMainCB1` running on the error screen. It now sets `callback1 = NULL`.
+  - The battle heap pointers dangled after `ReloadSave`. `MP_BattleOnLinkErrorRecovery` sets them to NULL, as the GBA's EWRAM reset did.
+  - `InitLinkBattleVsScreen` now guards against a freed `gBattleStruct`.
+  - `WriteSaveBlock1Sector` (the link battle / blender / record mixing save) never reached the disk on PC. It now calls `Platform_StoreSaveFile`.

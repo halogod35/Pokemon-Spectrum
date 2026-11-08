@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      7       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050).
+#define MP_PROTOCOL_VERSION      8       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -412,9 +412,10 @@ enum
 {
     MP_INTERACT_NONE,
     MP_INTERACT_TRADE,
-    MP_INTERACT_BATTLE,
+    MP_INTERACT_BATTLE,         // PS-045: a SINGLE link battle
     MP_INTERACT_TRAINER_CARD,   // PS-042: public info, answered without a prompt
     MP_INTERACT_VIEW_PARTY,     // PS-043: needs the target's consent
+    MP_INTERACT_BATTLE_DOUBLE,  // PS-045 (protocol 8): a DOUBLE link battle, prompted like BATTLE
     MP_INTERACT_KIND_COUNT,
 };
 
@@ -638,6 +639,24 @@ void MP_TradeOnLinkErrorRecovery(void);
 // MP: BUG-005, from trade.c's CB_InitExitCanceledTrade: both players stopped trading. Until the
 // field return, a partner that leaves (or a link error) only closes the cable; no error screen.
 void MP_TradeOnMenuExit(void);
+
+// ---------------------------------------------------------------------------
+// Direct link battle over the cable (PS-045, src/mp/mp_battle.c, pure parts in mp_battle.h)
+// ---------------------------------------------------------------------------
+// After a BATTLE / BATTLE_DOUBLE request is accepted, both players save, link up and start
+// Emerald's own 2-player cable link battle from the overworld (as Task_StartWiredCableClubBattle,
+// without the colosseum). The decomp hooks ("// MP: PS-045") use MP_BattleIsDirect() to
+//   - send CB2_ReturnFromCableClubBattle's exit to the normal field (CB2_MpReturnToFieldAfterBattle),
+//   - save the post-battle link records at the player's position (no Cable Club dynamic warp),
+//   - skip the Frontier "record this battle?" step (a second linkup and a save change).
+// TRUE from the start of the battle until the player is back in the overworld.
+bool8 MP_BattleIsDirect(void);
+void CB2_MpReturnToFieldAfterBattle(void);
+// MP: from CB2_ReturnFromCableClubBattle (cable_club.c): the battle is over; only the local
+// post-battle save and the field return are left (the battle watchdog stops).
+void MP_BattleOnBattleEnd(void);
+// MP: from MP_LinkPrepareErrorRecovery (link.c): a link error ended the battle (or its start).
+void MP_BattleOnLinkErrorRecovery(void);
 
 // ---------------------------------------------------------------------------
 // Trade journal (PS-050, protocol.md 6.16, design.md "Trade journal")

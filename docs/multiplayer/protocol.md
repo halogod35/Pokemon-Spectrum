@@ -450,7 +450,7 @@ All three share one layout:
 |---|---|---|---|---|
 | 0 | 1 | u8 | `slot` | The **other party** from the receiver's point of view (table below). `< 4` |
 | 1 | 1 | u8 | `epoch` | Epoch of `slot`. `!= 0` |
-| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE, `3` TRAINER_CARD (PS-042, 6.13), `4` VIEW_PARTY (PS-043, 6.14). Others rejected |
+| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE (a single link battle, PS-045), `3` TRAINER_CARD (PS-042, 6.13), `4` VIEW_PARTY (PS-043, 6.14), `5` BATTLE_DOUBLE (a double link battle, PS-045, version 8; prompted and answered like BATTLE). Others rejected |
 | 3 | 1 | u8 | `requestId` | Chosen by the requester (any value), echoed in RESPONSE / CANCEL |
 | 4 | 1 | u8 | `result` | RESPONSE only: `1` ACCEPTED, `2` DECLINED, `3` BUSY, `4` TIMEOUT, `5` UNAVAILABLE; others rejected. REQUEST / CANCEL: reserved, sender writes 0, receiver ignores |
 | 5 | 3 | u8[3] | reserved | 0 |
@@ -1124,9 +1124,9 @@ The build hash `0x12345678` is an illustrative value (a real one is an FNV-1a re
 Packet = 36 bytes:
 
 ```
-01 07 20 00                 header: type HELLO, version 7, length 32
+01 08 20 00                 header: type HELLO, version 8, length 32
 50 53 4D 50                 magic "PSMP"
-07 00                       protocolVersion 7
+08 00                       protocolVersion 8
 00 00                       reserved
 78 56 34 12                 buildHash 0x12345678
 00                          buildFlags
@@ -1153,3 +1153,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 5 | PS-043 | INTERACT `kind` 4 VIEW_PARTY (prompted, like a trade) and `PARTY_DATA` (0x44): the party as raw 100-byte `struct Pokemon`s in 1–2 parts of up to 3 (a full party does not fit in one 512-byte packet), sent before the ACCEPTED RESPONSE, forwarded in order along the route; every mon validated by the requester (6.14.1), any bad mon rejects the whole party (BAD_DATA). *(Renumber after PS-046 as above.)* |
 | 6 | PS-044 | `TRADE_COMMIT` (0x6C, 6.15) in the `LINK_*` range: the host-arbitrated commit of a direct trade's save (READY / COMMIT / ABORT). Version bumped to 6: a version-5 peer would count `0x6C` as malformed. Worked example (10) updated to version 6. |
 | 7 | PS-050 | Trade journal recovery: `TRADE_COMMIT` grows to 8 bytes (`tradeId`), new `TRADE_RECOVER` (0x6D, 32 bytes, 6.16). The post-trade save is written to disk at the signature (BUG-003). Version bumped to 7. |
+| 8 | PS-045 | INTERACT `kind` 5 BATTLE_DOUBLE (6.11): a battle request that asks for a DOUBLE link battle; `kind` 2 BATTLE is now the single link battle. Prompted, routed and answered exactly like BATTLE. Version bumped to 8: a version-7 peer rejects kind 5 as malformed. No new message: the battle itself runs over the PS-046 cable (`LINK_*`) unchanged. Worked example (10) updated to version 8. |

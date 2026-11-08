@@ -881,6 +881,13 @@ bool8 WriteSaveBlock1Sector(void)
         // are the same for all valid sectors it doesn't matter.
         WriteSectorSignatureByte(sectorId, gRamSaveSectorLocations);
         finished = TRUE;
+#ifdef PORTABLE
+        // MP: PS-045. Same latent PC bug as BUG-003: this link save (after a link battle, the
+        // berry blender, record mixing) only wrote the in-memory flash copy, so the link battle
+        // records were lost when the game was quit without a normal save. Store it now that
+        // every sector is written (atomic, PS-014).
+        Platform_StoreSaveFile();
+#endif
     }
 
     if (gDamagedSaveSectors)

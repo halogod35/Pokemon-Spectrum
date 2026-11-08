@@ -68,6 +68,15 @@ void MpTrade_Update(void);
 // BUG-005: back to a plain field after a direct link activity: CB1_Overworld (player input),
 // no link callback, no remote link players, link errors not suppressed.
 void MpTrade_ResetFieldLinkState(void);
+// PS-045 direct link battle (src/mp/mp_battle.c). `kind` is MP_INTERACT_BATTLE (single) or
+// MP_INTERACT_BATTLE_DOUBLE. The checks return NULL if fine, else the text to show (it may use
+// {STR_VAR_1} = the other player's name).
+const u8 *MpBattle_CheckLocal(u8 kind);
+const u8 *MpBattle_CheckPartner(u8 slot);
+// Both players, after ACCEPTED: save, link up and start the battle. Controls stay locked.
+void MpBattle_Start(u8 partnerSlot, const u8 *partnerName, u8 kind);
+// Once per frame from MpUi_Update: the deferred link leave, the battle's handshake, the watchdog.
+void MpBattle_Update(void);
 // PS-050 trade journal: recovery messages and periodic status (every frame, from MpUi_Update),
 // and the field part (roll forward + "unfinished trade" notices, from MpUi_TryShowFieldNotice;
 // TRUE if it showed a message and locked controls).

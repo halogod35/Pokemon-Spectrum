@@ -303,7 +303,7 @@ u8 MpProto_ParsePing(const u8 *payload, u32 len, struct MpMsgPing *out);
 // the reserved presenceFlags byte always parses as 0.
 u8 MpProto_ParsePresence(const u8 *payload, u32 len, struct MpMsgPresence *out);
 // INTERACT_* (PS-041): `type` is the header type (one of the three, else BAD_FIELD). Exactly
-// 8 bytes; slot < 4; epoch != 0; kind 1..MP_INTERACT_KIND_COUNT-1 (TRADE, BATTLE, and since
+// 8 bytes; slot < 4; epoch != 0; kind 1..MP_INTERACT_KIND_COUNT-1 (TRADE, BATTLE, since PS-045 also BATTLE_DOUBLE, and since
 // PS-042 TRAINER_CARD); RESPONSE result ACCEPTED..UNAVAILABLE.
 // The result byte of REQUEST / CANCEL and the reserved bytes 5..7 are ignored (parse as 0).
 u8 MpProto_ParseInteract(u8 type, const u8 *payload, u32 len, struct MpMsgInteract *out);

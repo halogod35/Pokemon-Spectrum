@@ -1019,6 +1019,14 @@ void InitLinkBattleVsScreen(u8 taskId)
     u8 *name;
     s32 i, palId;
 
+    // MP: PS-045. EndLinkBattleInSteps frees gBattleStruct and then still runs the tasks that
+    // frame; this task's sprite ids live in gBattleStruct (a NULL read is harmless on the GBA).
+    if (gBattleStruct == NULL)
+    {
+        DestroyTask(taskId);
+        return;
+    }
+
     switch (gTasks[taskId].data[0])
     {
     case 0:

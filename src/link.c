@@ -1630,6 +1630,12 @@ void CB2_LinkError(void)
     m4aMPlayStop(&gMPlayInfo_SE1);
     m4aMPlayStop(&gMPlayInfo_SE2);
     m4aMPlayStop(&gMPlayInfo_SE3);
+    // MP: PS-045. A link error in a battle left gMain.callback1 = BattleMainCB1 running on the
+    // error screen, with gBattleStruct & co. pointing into the heap re-initialised below. That
+    // was harmless on the GBA (the error screen was the end; nothing ever left it); with PS-048's
+    // "Continue from last save" the game goes on. The error screen needs no callback1, and
+    // ReloadSave's CB2_ContinueSavedGame sets CB1_Overworld again.
+    gMain.callback1 = NULL;
     InitHeap(gHeap, HEAP_SIZE);
     ResetSpriteData();
     FreeAllSpritePalettes();
@@ -1719,6 +1725,7 @@ void MP_LinkPrepareErrorRecovery(void)
     memset(&sLinkErrorBuffer, 0, sizeof(sLinkErrorBuffer));
     gSuppressLinkErrorMessage = FALSE; // MP: PS-044 (set while a direct trade waits for its commit)
     MP_TradeOnLinkErrorRecovery(); // MP: PS-044: a direct trade ended here
+    MP_BattleOnLinkErrorRecovery(); // MP: PS-045: a direct battle ended here (and stale battle pointers)
     MP_LinkLeave();
 }
 
