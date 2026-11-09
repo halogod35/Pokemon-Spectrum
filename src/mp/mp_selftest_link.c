@@ -981,6 +981,29 @@ static void ExitStep(u8 g)
     Leave();
 }
 
+// Diagnostics: says at which stage a game first reached CB2_LinkError (once per game per case).
+static u8 sDiagSeen;
+
+static void ExitDiag(const char *caseName, const char *stage, u32 frame)
+{
+    u8 g;
+
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        if (gMain.callback2 == CB2_LinkError && !(sDiagSeen & (1 << g)))
+        {
+            sDiagSeen |= (u8)(1 << g);
+            MP_LOG("selftest: link: PS-051 diag: case '%s': %s reached CB2_LinkError %s (frame %u; status 0x%08X, err %u, hw %u, link state %u, remote players %u, suppress %u, mp state %u end %u, finishing %u, rejects %u, dumps %u)\n",
+                   caseName, g == G_A ? "the leader" : "the follower", stage, (unsigned)frame, (unsigned)gLinkStatus,
+                   (unsigned)gLinkErrorOccurred, (unsigned)gLink.hardwareError, (unsigned)gLink.state, (unsigned)gReceivedRemoteLinkPlayers,
+                   (unsigned)gSuppressLinkErrorMessage, (unsigned)MP_LinkGetState(), (unsigned)MP_LinkGetEndReason(),
+                   (unsigned)MP_LinkIsFinishing(), (unsigned)MP_LinkGetRejectCount(), (unsigned)MP_LinkTraceGetDumpCount());
+        }
+        Leave();
+    }
+}
+
 static void RunExitCase(const struct ExitCase *c, u8 followerSession, u8 mask)
 {
     u32 failuresBefore = sFail;
@@ -990,6 +1013,7 @@ static void RunExitCase(const struct ExitCase *c, u8 followerSession, u8 mask)
     u8 sendIn = 5; // QUEUE_DELAY_DATA
     u8 g;
 
+    sDiagSeen = 0;
     for (g = 0; g < G_COUNT; g++)
     {
         Enter(g);
@@ -1000,14 +1024,18 @@ static void RunExitCase(const struct ExitCase *c, u8 followerSession, u8 mask)
         Leave();
     }
     L_CHECK(RunUntil(CondGrouped, 0x3, 0x3), "PS-051: grouped");
+    ExitDiag(c->name, "while grouping (before the exchange)", 0);
     DoExchange("PS-051: player-data exchange");
+    ExitDiag(c->name, "during the player-data exchange", 0);
     if (c->afterTrade)
     {
         DoBlockRound(7);    // the trade's data
         DoClose();          // CB2_SaveAndEndTrade's close (vanilla handshake, both in step)
         DoExchange("PS-051: the trade menu re-opens the link after the trade");
+        ExitDiag(c->name, "during the completed trade", 0);
     }
     L_CHECK(RunUntil(CondTaskFinished, 0x3, 0x3), "PS-051: link idle in the trade menu");
+    ExitDiag(c->name, "before the exit", 0);
 
     MpLink_TraceSelftestEndIncident();
     dumpsBefore = MP_LinkTraceGetDumpCount();
@@ -1040,13 +1068,14 @@ static void RunExitCase(const struct ExitCase *c, u8 followerSession, u8 mask)
         if (frame >= c->followerStall)
             ExitStep(G_B);
         frame++;
+        ExitDiag(c->name, sExit[G_A].closed ? "during the exit (leader closed)" : "during the exit (leader open)", frame);
+        if (sDiagSeen != 0)
+            break; // fail fast; the checks below say why
         for (g = 0; g < G_COUNT; g++)
         {
             Enter(g);
             if (!sExit[g].closed || MP_LinkGetState() != MP_LINK_STATE_NONE)
                 done = FALSE;
-            if (gMain.callback2 == CB2_LinkError)
-                done = TRUE; // fail fast; the checks below say why
             Leave();
         }
         if (done)
@@ -1054,6 +1083,7 @@ static void RunExitCase(const struct ExitCase *c, u8 followerSession, u8 mask)
     }
     // A few more frames: nothing may go wrong after the exit either.
     RunFrames(10, 0x3);
+    ExitDiag(c->name, "after the exit", frame);
 
     L_CHECK(sExit[G_B].gotCancel, "PS-051: the follower received BOTH_CANCEL intact");
     for (g = 0; g < G_COUNT; g++)
