@@ -1108,12 +1108,30 @@ static void RunExitCase(const struct ExitCase *c, u8 followerSession, u8 mask)
         snprintf(what, sizeof(what), "PS-051 agreed trade exit: %s", c->name);
         Report(what, failuresBefore);
     }
+    // Independent cases: whatever happened, nothing of this case's link is left for the next one.
     for (g = 0; g < G_COUNT; g++)
     {
         Enter(g);
+        CloseLink();
+        MP_LinkLeave();
+        gMain.callback2 = NULL;
+        gLinkErrorOccurred = FALSE;
         SetSuppressLinkErrorMessage(FALSE);
         Leave();
     }
+    RunFrames(5, 0x3);
+    if (sFail != failuresBefore)
+    {
+        // A failed case may leave link.c anywhere: the next case starts from a freshly booted
+        // link.c. (A passing case keeps its state, so a leftover from a clean exit still shows.)
+        for (g = 0; g < G_COUNT; g++)
+        {
+            memcpy(sGames[g].link, sNeutralLink, sizeof(sGames[g].link));
+            sGames[g].callback2 = NULL;
+            sGames[g].advanceIn = 0;
+        }
+    }
+    MpLink_TraceSelftestEndIncident();
 }
 
 static void ScenarioAgreedExit(bool8 hostIsMember)

@@ -596,6 +596,8 @@ bool8 MP_LinkIsFinishing(void);
 // one incident). Triggers: CB2_LinkError, MP_LinkRejectData, a cable hardware error, and a link
 // error seen by TrySetLinkErrorBuffer (suppressed or not).
 void MP_LinkTraceFrame(void);
+// PS-051: link.c's LinkPlayerBlock had bad magic (its CB2_LinkError path): log what came + dump.
+void MP_LinkBadPlayerBlock(u32 player, u32 size, const u8 *data);
 void MP_LinkTraceDump(const char *reason);
 u32 MP_LinkTraceGetDumpCount(void); // since boot (selftest)
 // --mp-link-test (dev harness): slots 0 and 1 link up, run the player-data exchange and

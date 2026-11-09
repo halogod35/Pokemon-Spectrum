@@ -1088,6 +1088,11 @@ void MpLink_MemberSendDone(void)
     MpLinkMemberSendCtl(MP_MSG_LINK_DONE, m->groupId, 0, 0);
 }
 
+u8 MpLink_InstanceId(void)
+{
+    return gMpSession->instance;
+}
+
 u16 MpLink_MemberBumpFinishWait(void)
 {
     struct MpLinkMember *m = MpLinkMemberState();

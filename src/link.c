@@ -382,6 +382,10 @@ void OpenLink(void)
         gSuppressLinkErrorMessage = FALSE;
         ResetBlockReceivedFlags();
         ResetBlockSend();
+        // MP: PS-051. A block half-received when the last link closed (the PC cable closes
+        // without lockstep, e.g. our own echo of the last block still in flight) must not be
+        // completed by this link's rows: nothing is in progress on a fresh link.
+        memset(sBlockRecv, 0, sizeof(sBlockRecv));
         sDummy1 = FALSE;
         gLinkDummy2 = FALSE;
         gLinkDummy1 = FALSE;
@@ -640,6 +644,9 @@ static void ProcessRecvCmds(u8 unused)
                         ConvertLinkPlayerName(linkPlayer);
                         if (!MpIsLinkPlayerBlockMagicOk(block)) // MP: PS-047, was strcmp on unterminated peer data
                         {
+                            // MP: PS-051. This path never set gLinkErrorOccurred nor logged: say what came.
+                            MP_LinkBadPlayerBlock(i, sBlockRecv[i].size, (const u8 *)gBlockRecvBuffer[i]);
+                            gLinkErrorOccurred = TRUE;
                             SetMainCallback2(CB2_LinkError);
                         }
                         else
@@ -1860,7 +1867,11 @@ void LinkPlayerFromBlock(u32 who)
     ConvertLinkPlayerName(player);
 
     if (!MpIsLinkPlayerBlockMagicOk(block)) // MP: PS-047, was strcmp on unterminated peer data
+    {
+        MP_LinkBadPlayerBlock(who_, sizeof(*block), (const u8 *)block); // MP: PS-051
+        gLinkErrorOccurred = TRUE; // MP: PS-051
         SetMainCallback2(CB2_LinkError);
+    }
 }
 
 #ifndef PORTABLE

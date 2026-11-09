@@ -63,6 +63,20 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
 
     MpLink_CableGetInfo(&info);
 
+    // PS-051: recvCmds is gRecvCmds, which nothing clears between links. Only the
+    // CONN_ESTABLISHED case below writes it; on the tick HANDSHAKE turns into CONN_ESTABLISHED
+    // the status already says "connected", so LinkMain2 would replay the last row of the
+    // previous link (e.g. a CONT_BLOCK of a half-received block) as the new bus's first row.
+    // That completed the stale block as a bogus LinkPlayerBlock: CB2_LinkError (bad magic).
+    if (gLink.state != LINK_STATE_CONN_ESTABLISHED && gLink.state != LINK_STATE_INIT_TIMER)
+    {
+        for (i = 0; i < MAX_LINK_PLAYERS; i++)
+        {
+            for (j = 0; j < CMD_LENGTH; j++)
+                recvCmds[i][j] = 0;
+        }
+    }
+
     switch (gLink.state)
     {
     case LINK_STATE_START0:
@@ -317,7 +331,7 @@ bool8 MP_LinkActivityTryFinish(void)
 #define MP_TRACE_TAIL_FRAMES    180     // keep recording 3 s after the link is gone
 #define MP_TRACE_INCIDENT_MS    2000
 #define MP_TRACE_ALSO_MAX       6       // "same incident" lines per incident
-#define MP_TRACE_CONSOLE_LINES  12      // without a log file (selftest): the last ticks only
+#define MP_TRACE_CONSOLE_LINES  40      // without a log file (selftest): the last ticks only
 
 struct MpTraceEntry
 {
@@ -344,6 +358,7 @@ struct MpTraceEntry
     u8 busUp;
     u8 agreed;
     u8 peerDone;
+    u8 inst;            // session instance (only the selftest runs more than one)
     u8 tradeCb;         // the trade menu's callbackId, 0xFF if none
 };
 
@@ -373,8 +388,8 @@ static void MpTraceLine(bool8 toFile, const struct MpTraceEntry *e)
     char line[256];
 
     snprintf(line, sizeof(line),
-             "  %8u cb2=exe+%06X cb1=exe+%06X lcb=exe+%06X st=%08X rrp=%u sup=%u err=%u ls=%u hw=%u | mp=%u end=%u open=%u oc=%u q=%u lost=%u bus=%u agr=%u pd=%X | tcb=%u | tx=%04X rx%c=%04X,%04X\n",
-             (unsigned)e->frame, (unsigned)e->cb2, (unsigned)e->cb1, (unsigned)e->linkCb, (unsigned)e->linkStatus,
+             "  %8u i%u cb2=exe+%06X cb1=exe+%06X lcb=exe+%06X st=%08X rrp=%u sup=%u err=%u ls=%u hw=%u | mp=%u end=%u open=%u oc=%u q=%u lost=%u bus=%u agr=%u pd=%X | tcb=%u | tx=%04X rx%c=%04X,%04X\n",
+             (unsigned)e->frame, (unsigned)e->inst, (unsigned)e->cb2, (unsigned)e->cb1, (unsigned)e->linkCb, (unsigned)e->linkStatus,
              (unsigned)e->remotePlayers, (unsigned)e->suppress, (unsigned)e->errorOccurred, (unsigned)e->linkState, (unsigned)e->hwError,
              (unsigned)e->mpState, (unsigned)e->endReason, (unsigned)e->open, (unsigned)e->openCount, (unsigned)e->queued,
              (unsigned)e->lost, (unsigned)e->busUp, (unsigned)e->agreed, (unsigned)e->peerDone, (unsigned)e->tradeCb,
@@ -475,6 +490,15 @@ void MP_LinkTraceDump(const char *reason)
     MpTraceWrite("link trace", reason, 0);
 }
 
+void MP_LinkBadPlayerBlock(u32 player, u32 size, const u8 *data)
+{
+    MP_LOG("link: the player-data block from link id %u has bad magic (block size %u; bytes 0..15: "
+           "%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X); link error\n",
+           (unsigned)player, (unsigned)size, data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+           data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15]);
+    MP_LinkTraceDump("bad player-data block magic: link error");
+}
+
 u32 MP_LinkTraceGetDumpCount(void)
 {
     return sTraceDumps;
@@ -528,6 +552,7 @@ void MP_LinkTraceFrame(void)
         e->agreed = MpLink_MemberIsAgreed();
         e->peerDone = MpLink_MemberPeerDoneMask();
         e->tradeCb = MP_TradeMenuTraceId();
+        e->inst = MpLink_InstanceId();
         sTraceWritten++;
     }
     sTraceSent = 0;

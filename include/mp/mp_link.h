@@ -75,6 +75,7 @@ bool8 MpLink_MemberIsFinishing(void);       // agreed, done, a partner done, or 
 u8 MpLink_MemberPeerDoneMask(void);         // other members that sent LINK_DONE, by link id
 void MpLink_MemberSendDone(void);           // LINK_DONE to the host (once per activity)
 u16 MpLink_MemberBumpFinishWait(void);      // +1, returns the frames waited so far
+u8 MpLink_InstanceId(void);                 // the selected session instance (trace label)
 void MpLink_TraceSelftestEndIncident(void); // mp_link_cable.c, selftest: close the incident window
 
 // --- Selftest / --mp-debug counters for the selected instance ---
