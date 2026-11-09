@@ -61,7 +61,7 @@
 #include "mp/mp_link.h"
 #include "mp_menu.h"
 
-#define MP_BATTLE_LEAVE_GRACE_FRAMES    180 // after the battle: ~3 s for the partner to close too
+#define MP_BATTLE_LEAVE_FALLBACK_FRAMES 300 // after the battle: the host ends the group (DONE) within ~3 s
 #define MP_BATTLE_GONE_FRAMES           180 // the group is gone while the battle's link is open
 #define MP_BATTLE_START_DELAY_FRAMES    20  // Task_StartWiredCableClubBattle state 2
 
@@ -445,7 +445,9 @@ void CB2_MpReturnToFieldAfterBattle(void)
 {
     MP_LOG("battle: back to the overworld (outcome %u)\n", (unsigned)gBattleOutcome);
     sPhase = PHASE_NONE;
-    // BUG-004/005: leave the link group once both cables are closed (MpBattle_Update).
+    // PS-051: LINK_DONE went out when our cable closed at the battle's end; the host ends the
+    // group once both are done. MpBattle_Update only leaves it if that never comes.
+    MpLink_MemberSendDone();
     sLeavePending = TRUE;
     sLeaveTimer = 0;
     gBattleTypeFlags = 0;
@@ -482,15 +484,16 @@ void MP_BattleOnLinkErrorRecovery(void)
 // Once per frame (MpUi_Update).
 void MpBattle_Update(void)
 {
-    struct MpLinkCableInfo info;
-
     if (sLeavePending)
     {
-        MpLink_CableGetInfo(&info);
-        if (MP_LinkGetState() == MP_LINK_STATE_NONE || (!info.open && info.openCount == 0)
-         || ++sLeaveTimer > MP_BATTLE_LEAVE_GRACE_FRAMES)
+        if (MP_LinkGetState() == MP_LINK_STATE_NONE)
         {
-            MP_LOG("battle: leaving the link group (%s)\n", (sLeaveTimer > MP_BATTLE_LEAVE_GRACE_FRAMES) ? "partner still open after the grace time" : "both cables closed");
+            MP_LOG("battle: the link group is over (end reason %u); the battle is finished\n", (unsigned)MP_LinkGetEndReason());
+            sLeavePending = FALSE;
+        }
+        else if (++sLeaveTimer > MP_BATTLE_LEAVE_FALLBACK_FRAMES)
+        {
+            MP_LOG("battle: the host did not end the link group after the battle; leaving it\n");
             sLeavePending = FALSE;
             MP_LinkLeave();
         }
@@ -502,7 +505,9 @@ void MpBattle_Update(void)
     // The battle reopens the link (HandleLinkBattleSetup). On the GBA the master's LinkVSync
     // starts that handshake by itself; the PC cable starts on gShouldAdvanceLinkState only.
     // CheckShouldAdvanceLinkState does nothing unless we are the master and see two players.
-    if (!gReceivedRemoteLinkPlayers && MP_LinkGetState() == MP_LINK_STATE_GROUPED && MP_LinkGetLinkId() == 0)
+    // PS-051: never again once the battle's end closed the cable by agreement.
+    if (!gReceivedRemoteLinkPlayers && MP_LinkGetState() == MP_LINK_STATE_GROUPED && MP_LinkGetLinkId() == 0
+     && !MP_LinkIsFinishing())
     {
         if (GetLinkPlayerCount_2() >= 2 && ++sHandshakeFrames > MP_BATTLE_MASTER_DELAY_FRAMES)
             CheckShouldAdvanceLinkState();
@@ -535,6 +540,15 @@ void MpBattle_Update(void)
 
 // CB2_ReturnFromCableClubBattle (cable_club.c, "// MP: PS-045"): the battle is over; from
 // here on only the local post-battle save and the field return are left.
+bool8 MP_BattleTryExitLocally(void)
+{
+    if (!MP_LinkActivityIsAgreed())
+        MP_LOG("battle: the battle is over (ENDLINKBATTLE, outcome %u, link id %u); closing our cable without the close handshake\n",
+               (unsigned)gBattleOutcome, (unsigned)MP_LinkGetLinkId());
+    MP_LinkActivityAgreed("battle");
+    return MP_LinkActivityTryFinish();
+}
+
 void MP_BattleOnBattleEnd(void)
 {
     if (sPhase == PHASE_IN_BATTLE)

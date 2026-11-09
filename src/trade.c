@@ -935,6 +935,7 @@ static void CB_StartLinkTrade(void)
             Free(sMenuTextTileBuffer);
             FreeAllWindowBuffers();
             Free(sTradeMenu);
+            sTradeMenu = NULL; // MP: PS-051 (MP_TradeMenuTraceId / MP_TradeFreeMenuForExit check it)
             gMain.callback1 = NULL;
             DestroyWirelessStatusIndicatorSprite();
             SetMainCallback2(CB2_LinkTrade);
@@ -948,6 +949,7 @@ static void CB_StartLinkTrade(void)
             Free(sMenuTextTileBuffer);
             FreeAllWindowBuffers();
             Free(sTradeMenu);
+            sTradeMenu = NULL; // MP: PS-051 (MP_TradeMenuTraceId / MP_TradeFreeMenuForExit check it)
             gMain.callback1 = NULL;
             SetMainCallback2(CB2_LinkTrade);
         }
@@ -1261,7 +1263,8 @@ static void Follower_ReadLinkBuffer(u8 mpId, u8 status)
             BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
             PrintTradeMessage(MSG_WAITING_FOR_FRIEND);
             sTradeMenu->callbackId = CB_INIT_EXIT_CANCELED_TRADE;
-            MP_TradeLog("BUG-007: the leader says both cancelled; closing"); // MP: BUG-007 log
+            if (MP_TradeIsDirect()) // MP: PS-051. Agreed: from here on the exit never depends on the leader.
+                MP_TradeOnBothCancel("the leader says both cancelled");
             break;
         case LINKCMD_PARTNER_CANCEL_TRADE:
             PrintTradeMessage(MSG_FRIEND_WANTS_TO_TRADE);
@@ -1340,6 +1343,8 @@ static void Leader_HandleCommunication(void)
             BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
             sTradeMenu->playerSelectStatus = sTradeMenu->partnerSelectStatus = STATUS_NONE;
             sTradeMenu->callbackId = CB_INIT_EXIT_CANCELED_TRADE;
+            if (MP_TradeIsDirect()) // MP: PS-051. Agreed: the follower has nothing more to send us.
+                MP_TradeOnBothCancel("both cancelled; sending BOTH_CANCEL");
         }
     }
 
@@ -1748,14 +1753,16 @@ static void CB_InitExitCanceledTrade(void)
 {
     if (!gPaletteFade.active)
     {
-        // MP: BUG-005. SetCloseLinkCallbackAndType does nothing while another link callback
-        // (a block send) runs; vanilla then waits in CB_ExitCanceledTrade forever. Wait for it.
-        if (MP_TradeIsDirect() && !gWirelessCommType && gLinkCallback != NULL)
+        // MP: PS-051. A direct trade does not run the close-link handshake (it assumes GBA
+        // lockstep; over the PC cable the partner may close or leave first: BUG-004/005/007).
+        // Both agreed to stop, so each side closes its own cable once its last send is out,
+        // then CB_ExitCanceledTrade frees the menu and returns to the field.
+        if (MP_TradeIsDirect() && !gWirelessCommType)
         {
-            MP_TradeLog("BUG-007: the menu exit waits for another link callback"); // MP: BUG-007 log (once per frame at most a few)
+            if (MP_TradeTryExitLocally(GetNumQueuedActions() == 0))
+                sTradeMenu->callbackId = CB_EXIT_CANCELED_TRADE;
             return;
         }
-        MP_TradeOnMenuExit(); // MP: BUG-005: the partner leaving is a normal end from here on
         if (gWirelessCommType)
             SetLinkStandbyCallback();
         else
@@ -1773,6 +1780,7 @@ static void CB_ExitCanceledTrade(void)
         {
             Free(sMenuTextTileBuffer);
             Free(sTradeMenu);
+            sTradeMenu = NULL; // MP: PS-051 (MP_TradeMenuTraceId / MP_TradeFreeMenuForExit check it)
             FreeAllWindowBuffers();
             DestroyWirelessStatusIndicatorSprite();
             // MP: PS-044. A direct trade (from the overworld) returns to the normal field, not the cable room.
@@ -1785,11 +1793,34 @@ static void CB_ExitCanceledTrade(void)
         {
             Free(sMenuTextTileBuffer);
             Free(sTradeMenu);
+            sTradeMenu = NULL; // MP: PS-051 (MP_TradeMenuTraceId / MP_TradeFreeMenuForExit check it)
             FreeAllWindowBuffers();
             // MP: PS-044. A direct trade (from the overworld) returns to the normal field, not the cable room.
             SetMainCallback2(MP_TradeIsDirect() ? CB2_MpReturnToFieldAfterTrade : CB2_ReturnToFieldFromMultiplayer);
         }
     }
+}
+
+// MP: PS-051. The trade menu's state for the link flight recorder: 0xFF unless the menu is on
+// screen (sTradeMenu may dangle after a link error's InitHeap; the callback2 check covers it).
+u8 MP_TradeMenuTraceId(void)
+{
+    if (gMain.callback2 != CB2_TradeMenu || sTradeMenu == NULL)
+        return 0xFF;
+    return sTradeMenu->callbackId;
+}
+
+// MP: PS-051. The safety net (MP_TradeLinkErrorDuringAgreedExit): free the menu as
+// CB_ExitCanceledTrade does, if it is still allocated.
+void MP_TradeFreeMenuForExit(void)
+{
+    if (sTradeMenu == NULL)
+        return;
+    Free(sMenuTextTileBuffer);
+    sMenuTextTileBuffer = NULL;
+    Free(sTradeMenu);
+    sTradeMenu = NULL;
+    FreeAllWindowBuffers();
 }
 
 static void CB_WaitToStartRfuTrade(void)

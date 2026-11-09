@@ -67,6 +67,7 @@ static const u8 sCtlTypes[] =
 {
     MP_MSG_LINK_JOIN, MP_MSG_LINK_LEAVE, MP_MSG_LINK_GROUP, MP_MSG_LINK_END, MP_MSG_LINK_OPEN,
     MP_MSG_LINK_CLOSE, MP_MSG_LINK_START, MP_MSG_LINK_STATUS, MP_MSG_LINK_BUS_START, MP_MSG_LINK_BUS_END,
+    MP_MSG_LINK_DONE, // PS-051
 };
 
 static void FixtureCtl(u8 type, struct MpMsgLinkCtl *c)
@@ -172,6 +173,10 @@ static void TestParsers(void)
     L_CHECK(ParseCtlBytes(MP_MSG_LINK_STATUS, 1, 0x10, 0, 0) == MP_PARSE_ERR_BAD_FIELD, "STATUS with link id 4 open");
     L_CHECK(ParseCtlBytes(MP_MSG_LINK_BUS_START, 1, 0, 1, 0) == MP_PARSE_ERR_BAD_FIELD, "BUS_START with epoch 0");
     L_CHECK(ParseCtlBytes(MP_MSG_LINK_BUS_END, 1, 0, 0, 0) == MP_PARSE_ERR_BAD_FIELD, "BUS_END with epoch 0");
+    L_CHECK(ParseCtlBytes(MP_MSG_LINK_DONE, 0, 0, 0, 0) == MP_PARSE_ERR_BAD_FIELD, "DONE with group id 0 (PS-051)");
+    L_CHECK(ParseCtlBytes(MP_MSG_LINK_DONE, 2, 0x10, 0, 0) == MP_PARSE_ERR_BAD_FIELD, "DONE with link id 4 done (PS-051)");
+    L_CHECK(ParseCtlBytes(MP_MSG_LINK_DONE, 2, 0x03, 7, 9) == MP_PARSE_OK, "DONE mask 0x3, arg2 / reserved ignored (PS-051)");
+    L_CHECK(ParseCtlBytes(MP_MSG_LINK_END, 2, MP_LINK_END_DONE, 0, 0) == MP_PARSE_OK, "END with reason DONE (PS-051)");
     L_CHECK(ParseCtlBytes(MP_MSG_LINK_CMD, 1, 1, 1, 1) == MP_PARSE_ERR_BAD_FIELD, "ctl parser refuses CMD");
     L_CHECK(ParseCtlBytes(0x7F, 1, 1, 1, 1) == MP_PARSE_ERR_BAD_FIELD, "ctl parser refuses an unassigned LINK_* type");
 
@@ -881,6 +886,285 @@ static void ScenarioHostMember(void)
     LeaveAll();
 }
 
+// ===========================================================================
+// 3. PS-051: the agreed exit of a direct trade (and battle) on the real link stack
+// ===========================================================================
+//
+// What trade.c does for a direct trade when both players cancel in the trade menu: the leader
+// (link id 0) decides "both cancelled", queues BOTH_CANCEL (a 20-byte block, sent 5 frames
+// later) and agrees (MP_TradeOnBothCancel -> MP_LinkActivityAgreed); the follower agrees when
+// the block arrives. Each then fades and closes its own cable (MP_LinkActivityTryFinish), with
+// no close handshake. Variations: the follower's game stalled 1..60 frames (its rows pile up
+// while the leader closes and the bus ends under it), the leader slower than the follower,
+// after a completed trade (block exchange, the vanilla close, re-open on the same group), and
+// lag / jitter (the follower's network pump withheld at random, so control messages and rows
+// arrive late and in bursts; channel 0 is reliable and ordered, so they cannot reorder).
+// Required: no link error (not even a suppressed one) and no trace dump on either side, the
+// follower gets BOTH_CANCEL intact, both cables close, the group ends with DONE on both.
+
+struct ExitCase
+{
+    const char *name;
+    u8 followerStall;   // follower game ticks start this many frames after the leader's decision
+    u8 leaderFade;      // frames from the decision until the leader tries to close
+    u8 followerFade;    // frames from BOTH_CANCEL until the follower tries to close
+    bool8 afterTrade;   // a completed trade (block round + vanilla close + re-open) first
+    u8 jitterPct;       // % of frames the follower's network pump is withheld
+};
+
+static const struct ExitCase sExitCases[] =
+{
+    { "follower slower by 1 frame",                 1, 16, 16, FALSE, 0 },
+    { "follower slower by 5 frames",                5, 16, 16, FALSE, 0 },
+    { "follower slower by 20 frames",              20,  2, 16, FALSE, 0 },
+    { "follower slower by 60 frames, leader quick",60,  0, 16, FALSE, 0 },
+    { "leader slower (follower closes first)",      0, 60,  2, FALSE, 0 },
+    { "after a completed trade, follower slower",  30, 16, 16, TRUE,  0 },
+    { "after a completed trade, leader slower",     0, 40,  0, TRUE,  0 },
+    { "lag and jitter",                            10, 16, 16, FALSE, 30 },
+    { "after a trade, slow follower, heavy jitter",45,  0,  5, TRUE,  50 },
+    { "leader slower, jitter",                      0, 50,  1, FALSE, 40 },
+};
+
+struct ExitSim
+{
+    bool8 agreed;
+    bool8 closed;
+    bool8 gotCancel;
+    u16 fadeLeft;
+};
+
+static struct ExitSim sExit[G_COUNT];
+
+// One frame: the network (the follower's pump maybe withheld), then the games in tickMask.
+static void ExitFrame(u8 jitterPct, u8 followerSession, u8 tickMask)
+{
+    u8 i, g;
+
+    for (i = 0; i < S_COUNT; i++)
+    {
+        if (jitterPct != 0 && i == followerSession && (Rand() % 100) < jitterPct)
+            continue;
+        Sel(i);
+        MP_Update();
+        DrainEvents();
+    }
+    for (g = 0; g < G_COUNT; g++)
+    {
+        if (tickMask & (1 << g))
+            TickGame(g);
+    }
+}
+
+// The trade menu's side of one game, after its tick: agree on BOTH_CANCEL, fade, close.
+static void ExitStep(u8 g)
+{
+    struct ExitSim *x = &sExit[g];
+
+    Enter(g);
+    if (g == G_B && !x->agreed && (GetBlockReceivedStatus() & 1))
+    {
+        x->gotCancel = (gBlockRecvBuffer[0][0] == LINKCMD_BOTH_CANCEL_TRADE && gBlockRecvBuffer[0][1] == 0);
+        ResetBlockReceivedFlags();
+        MP_LinkActivityAgreed("selftest follower: BOTH_CANCEL received");
+        x->agreed = TRUE;
+    }
+    if (g == G_A && (GetBlockReceivedStatus() & 1))
+        ResetBlockReceivedFlags(); // our own block's echo
+    if (x->agreed && !x->closed)
+    {
+        if (x->fadeLeft > 0)
+            x->fadeLeft--;
+        else if (MP_LinkActivityTryFinish())
+            x->closed = TRUE;
+    }
+    Leave();
+}
+
+static void RunExitCase(const struct ExitCase *c, u8 followerSession, u8 mask)
+{
+    u32 failuresBefore = sFail;
+    u32 dumpsBefore;
+    u32 start, frame = 0;
+    u16 linkData[10];
+    u8 sendIn = 5; // QUEUE_DELAY_DATA
+    u8 g;
+
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        gMain.callback2 = NULL;
+        SetSuppressLinkErrorMessage(FALSE);  // the field return does this after every exit
+        gLinkErrorOccurred = FALSE;
+        L_CHECK(MP_LinkJoin(mask), "PS-051: join for the case");
+        Leave();
+    }
+    L_CHECK(RunUntil(CondGrouped, 0x3, 0x3), "PS-051: grouped");
+    DoExchange("PS-051: player-data exchange");
+    if (c->afterTrade)
+    {
+        DoBlockRound(7);    // the trade's data
+        DoClose();          // CB2_SaveAndEndTrade's close (vanilla handshake, both in step)
+        DoExchange("PS-051: the trade menu re-opens the link after the trade");
+    }
+    L_CHECK(RunUntil(CondTaskFinished, 0x3, 0x3), "PS-051: link idle in the trade menu");
+
+    MpLink_TraceSelftestEndIncident();
+    dumpsBefore = MP_LinkTraceGetDumpCount();
+    memset(sExit, 0, sizeof(sExit));
+    sExit[G_A].agreed = TRUE;
+    sExit[G_A].fadeLeft = c->leaderFade;
+    sExit[G_B].fadeLeft = c->followerFade;
+    Enter(G_A);
+    MP_LinkActivityAgreed("selftest leader: both cancelled"); // Leader_HandleCommunication
+    Leave();
+    memset(linkData, 0, sizeof(linkData));
+    linkData[0] = LINKCMD_BOTH_CANCEL_TRADE;
+
+    start = MpTransport_GetTimeMs();
+    while ((u32)(MpTransport_GetTimeMs() - start) < LINK_TIME_LIMIT_MS)
+    {
+        bool8 done = TRUE;
+
+        ExitFrame(c->jitterPct, followerSession, (frame >= c->followerStall) ? 0x3 : 0x1);
+        if (sendIn != 0 && --sendIn == 0)
+        {
+            Enter(G_A);
+            L_CHECK(SendBlock(0, linkData, sizeof(linkData)), "PS-051: the leader's BOTH_CANCEL block starts");
+            Leave();
+        }
+        // The leader's fade / exit only starts once the trade menu's queue sent the block
+        // (CB_InitExitCanceledTrade checks GetNumQueuedActions() == 0).
+        if (sendIn == 0)
+            ExitStep(G_A);
+        if (frame >= c->followerStall)
+            ExitStep(G_B);
+        frame++;
+        for (g = 0; g < G_COUNT; g++)
+        {
+            Enter(g);
+            if (!sExit[g].closed || MP_LinkGetState() != MP_LINK_STATE_NONE)
+                done = FALSE;
+            if (gMain.callback2 == CB2_LinkError)
+                done = TRUE; // fail fast; the checks below say why
+            Leave();
+        }
+        if (done)
+            break;
+    }
+    // A few more frames: nothing may go wrong after the exit either.
+    RunFrames(10, 0x3);
+
+    L_CHECK(sExit[G_B].gotCancel, "PS-051: the follower received BOTH_CANCEL intact");
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        L_CHECK(sExit[g].closed && !gReceivedRemoteLinkPlayers, g == G_A ? "PS-051: the leader closed its cable" : "PS-051: the follower closed its cable");
+        L_CHECK(gMain.callback2 != CB2_LinkError, g == G_A ? "PS-051: no CB2_LinkError on the leader" : "PS-051: no CB2_LinkError on the follower");
+        L_CHECK(!gLinkErrorOccurred, g == G_A ? "PS-051: no link error at all on the leader (not even suppressed)" : "PS-051: no link error at all on the follower (not even suppressed)");
+        L_CHECK(MP_LinkGetState() == MP_LINK_STATE_NONE && MP_LinkGetEndReason() == MP_LINK_END_DONE,
+                g == G_A ? "PS-051: the leader's group ended with DONE" : "PS-051: the follower's group ended with DONE");
+        L_CHECK(MP_GetState() == MP_STATE_IN_SESSION, "PS-051: the session is unaffected");
+        if (sFail != failuresBefore && g == G_B)
+            MP_LOG("selftest: link: PS-051 case '%s': leader closed %u, follower closed %u, follower link state %u end %u, frames %u\n",
+                   c->name, (unsigned)sExit[G_A].closed, (unsigned)sExit[G_B].closed, (unsigned)MP_LinkGetState(),
+                   (unsigned)MP_LinkGetEndReason(), (unsigned)frame);
+        Leave();
+    }
+    L_CHECK(MP_LinkTraceGetDumpCount() == dumpsBefore, "PS-051: no link trace dump (no incident) during the agreed exit");
+    {
+        char what[128];
+
+        snprintf(what, sizeof(what), "PS-051 agreed trade exit: %s", c->name);
+        Report(what, failuresBefore);
+    }
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        SetSuppressLinkErrorMessage(FALSE);
+        Leave();
+    }
+}
+
+static void ScenarioAgreedExit(bool8 hostIsMember)
+{
+    u32 failuresBefore = sFail;
+    u32 dumpsBefore, i;
+    u8 mask, followerSession;
+    u8 g;
+
+    if (hostIsMember)
+    {
+        InitGame(G_A, S_HOST, "HOST", 0x00C0FFEEu);
+        InitGame(G_B, S_C1, "CARL", 0x00012345u);
+        mask = 0x03;
+        followerSession = S_C1;
+    }
+    else
+    {
+        InitGame(G_A, S_C1, "ALICE", 0x0001A11Cu);
+        InitGame(G_B, S_C2, "BOB", 0x000B0B0Bu);
+        mask = 0x06;
+        followerSession = S_C2;
+    }
+    L_CHECK(HostOn(S_HOST, "Host"), "PS-051: host on a port in 27550..27559");
+    L_CHECK(JoinOn(S_C1, "Carl") && WaitSession(S_C1), "PS-051: client 1 joins");
+    if (!hostIsMember)
+        L_CHECK(JoinOn(S_C2, "Bob") && WaitSession(S_C2), "PS-051: client 2 joins");
+    PumpNet();
+    Report(hostIsMember ? "PS-051 set-up (host is the leader)" : "PS-051 set-up (host only sequences)", failuresBefore);
+
+    if (hostIsMember)
+    {
+        for (i = 0; i < ARRAY_COUNT(sExitCases); i++)
+            RunExitCase(&sExitCases[i], followerSession, mask);
+    }
+    else
+    {
+        RunExitCase(&sExitCases[3], followerSession, mask);
+        RunExitCase(&sExitCases[4], followerSession, mask);
+        RunExitCase(&sExitCases[8], followerSession, mask);
+    }
+
+    // Part A: the flight recorder dumps once for a forced error (MP_LinkRejectData on the
+    // leader, then the hardware error, the link error and the follower's bus end: one incident).
+    failuresBefore = sFail;
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        gMain.callback2 = NULL;
+        gLinkErrorOccurred = FALSE;
+        L_CHECK(MP_LinkJoin(mask), "PS-051 trace: join");
+        Leave();
+    }
+    L_CHECK(RunUntil(CondGrouped, 0x3, 0x3), "PS-051 trace: grouped");
+    DoExchange("PS-051 trace: player-data exchange");
+    MpLink_TraceSelftestEndIncident();
+    dumpsBefore = MP_LinkTraceGetDumpCount();
+    Enter(G_A);
+    MP_LinkRejectData("selftest: a forced error (PS-051 flight recorder)");
+    Leave();
+    L_CHECK(MP_LinkTraceGetDumpCount() == dumpsBefore + 1, "PS-051 trace: a forced error dumps the trace at once");
+    L_CHECK(RunUntil(CondLinkError, 0x3, 0x3), "PS-051 trace: both reach the link-error path (no agreement)");
+    RunFrames(10, 0x3);
+    L_CHECK(MP_LinkTraceGetDumpCount() == dumpsBefore + 1, "PS-051 trace: one dump per incident (the follow-up errors are the same incident)");
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        CloseLink();
+        MP_LinkLeave();
+        gMain.callback2 = NULL;
+        gLinkErrorOccurred = FALSE;
+        SetSuppressLinkErrorMessage(FALSE);
+        Leave();
+    }
+    RunFrames(10, 0x3);
+    MpLink_TraceSelftestEndIncident();
+    Report("PS-051 flight recorder: one dump on a forced error", failuresBefore);
+
+    LeaveAll();
+}
+
 // No group: the cable is unplugged, exactly like single-player with the old stub.
 static void ScenarioNoGroup(void)
 {
@@ -936,6 +1220,8 @@ u32 MpSelftest_Link(void)
     ScenarioNoGroup();
     ScenarioHostNotMember();
     ScenarioHostMember();
+    ScenarioAgreedExit(TRUE);   // PS-051: the host is the leader (the usual play-test set-up)
+    ScenarioAgreedExit(FALSE);  // PS-051: two clients, the host only sequences
 
     // Leave the process as it was: the boot state of link.c, no sessions.
     MP_LinkSelftestState(sNeutralLink, sizeof(sNeutralLink), TRUE);

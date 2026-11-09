@@ -137,3 +137,31 @@ verified`, `cycle N complete`. The game keeps running (walk around); the link ru
   way on loopback = 150 ms RTT; remove with `sudo tc qdisc del dev lo root`). Windows: clumsy, "Lag" 150 ms on
   the loopback filter. Rounds take longer (each block is about 15 rows plus round trips); they must still
   verify.
+
+## Log file and link flight recorder (PS-051)
+
+Every `[MP]` console line also goes to a log file in the working directory (the folder the
+game is started from), flushed line by line, so the file is complete even if the game is killed.
+The game prints the full path at startup: `[MP] log file: ...`.
+
+- `mp_log.txt`: the normal name. It is overwritten at every start, so copy it before you
+  start the game again.
+- `mp_log_<pid>.txt`: used if another running instance (a second window on the same PC)
+  already holds `mp_log.txt`. Then the two logs do not overwrite each other.
+
+The **link flight recorder** keeps the last 600 ticks (10 s) of link state while a trade or a
+battle link is in use. On an incident it writes them into the log file, under a
+`[MP] ==== link trace (reason) ====` header. An incident is `CB2_LinkError` (the communication
+error screen), rejected link data, a cable hardware error, or a link error that
+`TrySetLinkErrorBuffer` sees, suppressed or not. There is one dump per incident: triggers within
+2 s count as the same incident and get a one-line `same incident, also: ...`. A
+`link trace aftermath` block follows with the ticks after the dump. Columns: `gMain.callback2`
+and `callback1`, and `gLinkCallback` as `exe+offset`. To resolve an offset, look it up in the
+`pokeemerald.map` shipped with the build: offset + 0x140000000 (Win64) or + 0x400000 (Win32).
+On Linux, use `nm` on the same binary. Then come the link flags, the MP link state, the cable,
+the trade menu's `callbackId` (255 = no menu) and the first word of the command sent and the row
+received. The dump header lists the offsets of `CB2_LinkError`, `CB2_Overworld`,
+`CB2_ReturnToField` and `CB1_Overworld` as a cross-check.
+
+**Play-test bug reports:** send `mp_log*.txt` from **both** machines (and
+`pokeemerald_crash.txt` if there is one).

@@ -73,13 +73,16 @@ enum
 };
 
 static bool8 sDirectTrade = FALSE;      // TRUE from CB2_StartCreateTradeMenu until back in the field
-static bool8 sLeavePending = FALSE;     // BUG-004: leave the link group once the partner closed too
+static bool8 sLeavePending = FALSE;     // PS-051: in the field, until the host ends the link group
 static u16 sLeaveTimer = 0;
 static u16 sGroupGoneFrames = 0;       // BUG-004: watchdog, the group is gone while still trading
+static u16 sExitQueueWait = 0;         // PS-051: frames the exit waited for the menu's queued sends
 
-#define MP_TRADE_LEAVE_GRACE_FRAMES     180 // ~3 s for the partner to finish its close handshake
+#define MP_TRADE_LEAVE_FALLBACK_FRAMES  300 // ~5 s: the host ends the group itself (DONE) within ~3 s
 #define MP_TRADE_GONE_FRAMES            180 // ~3 s for the trade's own link-error path
-static bool8 sTradeExiting = FALSE;    // BUG-005: the trade menu is closing (both cancelled)
+#define MP_TRADE_GONE_FINISHING_FRAMES  600 // the partner is done: ~10 s for our rows to play out
+#define MP_TRADE_EXIT_QUEUE_FRAMES      300 // the menu's queued sends normally take 5 frames
+static bool8 sTradeExiting = FALSE;    // BUG-005 / PS-051: both agreed to stop; the menu is closing
 static u8 sTradePartner = MP_SLOT_NONE;
 static u8 sTradePartnerName[MP_PLAYER_NAME_SIZE];
 
@@ -284,6 +287,7 @@ void MpTrade_Start(u8 partnerSlot, const u8 *partnerName)
     sTradePartner = partnerSlot;
     sTradeExiting = FALSE;
     sGroupGoneFrames = 0;
+    sExitQueueWait = 0;
     for (i = 0; i < MP_PLAYER_NAME_SIZE - 1 && partnerName[i] != EOS; i++)
         sTradePartnerName[i] = partnerName[i];
     for (; i < MP_PLAYER_NAME_SIZE; i++)
@@ -304,11 +308,15 @@ void CB2_MpReturnToFieldAfterTrade(void)
     MP_LOG("trade: back to the overworld\n");
     sDirectTrade = FALSE;
     MP_TradeCommitReset();
-    // BUG-004: not yet. The partner may still be in its close-link handshake; leaving now
-    // would end the group under it. MpTrade_Update leaves once both cables are closed.
+    // PS-051: we do not leave the group ourselves (that would end it under a partner that is
+    // still playing its last rows). LINK_DONE went out when our cable closed; the host ends the
+    // group once both are done (or after its grace time). MpTrade_Update only leaves if that
+    // never comes.
+    MpLink_MemberSendDone(); // normally sent already (MP_LinkActivityTryFinish); once per group
     sLeavePending = TRUE;
     sLeaveTimer = 0;
     sTradeExiting = FALSE;
+    sExitQueueWait = 0;
     MpTrade_ResetFieldLinkState();
     StopMapMusic();
     ScriptContext_Init();
@@ -345,16 +353,61 @@ void MpTrade_ResetFieldLinkState(void)
     SetMainCallback1(CB1_Overworld);
 }
 
-// BUG-005: from trade.c's CB_InitExitCanceledTrade. Both players chose to stop trading. From
-// here on a partner that goes away is a normal end, not an error: the last trade, if any, is
-// already in the save.
-void MP_TradeOnMenuExit(void)
+// PS-051 (was BUG-005's MP_TradeOnMenuExit, which came too late: in CB_InitExitCanceledTrade,
+// after the fade). From trade.c at the moment of agreement: the leader decides "both cancelled"
+// and sends BOTH_CANCEL, the follower receives it. Nothing is left to exchange and the last
+// trade, if any, is already in the save (PS-044/PS-050): a partner that goes away, the bus
+// ending or a link error is a normal end from here on.
+void MP_TradeOnBothCancel(const char *who)
 {
-    if (!sDirectTrade)
+    if (!sDirectTrade || sTradeExiting)
         return;
-    MP_LOG("trade: both stopped trading; the menu closes (link id %u)\n", (unsigned)MP_LinkGetLinkId()); // BUG-007
+    MP_LOG("trade: %s; both stopped trading, the menu closes (link id %u)\n", who, (unsigned)MP_LinkGetLinkId());
     sTradeExiting = TRUE;
-    SetSuppressLinkErrorMessage(TRUE); // a link error now only closes the cable; the menu exits
+    sExitQueueWait = 0;
+    MP_LinkActivityAgreed("trade");
+}
+
+// PS-051: CB_InitExitCanceledTrade, every frame after the fade, for a direct trade.
+bool8 MP_TradeTryExitLocally(bool8 queueEmpty)
+{
+    if (!sTradeExiting)
+        MP_TradeOnBothCancel("the menu exit"); // cannot happen: the menu only gets here by agreement
+    if (!queueEmpty)
+    {
+        // The leader's BOTH_CANCEL is still in the trade menu's queue (5 frames).
+        if (++sExitQueueWait < MP_TRADE_EXIT_QUEUE_FRAMES)
+            return FALSE;
+        if (sExitQueueWait == MP_TRADE_EXIT_QUEUE_FRAMES)
+            MP_LOG("trade: the menu's queued sends did not finish; closing anyway\n");
+    }
+    if (!MP_LinkActivityTryFinish())
+        return FALSE;
+    MP_LOG("trade: our cable is closed; leaving the trade menu (no close handshake)\n");
+    return TRUE;
+}
+
+// PS-051 safety net: CB2_LinkError while a direct trade is exiting by agreement. Back to the field
+// the normal way: there is nothing to recover (the last trade is saved, nothing more is traded).
+static void CB2_MpTradeExitAfterLinkError(void)
+{
+    gMain.callback1 = NULL;
+    SetVBlankCallback(NULL);
+    MP_TradeFreeMenuForExit();
+    MpLink_MemberSendDone();
+    CloseLink();
+    ClearLinkCallback();
+    CB2_MpReturnToFieldAfterTrade();
+}
+
+bool8 MP_TradeLinkErrorDuringAgreedExit(void)
+{
+    if (!sDirectTrade || !sTradeExiting)
+        return FALSE;
+    MP_LOG("trade: SAFETY NET: a link error during the agreed trade exit; returning to the field instead of the error screen\n");
+    MP_LinkTraceDump("CB2_LinkError during the agreed trade exit (safety net: back to the field)");
+    SetMainCallback2(CB2_MpTradeExitAfterLinkError);
+    return TRUE;
 }
 
 void MP_TradeOnLinkErrorRecovery(void)
@@ -368,25 +421,26 @@ void MP_TradeOnLinkErrorRecovery(void)
     MP_TradeCommitReset();
 }
 
-// BUG-004. Once per frame (MpUi_Update):
-//  - the deferred MP_LinkLeave after a direct trade: when both cables are closed (the partner
-//    finished its close handshake too), or after MP_TRADE_LEAVE_GRACE_FRAMES;
-//  - never hang: if the link group is gone while a direct trade is still on screen (and no
-//    commit is waiting for the host), give the trade's own error path a moment, then take the
-//    PS-048 recovery (CB2_LinkError -> "Continue from last save").
+// Once per frame (MpUi_Update):
+//  - PS-051: after a direct trade, wait in the field for the host to end the link group (both
+//    sent LINK_DONE, or its grace time); leave it ourselves only if that never comes;
+//  - BUG-004: never hang: if the link group is gone while a direct trade is still on screen
+//    (and no commit is waiting for the host), give the trade's own error path a moment, then
+//    take the PS-048 recovery (CB2_LinkError -> "Continue from last save").
 void MpTrade_Update(void)
 {
-    struct MpLinkCableInfo info;
+    u16 goneLimit;
 
     if (sLeavePending)
     {
-        MpLink_CableGetInfo(&info);
-        if (MP_LinkGetState() == MP_LINK_STATE_NONE || (!info.open && info.openCount == 0)
-         || ++sLeaveTimer > MP_TRADE_LEAVE_GRACE_FRAMES)
+        if (MP_LinkGetState() == MP_LINK_STATE_NONE)
         {
-            // BUG-005: say why, so a play-test log shows whether the partner closed in time.
-            MP_LOG("trade: leaving the link group (%s)\n", (MP_LinkGetState() == MP_LINK_STATE_NONE) ? "already gone"
-                   : (sLeaveTimer > MP_TRADE_LEAVE_GRACE_FRAMES) ? "partner still open after the grace time" : "both cables closed");
+            MP_LOG("trade: the link group is over (end reason %u); the trade is finished\n", (unsigned)MP_LinkGetEndReason());
+            sLeavePending = FALSE;
+        }
+        else if (++sLeaveTimer > MP_TRADE_LEAVE_FALLBACK_FRAMES)
+        {
+            MP_LOG("trade: the host did not end the link group after the trade; leaving it\n");
             sLeavePending = FALSE;
             MP_LinkLeave();
         }
@@ -396,17 +450,15 @@ void MpTrade_Update(void)
      && (!MP_IsActive() || MP_LinkGetState() != MP_LINK_STATE_GROUPED)
      && MP_TradeCommitPoll() != MP_TRADE_COMMIT_WAITING)
     {
+        // PS-051: if the partner is done (it agreed and sent its last rows) our queued rows may
+        // still carry its BOTH_CANCEL: give them longer to play out before the recovery.
+        goneLimit = MP_LinkIsFinishing() ? MP_TRADE_GONE_FINISHING_FRAMES : MP_TRADE_GONE_FRAMES;
         if (sTradeExiting)
         {
-            // BUG-005: both chose to stop and the partner finished first (or vanished). Close
-            // the cable so the menu's own exit runs (CB_ExitCanceledTrade): a normal end.
-            if (gReceivedRemoteLinkPlayers)
-            {
-                MP_LOG("trade: the partner left while the trade menu was closing; leaving normally\n");
-                CloseLink();
-            }
+            // Both agreed to stop and the partner finished first (or vanished): a normal end.
+            // MP_TradeTryExitLocally closes our cable itself; nothing to do here.
         }
-        else if (++sGroupGoneFrames > MP_TRADE_GONE_FRAMES)
+        else if (++sGroupGoneFrames > goneLimit)
         {
             // BUG-005: one shot. The error screen is CB2_PrintErrorMessage, not CB2_LinkError, so
             // this used to fire again every MP_TRADE_GONE_FRAMES and restart the error screen.

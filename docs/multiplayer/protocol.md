@@ -1,7 +1,7 @@
 # Pokémon Spectrum — Multiplayer Wire Protocol
 
 - **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests), PS-046 (virtual link cable), PS-042 (trainer card), PS-043 (view party)
-- **Protocol version:** `MP_PROTOCOL_VERSION = 5` (2 = `INTERACT_*`, PS-041; 3 = `LINK_*`, PS-046; 4 = `TRAINER_CARD_DATA`, PS-042; 5 = `PARTY_DATA`, PS-043)
+- **Protocol version:** `MP_PROTOCOL_VERSION = 9` (2 = `INTERACT_*`, PS-041; 3 = `LINK_*`, PS-046; 4 = `TRAINER_CARD_DATA`, PS-042; 5 = `PARTY_DATA`, PS-043; 6 = `TRADE_COMMIT`, PS-044; 7 = `TRADE_RECOVER`, PS-050; 8 = INTERACT kind BATTLE_DOUBLE, PS-045; 9 = `LINK_DONE`, PS-051; see section 11)
 - **Status:** draft for Director approval
 - **Companion docs:** `design.md` (modules, API, build), `include/mp/mp.h` (public API)
 
@@ -121,7 +121,8 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 | `0x6B` | `LINK_ROW` | H → C | 0 | 8 + 16·N (N = 2..4) | IN_SESSION |
 | `0x6C` | `TRADE_COMMIT` | both (READY C → H; COMMIT / ABORT H → C) | 0 | 8 | IN_SESSION (PS-044, 6.15) |
 | `0x6D` | `TRADE_RECOVER` | both (routed by the host) | 0 | 32 | IN_SESSION (PS-050, 6.16) |
-| `0x6E`–`0x7F` | reserved: `LINK_*` | | 0 | | |
+| `0x6E` | `LINK_DONE` | both (done C → H; done mask H → C) | 0 | 4 | IN_SESSION (PS-051, 6.12) |
+| `0x6F`–`0x7F` | reserved: `LINK_*` | | 0 | | |
 | `0x80`–`0xEF` | reserved | | | | |
 | `0xF0` | `DEBUG_ECHO` | both | 0 | 0..64 | only under `--mp-selftest` (PS-011). Session code drops it. |
 | `0xF1`–`0xFE` | reserved: debug | | | | |
@@ -532,7 +533,7 @@ Emerald's cable link (`src/link.c`) runs unchanged over the session; see
 | `0x60` `LINK_JOIN` | C → H | member slot mask | — | mask only in bits 0..3, 2..4 bits set |
 | `0x61` `LINK_LEAVE` | C → H | — | — | — |
 | `0x62` `LINK_GROUP` | H → C | member slot mask | recipient's link id | `groupId != 0`, mask as JOIN, link id < member count |
-| `0x63` `LINK_END` | H → C | reason: 1 LEFT, 2 LOST, 3 OVERFLOW, 4 REFUSED (5..31 reserved) | — | reason != 0 |
+| `0x63` `LINK_END` | H → C | reason: 1 LEFT, 2 LOST, 3 OVERFLOW, 4 REFUSED, 5 DONE (PS-051, a normal end; 6..31 reserved) | — | reason != 0 |
 | `0x64` `LINK_OPEN` | C → H | open sequence | — | `groupId != 0` |
 | `0x65` `LINK_CLOSE` | C → H | open sequence | — | `groupId != 0` |
 | `0x66` `LINK_START` | C → H | open sequence | — | `groupId != 0` |
@@ -585,7 +586,35 @@ A,B -> H  CMD(g, e, cmd) ...              H -> A,B  ROW(g, e, n, {cmdA, cmdB}) .
 A,B -> H  CLOSE(g, seq)                   H -> A,B  BUS_END(g, e), STATUS(g, ...)
 ```
 
-Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x6E`–`0x7F` type; `0x6C` is 6.15, `0x6D` 6.16):
+**Agreed end of a link activity (PS-051, version 9).** Vanilla ends a cable activity with the
+close-link handshake, which assumes GBA lockstep. Over this host-sequenced cable one member closes
+first and the other can still be mid-handshake when the bus or the group goes away (BUG-004/005/007).
+So once the players have agreed to stop (a direct trade: the leader sends `LINKCMD_BOTH_CANCEL_TRADE`
+and the follower receives it; a direct battle: `ENDLINKBATTLE`), each member ends on its own:
+it waits until its last command is out, sends `LINK_DONE(g)` and then closes its cable (`LINK_CLOSE`).
+It does **not** send `LINK_LEAVE`.
+
+| Type | Dir | `arg1` | `arg2` | Validation (parser, pure) |
+|---|---|---|---|---|
+| `0x6E` `LINK_DONE` | C → H | — (0) | — | `groupId != 0`, `arg1` < 0x10 |
+| `0x6E` `LINK_DONE` | H → C | done mask by link id | — | `groupId != 0`, `arg1` < 0x10 |
+
+Host: `DONE(g)` from a member of `g` (ignored otherwise, and when repeated) first emits every row
+still queued for the bus. Then it marks that link id as done and sends `DONE(g, doneMask)` to every
+member. When all members are done, the group ends with `END(DONE)` (reason 5). Otherwise it ends
+`MP_LINK_DONE_GRACE_MS` (3000 ms) after the first `DONE`. Since version 9 the host also emits the
+queued rows before it acts on a `CLOSE`, so a member that closes right after its last block never
+loses that block.
+
+Member: a `DONE` naming another link id, our own agreement, or `END(DONE)` makes the member
+*finishing*. While finishing, `BUS_END` and the group ending are the normal end, not a hardware
+error. The rows already queued still play, and then the cable stays silent until the game closes
+it. After the field return the member waits for `END(DONE)`, and leaves the group itself only if
+that has not come within ~5 s. Order on channel 0 (the leader closes first):
+`ROW…(BOTH_CANCEL)`, `DONE(g, 0b01)`, `BUS_END(g, e)`, and later `END(g, DONE)`. So a slow follower
+knows the leader is done before it reaches the `BUS_END`.
+
+Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x6F`–`0x7F` type; `0x6C` is 6.15, `0x6D` 6.16):
 dropped and counted against the 8.2 budget. Stale (other group, old epoch, old sequence): silent.
 
 ### 6.13 `TRAINER_CARD_DATA` (0x43) — both directions, channel 0, payload 56 bytes
@@ -1124,9 +1153,9 @@ The build hash `0x12345678` is an illustrative value (a real one is an FNV-1a re
 Packet = 36 bytes:
 
 ```
-01 08 20 00                 header: type HELLO, version 8, length 32
+01 09 20 00                 header: type HELLO, version 9, length 32
 50 53 4D 50                 magic "PSMP"
-08 00                       protocolVersion 8
+09 00                       protocolVersion 9
 00 00                       reserved
 78 56 34 12                 buildHash 0x12345678
 00                          buildFlags
@@ -1154,3 +1183,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 6 | PS-044 | `TRADE_COMMIT` (0x6C, 6.15) in the `LINK_*` range: the host-arbitrated commit of a direct trade's save (READY / COMMIT / ABORT). Version bumped to 6: a version-5 peer would count `0x6C` as malformed. Worked example (10) updated to version 6. |
 | 7 | PS-050 | Trade journal recovery: `TRADE_COMMIT` grows to 8 bytes (`tradeId`), new `TRADE_RECOVER` (0x6D, 32 bytes, 6.16). The post-trade save is written to disk at the signature (BUG-003). Version bumped to 7. |
 | 8 | PS-045 | INTERACT `kind` 5 BATTLE_DOUBLE (6.11): a battle request that asks for a DOUBLE link battle; `kind` 2 BATTLE is now the single link battle. Prompted, routed and answered exactly like BATTLE. Version bumped to 8: a version-7 peer rejects kind 5 as malformed. No new message: the battle itself runs over the PS-046 cable (`LINK_*`) unchanged. Worked example (10) updated to version 8. |
+| 9 | PS-051 | `LINK_DONE` (0x6E, 6.12): the agreed end of a link activity. A member that is done sends it, then closes its cable (no close-link handshake). The host relays the done mask, ends the group with the new `END` reason 5 DONE once all are done (or 3 s after the first), and emits queued rows before it handles `DONE` / `CLOSE`. A finishing member does not treat `BUS_END` or the group ending as a hardware error (fixes BUG-007). Version bumped to 9: a version-8 peer counts `0x6E` as malformed. Worked example (10) updated to version 9. |

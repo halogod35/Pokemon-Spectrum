@@ -292,6 +292,7 @@ void MP_Init(void)
     if (sMpInitialized)
         return;
     sMpInitialized = TRUE;
+    MpLog_Open(); // PS-051: every [MP] line also goes to mp_log.txt; prints its path
     for (i = 0; i < MP_SESSION_INSTANCE_COUNT; i++)
         MpSession_ResetInstance((u8)i);
     gMpSession = &sSessions[0];
@@ -400,6 +401,8 @@ void MP_Shutdown(void)
 
     MpSession_SelectInstance(0);
     MpTransport_Shutdown();
+    MP_LOG("shut down\n");
+    MpLog_Close(); // PS-051
     sMpInitialized = FALSE;
 }
 

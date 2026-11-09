@@ -778,6 +778,7 @@ bool8 MpProto_IsLinkCtlType(u8 type)
     case MP_MSG_LINK_STATUS:
     case MP_MSG_LINK_BUS_START:
     case MP_MSG_LINK_BUS_END:
+    case MP_MSG_LINK_DONE: // PS-051
         return TRUE;
     default:
         return FALSE;
@@ -838,6 +839,11 @@ u8 MpProto_ParseLinkCtl(u8 type, const u8 *payload, u32 len, struct MpMsgLinkCtl
         break;
     case MP_MSG_LINK_BUS_END:
         if (m.groupId == 0 || m.arg1 == 0)
+            return MP_PARSE_ERR_BAD_FIELD;
+        m.arg2 = 0;
+        break;
+    case MP_MSG_LINK_DONE: // PS-051: arg1 = done mask by link id (H -> C), 0 (C -> H)
+        if (m.groupId == 0 || (m.arg1 & ~0x0F) != 0)
             return MP_PARSE_ERR_BAD_FIELD;
         m.arg2 = 0;
         break;

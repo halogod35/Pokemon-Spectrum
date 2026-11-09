@@ -17,7 +17,9 @@
 // (gLinkStatus stays 0, so the Cable Club times out exactly as before).
 
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include "global.h"
 #include "decompress.h"
 #include "link.h"
@@ -27,6 +29,7 @@
 #include "mp/mp_internal.h"
 #include "mp/mp_link.h"
 #include "mp/mp_summary.h"
+#include "mp/mp_transport.h"
 
 // The bus carries CMD_LENGTH words per member and at most MAX_LINK_PLAYERS members.
 typedef char MpLinkCmdLengthCheck[(CMD_LENGTH == MP_LINK_CMD_WORDS) ? 1 : -1];
@@ -36,6 +39,19 @@ typedef char MpLinkInitBlockCheck[(LINKCMD_INIT_BLOCK == MP_LINKCMD_INIT_BLOCK) 
 typedef char MpLinkBlockReqCheck[(LINKCMD_SEND_BLOCK_REQ == MP_LINKCMD_SEND_BLOCK_REQ) ? 1 : -1];
 typedef char MpLinkBlockReqCountCheck[(BLOCK_REQ_SIZE_40 + 1 == MP_LINK_BLOCK_REQ_COUNT) ? 1 : -1];
 typedef char MpLinkMaxBlockCheck[(sizeof(gDecompressionBuffer) == MP_LINK_MAX_BLOCK_SIZE) ? 1 : -1];
+
+// PS-051 flight recorder: what MP_LinkMain1 did this tick (MP_LinkTraceFrame records it).
+static u16 sTraceSent;
+static u16 sTraceRecv0;
+static u16 sTraceRecv1;
+static u8 sTraceRecvKind;   // 0 nothing, 1 a row, 2 BUS_END
+
+enum
+{
+    TRACE_RECV_NONE,
+    TRACE_RECV_ROW,
+    TRACE_RECV_BUS_END,
+};
 
 u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_LENGTH])
 {
@@ -81,7 +97,10 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
         for (i = 0; i < CMD_LENGTH; i++)
             any |= sendCmd[i];
         if (any != 0)
+        {
             MpLink_CableSend(sendCmd);
+            sTraceSent = sendCmd[0];
+        }
         for (i = 0; i < CMD_LENGTH; i++)
             sendCmd[i] = 0;
 
@@ -94,12 +113,26 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
                     recvCmds[i][j] = row[i][j];
             }
             gLink.receivedNothing = FALSE;
+            sTraceRecvKind = TRACE_RECV_ROW;
+            sTraceRecv0 = row[0][0];
+            sTraceRecv1 = row[1][0];
             break;
         case MP_LINK_POP_BUS_END:
-            // A bus member closed its cable while we were still on it (a unilateral
-            // CloseLink, e.g. its own link error). On the real cable we would lose the
-            // serial transfers: report a hardware error.
-            gLink.hardwareError = TRUE;
+            sTraceRecvKind = TRACE_RECV_BUS_END;
+            if (MpLink_MemberIsFinishing())
+            {
+                // PS-051: we or the partner are done with the activity (both agreed to stop):
+                // the bus ending is the normal end, not a lost cable. Nothing more will come.
+                MP_LOG("link: the bus ended after the agreed end of the link activity (not an error)\n");
+            }
+            else
+            {
+                // A bus member closed its cable while we were still on it (a unilateral
+                // CloseLink, e.g. its own link error). On the real cable we would lose the
+                // serial transfers: report a hardware error.
+                gLink.hardwareError = TRUE;
+                MP_LinkTraceDump("the bus ended while our cable was open: hardware error");
+            }
             // fallthrough
         default:
             // Clear every player row, not only gLink.playerCount: ProcessRecvCmds reads 4.
@@ -118,8 +151,14 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
     MpLink_CableGetInfo(&info);
     // MP: BUG-004. Only once the rows already received are played: the last ones may carry the
     // partner's READY_CLOSE_LINK, and the close handshake must see it to finish cleanly.
-    if (info.lost && info.queued == 0 && gLink.state >= LINK_STATE_HANDSHAKE)
+    // PS-051: not after the agreed end of the activity: then the group ending (DONE, or the
+    // partner leaving) is the normal end; the cable just stays silent until we close it.
+    if (info.lost && info.queued == 0 && gLink.state >= LINK_STATE_HANDSHAKE && !MpLink_MemberIsFinishing())
+    {
+        if (!gLink.hardwareError)
+            MP_LinkTraceDump("the link group ended while our cable was open: hardware error");
         gLink.hardwareError = TRUE;
+    }
 
     // Fields other code reads (GetLinkRecvQueueLength, the overworld send-queue check,
     // LinkCB_Standby / LinkCB_ReadyCloseLink via gLastRecvQueueCount).
@@ -174,6 +213,7 @@ void MP_LinkRejectData(const char *what)
     // runs the game's link-error path. CloseLink() zeroes gLink, which clears it again.
     if (gLink.state >= LINK_STATE_HANDSHAKE)
         gLink.hardwareError = TRUE;
+    MP_LinkTraceDump("rejected data from the link partner"); // PS-051
 }
 
 void MP_LinkRejectDataF(const char *fmt, ...)
@@ -190,6 +230,318 @@ void MP_LinkRejectDataF(const char *fmt, ...)
 u32 MP_LinkGetRejectCount(void)
 {
     return sLinkRejectCount;
+}
+
+// ---------------------------------------------------------------------------
+// PS-051: the agreed end of a direct link activity (trade menu cancel, link battle end)
+// ---------------------------------------------------------------------------
+//
+// Vanilla ends a cable activity with the close-link handshake (SetCloseLinkCallback), which
+// assumes GBA lockstep: both games see the same serial row on the same frame. Over the
+// host-sequenced cable one side closes first and the other may still be mid-handshake when the
+// bus or the group goes away (BUG-004/005/007). Once both players have agreed to stop there is
+// nothing left to exchange, so each side ends on its own:
+//   MP_LinkActivityAgreed   at the moment of agreement: link errors are suppressed and the cable
+//                           no longer reports the bus / group ending as a hardware error.
+//   MP_LinkActivityTryFinish once our own last command is out: LINK_DONE to the host, then
+//                           CloseLink() locally. No handshake, no waiting for the partner.
+// The host ends the group (END(DONE)) once every member is done, or MP_LINK_DONE_GRACE_MS after
+// the first one (mp_link.c).
+
+#define MP_LINK_FINISH_WAIT_FRAMES  120 // our last block still going out; then close anyway
+
+void MP_LinkActivityAgreed(const char *who)
+{
+    if (MpLink_MemberIsAgreed())
+        return;
+    MpLink_MemberSetAgreed();
+    SetSuppressLinkErrorMessage(TRUE);
+    MP_LOG("link: %s: both players agreed to stop (link id %u); the exit no longer depends on the partner\n",
+           who, (unsigned)MP_LinkGetLinkId());
+}
+
+bool8 MP_LinkActivityIsAgreed(void)
+{
+    return MpLink_MemberIsAgreed();
+}
+
+bool8 MP_LinkIsFinishing(void)
+{
+    return MpLink_MemberIsFinishing();
+}
+
+bool8 MP_LinkActivityTryFinish(void)
+{
+    bool8 quiet = (gLinkCallback == NULL);
+    u16 waited;
+    u32 i;
+
+    if (!MpLink_MemberIsAgreed())
+        MP_LinkActivityAgreed("exit");
+    for (i = 0; i < CMD_LENGTH; i++)
+    {
+        if (gSendCmd[i] != 0)
+            quiet = FALSE;
+    }
+    // While the cable is up, our last command (the leader's BOTH_CANCEL block, ...) must be on
+    // the bus first: it goes out in the next MP_LinkMain1. A closed cable has nothing to send.
+    if (gLink.state == LINK_STATE_CONN_ESTABLISHED && !quiet)
+    {
+        waited = MpLink_MemberBumpFinishWait();
+        if (waited == 1)
+            MP_LOG("link: the exit waits for our last link command to go out\n");
+        if (waited < MP_LINK_FINISH_WAIT_FRAMES)
+            return FALSE;
+        MP_LOG("link: closing with a link callback still running (waited %u frames)\n", (unsigned)waited);
+    }
+    MpLink_MemberSendDone();
+    CloseLink();
+    ClearLinkCallback();
+    MP_LOG("link: our cable is closed locally (agreed exit, no close handshake; link error seen: %u)\n", (unsigned)gLinkErrorOccurred);
+    return TRUE;
+}
+
+// ---------------------------------------------------------------------------
+// PS-051: link flight recorder
+// ---------------------------------------------------------------------------
+//
+// Once per tick (HandleLinkConnection) while a link group exists or the cable is open, plus
+// MP_TRACE_TAIL_FRAMES after: the main / link callbacks (as exe offsets, so pokeemerald.map
+// resolves them), the link flags, the MP link state and the cable, the trade menu's callbackId
+// and the first word of the command sent / row received. MP_LinkTraceDump writes the last
+// MP_TRACE_FRAMES ticks to the log file on an incident (CB2_LinkError, a rejection, a hardware
+// error, a link error seen by TrySetLinkErrorBuffer); one dump per incident (triggers within
+// MP_TRACE_INCIDENT_MS are the same incident), then the ticks after it as an "aftermath".
+
+#define MP_TRACE_FRAMES         600     // 10 s
+#define MP_TRACE_TAIL_FRAMES    180     // keep recording 3 s after the link is gone
+#define MP_TRACE_INCIDENT_MS    2000
+#define MP_TRACE_ALSO_MAX       6       // "same incident" lines per incident
+#define MP_TRACE_CONSOLE_LINES  12      // without a log file (selftest): the last ticks only
+
+struct MpTraceEntry
+{
+    u32 frame;
+    u32 cb2;
+    u32 cb1;
+    u32 linkCb;
+    u32 linkStatus;
+    u16 sent;
+    u16 recv0;
+    u16 recv1;
+    u16 queued;
+    u8 recvKind;
+    u8 remotePlayers;   // gReceivedRemoteLinkPlayers
+    u8 suppress;        // gSuppressLinkErrorMessage
+    u8 errorOccurred;   // gLinkErrorOccurred
+    u8 linkState;       // gLink.state
+    u8 hwError;         // gLink.hardwareError
+    u8 mpState;         // MP_LinkGetState
+    u8 endReason;
+    u8 open;
+    u8 openCount;
+    u8 lost;
+    u8 busUp;
+    u8 agreed;
+    u8 peerDone;
+    u8 tradeCb;         // the trade menu's callbackId, 0xFF if none
+};
+
+static struct MpTraceEntry sTrace[MP_TRACE_FRAMES];
+static u32 sTraceWritten;       // entries ever written
+static u32 sTraceTick;          // ticks ever seen
+static u16 sTraceTail;
+static u32 sTraceDumps;
+static bool8 sIncidentOpen;
+static u32 sIncidentMs;
+static u32 sIncidentFirstEntry; // sTraceWritten at the dump
+static u8 sIncidentAlso;
+static char sIncidentReason[96];
+
+// Everything but the tick number (the fields from cb2 to tradeCb have no padding between them).
+static bool8 MpTraceSame(const struct MpTraceEntry *a, const struct MpTraceEntry *b)
+{
+    size_t from = offsetof(struct MpTraceEntry, cb2);
+    size_t to = offsetof(struct MpTraceEntry, tradeCb) + sizeof(a->tradeCb);
+
+    return memcmp((const u8 *)a + from, (const u8 *)b + from, to - from) == 0;
+}
+
+static void MpTraceLine(bool8 toFile, const struct MpTraceEntry *e)
+{
+    static const char sRecv[] = { '-', 'R', 'E' };
+    char line[256];
+
+    snprintf(line, sizeof(line),
+             "  %8u cb2=exe+%06X cb1=exe+%06X lcb=exe+%06X st=%08X rrp=%u sup=%u err=%u ls=%u hw=%u | mp=%u end=%u open=%u oc=%u q=%u lost=%u bus=%u agr=%u pd=%X | tcb=%u | tx=%04X rx%c=%04X,%04X\n",
+             (unsigned)e->frame, (unsigned)e->cb2, (unsigned)e->cb1, (unsigned)e->linkCb, (unsigned)e->linkStatus,
+             (unsigned)e->remotePlayers, (unsigned)e->suppress, (unsigned)e->errorOccurred, (unsigned)e->linkState, (unsigned)e->hwError,
+             (unsigned)e->mpState, (unsigned)e->endReason, (unsigned)e->open, (unsigned)e->openCount, (unsigned)e->queued,
+             (unsigned)e->lost, (unsigned)e->busUp, (unsigned)e->agreed, (unsigned)e->peerDone, (unsigned)e->tradeCb,
+             (unsigned)e->sent, sRecv[e->recvKind < 3 ? e->recvKind : 0], (unsigned)e->recv0, (unsigned)e->recv1);
+    if (toFile)
+        MpLog_FilePrintf("%s", line);
+    else
+        printf("%s", line);
+}
+
+// Writes entries [first, sTraceWritten) (at most the ring), collapsing identical runs.
+static void MpTraceWrite(const char *title, const char *reason, u32 first)
+{
+    bool8 toFile = MpLog_FileIsOpen();
+    const struct MpTraceEntry *prev = NULL;
+    u32 count, i, start, skipped = 0;
+
+    if (sTraceWritten - first > MP_TRACE_FRAMES)
+        first = sTraceWritten - MP_TRACE_FRAMES;
+    count = sTraceWritten - first;
+    if (!toFile && count > MP_TRACE_CONSOLE_LINES)
+    {
+        first = sTraceWritten - MP_TRACE_CONSOLE_LINES;
+        count = MP_TRACE_CONSOLE_LINES;
+    }
+    start = first;
+    if (toFile)
+    {
+        MpLog_FilePrintf("[MP] ==== %s (%s) ==== tick %u, %u ticks recorded, exe base %p\n", title, reason,
+                         (unsigned)sTraceTick, (unsigned)count, (void *)MpLog_ExeBase());
+        MpLog_FilePrintf("[MP] known: CB2_LinkError=exe+%06X CB2_Overworld=exe+%06X CB2_ReturnToField=exe+%06X CB1_Overworld=exe+%06X\n",
+                         (unsigned)MpLog_ExeOffset((const void *)CB2_LinkError), (unsigned)MpLog_ExeOffset((const void *)CB2_Overworld),
+                         (unsigned)MpLog_ExeOffset((const void *)CB2_ReturnToField), (unsigned)MpLog_ExeOffset((const void *)CB1_Overworld));
+        MpLog_FilePrintf("[MP] columns: tick, gMain.callback2/1, gLinkCallback, gLinkStatus, gReceivedRemoteLinkPlayers, gSuppressLinkErrorMessage,"
+                         " gLinkErrorOccurred, gLink.state, gLink.hardwareError | MP link state, end reason, cable open, open count, queued rows,"
+                         " lost, bus up, agreed, peers done | trade menu callbackId (255 none) | cmd sent, row received (R row, E bus end): word 0 of link id 0,1\n");
+    }
+    else
+    {
+        printf("[MP] ==== %s (%s) ==== tick %u, last %u ticks (no log file)\n", title, reason, (unsigned)sTraceTick, (unsigned)count);
+    }
+    for (i = start; i != sTraceWritten; i++)
+    {
+        const struct MpTraceEntry *e = &sTrace[i % MP_TRACE_FRAMES];
+
+        if (prev != NULL && MpTraceSame(prev, e) && i + 1 != sTraceWritten)
+        {
+            skipped++;
+            continue;
+        }
+        if (skipped != 0)
+        {
+            if (toFile)
+                MpLog_FilePrintf("  ... %u identical ticks\n", (unsigned)skipped);
+            else
+                printf("  ... %u identical ticks\n", (unsigned)skipped);
+            skipped = 0;
+        }
+        MpTraceLine(toFile, e);
+        prev = e;
+    }
+    if (toFile)
+    {
+        MpLog_FilePrintf("[MP] ==== end of %s ====\n", title);
+        MpLog_FileFlush();
+    }
+    else
+    {
+        printf("[MP] ==== end of %s ====\n", title);
+        fflush(stdout);
+    }
+}
+
+void MP_LinkTraceDump(const char *reason)
+{
+    u32 now = MpTransport_GetTimeMs();
+
+    if (sIncidentOpen && (u32)(now - sIncidentMs) < MP_TRACE_INCIDENT_MS)
+    {
+        if (sIncidentAlso < MP_TRACE_ALSO_MAX)
+        {
+            sIncidentAlso++;
+            MP_LOG("link trace: same incident, also: %s (tick %u)\n", reason, (unsigned)sTraceTick);
+        }
+        return;
+    }
+    sIncidentOpen = TRUE;
+    sIncidentMs = now;
+    sIncidentAlso = 0;
+    sIncidentFirstEntry = sTraceWritten;
+    snprintf(sIncidentReason, sizeof(sIncidentReason), "%s", reason);
+    sTraceDumps++;
+    if (MpLog_FileIsOpen())
+        MP_LOG("link trace #%u: %s (tick %u); the last %u ticks are in %s\n", (unsigned)sTraceDumps, reason,
+               (unsigned)sTraceTick, (unsigned)MP_TRACE_FRAMES, MpLog_GetPath());
+    else
+        MP_LOG("link trace #%u: %s (tick %u)\n", (unsigned)sTraceDumps, reason, (unsigned)sTraceTick);
+    MpTraceWrite("link trace", reason, 0);
+}
+
+u32 MP_LinkTraceGetDumpCount(void)
+{
+    return sTraceDumps;
+}
+
+// --mp-selftest: the next trigger is a new incident (the test cases run faster than 2 s apart).
+void MpLink_TraceSelftestEndIncident(void)
+{
+    sIncidentOpen = FALSE;
+}
+
+void MP_LinkTraceFrame(void)
+{
+    struct MpLinkCableInfo info;
+    struct MpTraceEntry *e;
+    bool8 active;
+
+    sTraceTick++;
+    MpLink_CableGetInfo(&info);
+    active = MP_LinkGetState() != MP_LINK_STATE_NONE || info.open || gReceivedRemoteLinkPlayers
+          || gLink.state != LINK_STATE_START0 || sIncidentOpen;
+    if (active)
+        sTraceTail = MP_TRACE_TAIL_FRAMES;
+    if (active || sTraceTail != 0)
+    {
+        if (!active)
+            sTraceTail--;
+        e = &sTrace[sTraceWritten % MP_TRACE_FRAMES];
+        memset(e, 0, sizeof(*e));
+        e->frame = sTraceTick;
+        e->cb2 = MpLog_ExeOffset((const void *)gMain.callback2);
+        e->cb1 = MpLog_ExeOffset((const void *)gMain.callback1);
+        e->linkCb = MpLog_ExeOffset((const void *)gLinkCallback);
+        e->linkStatus = gLinkStatus;
+        e->sent = sTraceSent;
+        e->recv0 = sTraceRecv0;
+        e->recv1 = sTraceRecv1;
+        e->recvKind = sTraceRecvKind;
+        e->queued = info.queued;
+        e->remotePlayers = gReceivedRemoteLinkPlayers;
+        e->suppress = gSuppressLinkErrorMessage;
+        e->errorOccurred = gLinkErrorOccurred;
+        e->linkState = gLink.state;
+        e->hwError = gLink.hardwareError;
+        e->mpState = MP_LinkGetState();
+        e->endReason = MP_LinkGetEndReason();
+        e->open = info.open;
+        e->openCount = info.openCount;
+        e->lost = info.lost;
+        e->busUp = info.busUp;
+        e->agreed = MpLink_MemberIsAgreed();
+        e->peerDone = MpLink_MemberPeerDoneMask();
+        e->tradeCb = MP_TradeMenuTraceId();
+        sTraceWritten++;
+    }
+    sTraceSent = 0;
+    sTraceRecv0 = 0;
+    sTraceRecv1 = 0;
+    sTraceRecvKind = TRACE_RECV_NONE;
+
+    // The incident window closed: write what happened after the dump.
+    if (sIncidentOpen && (u32)(MpTransport_GetTimeMs() - sIncidentMs) >= MP_TRACE_INCIDENT_MS)
+    {
+        sIncidentOpen = FALSE;
+        if (sTraceWritten != sIncidentFirstEntry && MpLog_FileIsOpen()) // the console (selftest) gets the dump only
+            MpTraceWrite("link trace aftermath", sIncidentReason, sIncidentFirstEntry);
+    }
 }
 
 // ---------------------------------------------------------------------------

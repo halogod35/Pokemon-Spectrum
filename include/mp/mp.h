@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      8       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045).
+#define MP_PROTOCOL_VERSION      9       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045), 9 = LINK_DONE + END reason DONE (PS-051).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -548,7 +548,8 @@ enum
     MP_LINK_END_LOST            = 2,  // A member left the session.
     MP_LINK_END_OVERFLOW        = 3,  // A member sent link commands faster than the bus can carry.
     MP_LINK_END_REFUSED         = 4,  // MP_LinkJoin: bad mask, or a slot in it is empty.
-    // 5..31 reserved for future wire reasons.
+    MP_LINK_END_DONE            = 5,  // PS-051: every member sent LINK_DONE (or one did, plus the grace time). A normal end.
+    // 6..31 reserved for future wire reasons.
     // --- Local reasons ---
     MP_LINK_END_SESSION         = 32, // Our own session ended (left, lost, kicked).
     MP_LINK_END_WATCHDOG        = 33, // Our link commands were not echoed for MP_LINK_WATCHDOG_MS.
@@ -556,6 +557,7 @@ enum
 };
 
 #define MP_LINK_WATCHDOG_MS     10000
+#define MP_LINK_DONE_GRACE_MS   3000    // PS-051: host, after the first LINK_DONE of a group
 #define MP_LINK_RX_QUEUE_SIZE   256     // Rows buffered per member (about 4 s at 60 rows/s).
 
 // Asks the host to form a link group of the slots in `slotMask` (bit i = slot i). The mask
@@ -576,6 +578,26 @@ bool8 MP_LinkTimeControlsLocked(void);
 // sendCmd (and clears it), advances gLink.state and returns the gLinkStatus word.
 // recvCmds has CMD_LENGTH (8) words per player (checked at compile time).
 u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[8]);
+// PS-051: the agreed end of a direct link activity (mp_link_cable.c). Vanilla's close-link
+// handshake assumes GBA lockstep; over the host-sequenced cable each side ends on its own:
+//   MP_LinkActivityAgreed: both players agreed to stop. Link errors are suppressed and the cable
+//     no longer reports the bus / group ending as a hardware error (nothing left to recover).
+//   MP_LinkActivityTryFinish: once our last command is out (no link callback, gSendCmd empty;
+//     at most ~2 s), LINK_DONE to the host and CloseLink(). TRUE when closed. The host ends the
+//     group (END(DONE)) when every member is done, or MP_LINK_DONE_GRACE_MS after the first.
+//   MP_LinkIsFinishing: we agreed, or a partner is done, or the group ended DONE.
+void MP_LinkActivityAgreed(const char *who);
+bool8 MP_LinkActivityIsAgreed(void);
+bool8 MP_LinkActivityTryFinish(void);
+bool8 MP_LinkIsFinishing(void);
+// PS-051: link flight recorder. MP_LinkTraceFrame once per tick (HandleLinkConnection) keeps the
+// last 600 ticks while a link is in use; MP_LinkTraceDump writes them to the log file with a
+// "[MP] ==== link trace (reason) ====" header (one dump per incident: triggers within 2 s are
+// one incident). Triggers: CB2_LinkError, MP_LinkRejectData, a cable hardware error, and a link
+// error seen by TrySetLinkErrorBuffer (suppressed or not).
+void MP_LinkTraceFrame(void);
+void MP_LinkTraceDump(const char *reason);
+u32 MP_LinkTraceGetDumpCount(void); // since boot (selftest)
 // --mp-link-test (dev harness): slots 0 and 1 link up, run the player-data exchange and
 // SendBlock rounds, close, and repeat, logging each step. Ticked from HandleLinkConnection().
 void MP_SetLinkTest(bool8 enabled);
@@ -636,9 +658,24 @@ bool8 MP_TradeIsDirect(void);
 void CB2_MpReturnToFieldAfterTrade(void);
 // MP: from MP_LinkPrepareErrorRecovery (link.c): a link error ended the trade; forget it.
 void MP_TradeOnLinkErrorRecovery(void);
-// MP: BUG-005, from trade.c's CB_InitExitCanceledTrade: both players stopped trading. Until the
-// field return, a partner that leaves (or a link error) only closes the cable; no error screen.
-void MP_TradeOnMenuExit(void);
+// MP: PS-051 (replaces BUG-005's MP_TradeOnMenuExit). From trade.c at the moment both players
+// agreed to stop trading: the leader when it sends LINKCMD_BOTH_CANCEL_TRADE, the follower when
+// it receives it. From here on the exit never depends on the partner: no link error screen,
+// the bus or group ending is the normal end (MP_LinkActivityAgreed).
+void MP_TradeOnBothCancel(const char *who);
+// MP: PS-051, from trade.c's CB_InitExitCanceledTrade (direct trade, after the fade): closes our
+// own cable locally once our last link command is out (`queueEmpty`: the trade menu's queued
+// sends are done). No vanilla close handshake. TRUE when the cable is closed: go on to
+// CB_ExitCanceledTrade, which frees the menu and returns to the field.
+bool8 MP_TradeTryExitLocally(bool8 queueEmpty);
+// MP: PS-051, from CB2_LinkError (link.c). TRUE if a direct trade was already exiting by
+// agreement: then the link error is turned into the normal return to the field (logged with a
+// trace dump) and CB2_LinkError must return at once.
+bool8 MP_TradeLinkErrorDuringAgreedExit(void);
+// trade.c (PS-051): the trade menu's callbackId for the flight recorder, 0xFF if no menu is on
+// screen; and freeing the menu for the safety net above (nothing if it is not allocated).
+u8 MP_TradeMenuTraceId(void);
+void MP_TradeFreeMenuForExit(void);
 // BUG-007: a log line from trade.c ("trade: <what>"); the same text twice in a row is logged once.
 void MP_TradeLog(const char *what);
 
@@ -657,6 +694,11 @@ void CB2_MpReturnToFieldAfterBattle(void);
 // MP: from CB2_ReturnFromCableClubBattle (cable_club.c): the battle is over; only the local
 // post-battle save and the field return are left (the battle watchdog stops).
 void MP_BattleOnBattleEnd(void);
+// MP: PS-051, from SetBattleEndCallbacks (battle_controller_player.c) for a direct battle: the
+// engine sent ENDLINKBATTLE, the battle is over for both. Instead of the vanilla close handshake,
+// agree and close our own cable once our last command is out (MP_LinkActivityTryFinish).
+// TRUE when the cable is closed.
+bool8 MP_BattleTryExitLocally(void);
 // MP: from MP_LinkPrepareErrorRecovery (link.c): a link error ended the battle (or its start).
 void MP_BattleOnLinkErrorRecovery(void);
 

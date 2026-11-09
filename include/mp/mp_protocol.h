@@ -57,6 +57,7 @@
 #define MP_MSG_LINK_ROW         0x6B    // H -> C
 #define MP_MSG_TRADE_COMMIT     0x6C    // C -> H (READY), H -> C (COMMIT / ABORT). PS-044, protocol.md 6.15
 #define MP_MSG_TRADE_RECOVER    0x6D    // C -> H -> C, or H -> C (arbiter). PS-050, protocol.md 6.16
+#define MP_MSG_LINK_DONE        0x6E    // C -> H (done), H -> C (done mask). PS-051, protocol.md 6.12
 #define MP_MSG_LINK_FIRST       0x60    // reserved LINK_* range (protocol.md 4)
 #define MP_MSG_LINK_LAST        0x7F
 #define MP_MSG_DEBUG_ECHO       0xF0    // --mp-selftest only
@@ -236,6 +237,7 @@ struct MpMsgPartyData
 //   STATUS    arg1 = open mask by link id (< 0x10)               groupId != 0
 //   BUS_START arg1 = bus epoch (!= 0), arg2 = recipient's open sequence
 //   BUS_END   arg1 = bus epoch (!= 0)
+//   DONE      C -> H: -; H -> C: arg1 = done mask by link id (< 0x10)   groupId != 0 (PS-051)
 // Ignored fields parse as 0.
 struct MpMsgLinkCtl
 {

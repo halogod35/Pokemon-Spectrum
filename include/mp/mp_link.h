@@ -68,6 +68,15 @@ void MpLink_CableRequestStart(void);                    // link id 0: the game a
 void MpLink_CableSend(const u16 *cmd);                  // one non-zero 8-word command
 u8 MpLink_CablePop(u16 (*cmds)[MP_LINK_CMD_WORDS]);     // fills cmds[0..3] on MP_LINK_POP_ROW
 
+// --- PS-051: the agreed end of a link activity (mp_link_cable.c: MP_LinkActivity*) ---
+void MpLink_MemberSetAgreed(void);          // both players agreed to stop
+bool8 MpLink_MemberIsAgreed(void);
+bool8 MpLink_MemberIsFinishing(void);       // agreed, done, a partner done, or the group ended DONE
+u8 MpLink_MemberPeerDoneMask(void);         // other members that sent LINK_DONE, by link id
+void MpLink_MemberSendDone(void);           // LINK_DONE to the host (once per activity)
+u16 MpLink_MemberBumpFinishWait(void);      // +1, returns the frames waited so far
+void MpLink_TraceSelftestEndIncident(void); // mp_link_cable.c, selftest: close the incident window
+
 // --- Selftest / --mp-debug counters for the selected instance ---
 struct MpLinkStats
 {

@@ -35,6 +35,7 @@
 #include "constants/songs.h"
 #include "constants/trainers.h"
 #include "constants/rgb.h"
+#include "mp/mp.h" // MP: PS-051 direct link battle exit
 
 static void PlayerHandleGetMonData(void);
 static void PlayerHandleSetMonData(void);
@@ -885,7 +886,15 @@ void SetBattleEndCallbacks(void)
     {
         if (gBattleTypeFlags & BATTLE_TYPE_LINK)
         {
-            if (IsLinkTaskFinished())
+            if (MP_BattleIsDirect() && gWirelessCommType == 0) // MP: PS-051
+            {
+                // A direct battle (PS-045) ends without the close-link handshake: ENDLINKBATTLE
+                // means it is over for both, so each side closes its own cable (no error if the
+                // partner is faster or slower). SetLinkBattleEndCallbacks then goes on as usual.
+                if (MP_BattleTryExitLocally())
+                    gBattlerControllerFuncs[gActiveBattler] = SetLinkBattleEndCallbacks;
+            }
+            else if (IsLinkTaskFinished())
             {
                 if (gWirelessCommType == 0)
                     SetCloseLinkCallback();

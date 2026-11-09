@@ -1602,6 +1602,7 @@ static void TrySetLinkErrorBuffer(void)
     {
         // Link error has occurred, handle message details if
         // necessary, then stop the link.
+        MP_LinkTraceDump(gSuppressLinkErrorMessage ? "link error (suppressed: the link only closes)" : "link error: going to CB2_LinkError"); // MP: PS-051
         if (!gSuppressLinkErrorMessage)
         {
             sLinkErrorBuffer.status = gLinkStatus;
@@ -1626,6 +1627,11 @@ void CB2_LinkError(void)
 {
     u8 *tilemapBuffer;
 
+    // MP: PS-051 safety net. A direct trade that both players already agreed to end has
+    // nothing to recover: back to the field instead of the error screen (logged with a dump).
+    if (MP_TradeLinkErrorDuringAgreedExit())
+        return;
+    MP_LinkTraceDump("CB2_LinkError: the communication error screen"); // MP: PS-051
     SetGpuReg(REG_OFFSET_DISPCNT, 0);
     m4aMPlayStop(&gMPlayInfo_SE1);
     m4aMPlayStop(&gMPlayInfo_SE2);
@@ -1900,6 +1906,7 @@ bool8 HandleLinkConnection(void)
         // MP: BUG-005. Only while a link group exists: without one nothing can ever arrive,
         // and a key-sending callback left behind would skip every callback for good (a frozen
         // game with a live session).
+        MP_LinkTraceFrame(); // MP: PS-051 link flight recorder (one entry per tick while a link is in use)
         if ((gLinkStatus & LINK_STAT_RECEIVED_NOTHING) && IsSendingKeysOverCable() == TRUE
          && MP_LinkGetState() == MP_LINK_STATE_GROUPED)
             return TRUE;

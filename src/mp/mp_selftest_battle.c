@@ -142,7 +142,7 @@ static void TestInteractKind(void)
     u16 len;
     u8 r;
 
-    B_CHECK(MP_PROTOCOL_VERSION == 8, "protocol version 8 (PS-045)");
+    B_CHECK(MP_PROTOCOL_VERSION >= 8, "protocol version 8 or later (PS-045; 9 since PS-051)");
     B_CHECK(MP_INTERACT_BATTLE_DOUBLE == 5 && MP_INTERACT_KIND_COUNT == 6, "kind 5 is BATTLE_DOUBLE");
     for (t = 0; t < 3; t++)
     {

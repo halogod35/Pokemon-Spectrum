@@ -49,6 +49,8 @@ struct MpLinkHostGroup
     u8 fifoHead[MP_LINK_MAX_MEMBERS];
     u8 fifoCount[MP_LINK_MAX_MEMBERS];
     u16 fifo[MP_LINK_MAX_MEMBERS][MP_LINK_HOST_FIFO_SIZE][MP_LINK_CMD_WORDS];
+    u8 doneMask;                                // PS-051: LINK_DONE seen, by link id
+    u32 doneSinceMs;                            // when the first LINK_DONE came
 };
 
 struct MpLinkHost
@@ -92,6 +94,11 @@ struct MpLinkMember
     u32 cmdsSent;
     u32 rowsReceived;
     u16 rxPeak;
+    // PS-051: the agreed end of a link activity (MP_LinkActivityAgreed / _TryFinish).
+    bool8 agreed;                               // we agreed to stop: nothing left to recover
+    bool8 doneSent;                             // LINK_DONE sent for this group
+    u8 peerDoneMask;                            // LINK_DONE from the host: who is done, by link id
+    u16 finishWait;                             // frames MP_LinkActivityTryFinish waited
 };
 
 static struct MpLinkHost sLinkHost[MP_SESSION_INSTANCE_COUNT];
@@ -130,6 +137,7 @@ static const char *MpLinkEndName(u8 reason)
     case MP_LINK_END_LOST:        return "LOST";
     case MP_LINK_END_OVERFLOW:    return "OVERFLOW";
     case MP_LINK_END_REFUSED:     return "REFUSED";
+    case MP_LINK_END_DONE:        return "DONE";
     case MP_LINK_END_SESSION:     return "SESSION";
     case MP_LINK_END_WATCHDOG:    return "WATCHDOG";
     case MP_LINK_END_RX_OVERFLOW: return "RX_OVERFLOW";
@@ -141,6 +149,7 @@ static void MpLinkMemberHandleCtl(u8 type, const struct MpMsgLinkCtl *ctl);
 static void MpLinkMemberHandleRow(const struct MpMsgLinkRow *row);
 static void MpLinkHostHandleCtl(u8 slot, u8 type, const struct MpMsgLinkCtl *ctl);
 static void MpLinkHostHandleCmd(u8 slot, const struct MpMsgLinkCmd *cmd);
+static void MpLinkHostEmitRows(struct MpLinkHostGroup *g);
 
 // ===========================================================================
 // Sending
@@ -416,11 +425,40 @@ static void MpLinkHostHandleCtl(u8 slot, u8 type, const struct MpMsgLinkCtl *ctl
     case MP_MSG_LINK_CLOSE:
         if (!g->open[li] || g->openSeq[li] != ctl->arg1)
             break; // stale
+        // PS-051: the commands the closer sent before it closed still reach everyone (they
+        // arrived first on the ordered channel): emit them before the bus ends. A member that
+        // closes right after its last block (the agreed exit) must not lose that block.
+        if (g->busUp)
+            MpLinkHostEmitRows(g);
+        if (!g->used)
+            break; // emitting to our own member ended the group (receive overflow)
         g->open[li] = FALSE;
         g->startPending = FALSE;
         MP_SDLOG("link group %u: link id %u closed\n", (unsigned)g->id, (unsigned)li);
         MpLinkHostBusDown(g);
         MpLinkHostBroadcastStatus(g);
+        break;
+    case MP_MSG_LINK_DONE:
+        // PS-051: the member is done with the link activity (both players agreed to stop) and
+        // everything it needed to send is sent. Emit what it queued, tell every member who is
+        // done (before the closer's BUS_END, on the same ordered channel: a member that still
+        // plays rows then knows the bus ending is the normal end), and end the group once
+        // everybody is done (or MP_LINK_DONE_GRACE_MS after the first, MpLink_HostUpdate).
+        if (g->doneMask & (1 << li))
+            break; // repeated
+        if (g->busUp)
+            MpLinkHostEmitRows(g);
+        if (!g->used)
+            break;
+        if (g->doneMask == 0)
+            g->doneSinceMs = MpTransport_GetTimeMs();
+        g->doneMask |= (u8)(1 << li);
+        MP_SLOG("link group %u: link id %u is done (done mask 0x%X of 0x%X)\n", (unsigned)g->id, (unsigned)li,
+                (unsigned)g->doneMask, (unsigned)((1 << g->count) - 1));
+        MpLinkHostBroadcastCtl(g, MP_MSG_LINK_DONE, g->doneMask, MP_SLOT_NONE);
+        g = MpLinkHostGroupOfSlot(slot); // a direct call into our own member cannot end it, but be safe
+        if (g != NULL && g->doneMask == (u8)((1 << g->count) - 1))
+            MpLinkHostEndGroup(g, MP_LINK_END_DONE, MP_SLOT_NONE);
         break;
     case MP_MSG_LINK_START:
         if (li != 0 || !g->open[0] || g->openSeq[0] != ctl->arg1 || g->busUp)
@@ -535,6 +573,15 @@ void MpLink_HostUpdate(void)
     {
         if (h->groups[i].used && h->groups[i].busUp)
             MpLinkHostEmitRows(&h->groups[i]);
+        // PS-051: someone is done and the others did not say so in time (a slow or vanished
+        // member). Its rows were all delivered before this; ending the group is the normal end.
+        if (h->groups[i].used && h->groups[i].doneMask != 0
+         && (u32)(MpTransport_GetTimeMs() - h->groups[i].doneSinceMs) >= MP_LINK_DONE_GRACE_MS)
+        {
+            MP_SLOG("link group %u: done mask 0x%X after %u ms; ending the group\n", (unsigned)h->groups[i].id,
+                    (unsigned)h->groups[i].doneMask, (unsigned)MP_LINK_DONE_GRACE_MS);
+            MpLinkHostEndGroup(&h->groups[i], MP_LINK_END_DONE, MP_SLOT_NONE);
+        }
     }
     MpTradeCommit_HostUpdate(); // PS-044: commit timeouts
 }
@@ -577,6 +624,7 @@ bool8 MpLink_OnHostReceive(u8 slot, u8 channel, u8 type, const u8 *payload, u32 
     case MP_MSG_LINK_OPEN:
     case MP_MSG_LINK_CLOSE:
     case MP_MSG_LINK_START:
+    case MP_MSG_LINK_DONE: // PS-051 (C -> H: arg1 ignored)
         if (MpProto_ParseLinkCtl(type, payload, len, &ctl) != MP_PARSE_OK)
             return FALSE;
         MpLinkHostHandleCtl(slot, type, &ctl);
@@ -603,6 +651,15 @@ static void MpLinkMemberClearRx(struct MpLinkMember *m)
 {
     m->rxHead = 0;
     m->rxCount = 0;
+}
+
+// PS-051: a new group, request or open starts a new link activity.
+static void MpLinkMemberClearFinish(struct MpLinkMember *m)
+{
+    m->agreed = FALSE;
+    m->doneSent = FALSE;
+    m->peerDoneMask = 0;
+    m->finishWait = 0;
 }
 
 // The group or request is over. If the game's cable is open, the game sees a hardware error.
@@ -642,7 +699,15 @@ static void MpLinkMemberHandleCtl(u8 type, const struct MpMsgLinkCtl *ctl)
         m->count = MpProto_LinkMaskCount(ctl->arg1);
         m->openMask = 0;
         m->endReason = MP_LINK_END_NONE;
+        MpLinkMemberClearFinish(m);
         MP_SLOG("link group %u joined as link id %u of %u\n", (unsigned)m->groupId, (unsigned)m->linkId, (unsigned)m->count);
+        break;
+    case MP_MSG_LINK_DONE: // PS-051: arg1 = who is done, by link id
+        if (m->state != MP_LINK_STATE_GROUPED || ctl->groupId != m->groupId)
+            break;
+        if ((ctl->arg1 & ~(1 << m->linkId) & (u8)((1 << m->count) - 1)) != 0 && m->peerDoneMask == 0)
+            MP_SLOG("link: the partner is done with the link activity (done mask 0x%X); the bus ending is the normal end now\n", (unsigned)ctl->arg1);
+        m->peerDoneMask = (u8)(ctl->arg1 & ~(1 << m->linkId) & (u8)((1 << m->count) - 1));
         break;
     case MP_MSG_LINK_END:
         if ((ctl->groupId == 0 && m->state == MP_LINK_STATE_REQUESTED)
@@ -736,6 +801,7 @@ bool8 MpLink_OnClientReceive(u8 channel, u8 type, const u8 *payload, u32 len)
     case MP_MSG_LINK_STATUS:
     case MP_MSG_LINK_BUS_START:
     case MP_MSG_LINK_BUS_END:
+    case MP_MSG_LINK_DONE: // PS-051 (H -> C: arg1 = done mask)
         if (MpProto_ParseLinkCtl(type, payload, len, &ctl) != MP_PARSE_OK)
             return FALSE;
         MpLinkMemberHandleCtl(type, &ctl);
@@ -809,6 +875,7 @@ bool8 MP_LinkJoin(u8 slotMask)
     m->state = MP_LINK_STATE_REQUESTED;
     m->requestMask = slotMask;
     m->endReason = MP_LINK_END_NONE;
+    MpLinkMemberClearFinish(m); // PS-051
     MP_SLOG("link: asking for a group with slot mask 0x%X\n", (unsigned)slotMask);
     MpLinkMemberSendCtl(MP_MSG_LINK_JOIN, 0, slotMask, 0);
     return TRUE;
@@ -908,6 +975,7 @@ void MpLink_CableOpen(void)
     m->busEnded = FALSE;
     m->lost = FALSE;
     MpLinkMemberClearRx(m);
+    MpLinkMemberClearFinish(m); // PS-051: a new open is a new link activity
     MpLinkMemberSendCtl(MP_MSG_LINK_OPEN, m->groupId, m->openSeq, 0);
 }
 
@@ -974,6 +1042,59 @@ u8 MpLink_CablePop(u16 (*cmds)[MP_LINK_CMD_WORDS])
         return MP_LINK_POP_BUS_END;
     memcpy(cmds, item->cmds, sizeof(item->cmds));
     return MP_LINK_POP_ROW;
+}
+
+// ---------------------------------------------------------------------------
+// PS-051: the agreed end of a link activity (mp_link_cable.c drives it)
+// ---------------------------------------------------------------------------
+
+void MpLink_MemberSetAgreed(void)
+{
+    MpLinkMemberState()->agreed = TRUE;
+}
+
+bool8 MpLink_MemberIsAgreed(void)
+{
+    return MpLinkMemberState()->agreed;
+}
+
+// We agreed, a partner said it is done, or the host ended the group as done: the bus or the
+// group ending is the normal end of the activity, not a cable fault.
+bool8 MpLink_MemberIsFinishing(void)
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+
+    return m->agreed || m->doneSent || m->peerDoneMask != 0 || m->endReason == MP_LINK_END_DONE;
+}
+
+u8 MpLink_MemberPeerDoneMask(void)
+{
+    return MpLinkMemberState()->peerDoneMask;
+}
+
+void MpLink_MemberSendDone(void)
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+
+    if (m->doneSent)
+        return;
+    m->doneSent = TRUE;
+    if (m->state != MP_LINK_STATE_GROUPED || gMpSession->state != MP_STATE_IN_SESSION)
+    {
+        MP_SLOG("link: done with the link activity (the group is already gone)\n");
+        return;
+    }
+    MP_SLOG("link: done with the link activity; telling the host (group %u, link id %u)\n", (unsigned)m->groupId, (unsigned)m->linkId);
+    MpLinkMemberSendCtl(MP_MSG_LINK_DONE, m->groupId, 0, 0);
+}
+
+u16 MpLink_MemberBumpFinishWait(void)
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+
+    if (m->finishWait < 0xFFFF)
+        m->finishWait++;
+    return m->finishWait;
 }
 
 void MpLink_GetStats(struct MpLinkStats *out)
