@@ -959,6 +959,10 @@ static void CB_StartLinkTrade(void)
 static void CB2_TradeMenu(void)
 {
     RunTradeMenuCallback();
+    // MP: PS-051. CB_ExitCanceledTrade / CB_StartLinkTrade free sTradeMenu (now set to NULL);
+    // vanilla kept using the freed menu for the rest of this frame (a NULL read on PC).
+    if (sTradeMenu == NULL)
+        return;
     DoQueuedActions();
 
     // As long as drawSelectedMonState is 0, these do nothing
@@ -1396,6 +1400,9 @@ static void CB1_UpdateLink(void)
     u8 mpId = GetMultiplayerId();
     u8 status;
 
+    // MP: PS-051. Runs one more frame after CB_ExitCanceledTrade freed the menu (sTradeMenu NULL).
+    if (sTradeMenu == NULL)
+        return;
     if ((status = _GetBlockReceivedStatus()))
     {
         if (mpId == 0)
