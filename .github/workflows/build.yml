@@ -86,6 +86,36 @@ jobs:
           fi
           echo "boot smoke test: still running after 40 s, OK"
 
+      # PS-058: audio measurements. Boots the real game (fresh save: intro and title music) with the
+      # dummy SDL drivers and --audio-stats. The dummy audio driver consumes 1024 samples every
+      # 24 ms, a little faster than a real sound card. --debug-loop-hz holds the main loop to a
+      # monitor's refresh rate, like vsync does on a real PC.
+      - name: Audio check
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          set +e
+          for hz in free 59.94 60; do
+            rm -f ci_audio.sav
+            extra=""
+            if [ "$hz" != free ]; then extra="--debug-loop-hz $hz"; fi
+            echo "=== audio check, loop $hz ==="
+            timeout -s INT 30 ./pokemon-spectrum${{ matrix.bits }} --save ci_audio.sav --audio-stats $extra --audio-dump ci_audio_$hz.wav > audio_$hz.log 2>&1
+            grep "\[audio\]" audio_$hz.log
+          done
+          exit 0
+
+      - name: Upload audio dumps
+        if: ${{ matrix.is64bit == 1 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-check-linux${{ matrix.bits }}
+          path: |
+            ci_audio_*.wav
+            audio_*.log
+          if-no-files-found: warn
+
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:

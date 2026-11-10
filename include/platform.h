@@ -71,6 +71,9 @@ struct PlatformArgs
     char name[PLATFORM_ARG_NAME_SIZE];           // --name (UTF-8, as typed), empty if not given
     char windowTitle[PLATFORM_ARG_TITLE_SIZE];   // --title, or the default for the role
     u32 scale;                                   // --scale, 1..PLATFORM_MAX_SCALE, default 1
+    bool8 audioStats;                            // --audio-stats (PS-058)
+    char audioDump[PLATFORM_ARG_PATH_SIZE];      // --audio-dump <file.wav> (PS-058), empty if not given
+    u32 debugLoopMilliHz;                        // --debug-loop-hz <hz> in thousandths (PS-058), 0 = off
 };
 
 extern struct PlatformArgs gPlatformArgs;
