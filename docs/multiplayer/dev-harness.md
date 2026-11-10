@@ -24,6 +24,8 @@ its own save file and its own multiplayer role, without going through menus.
 | `--mp-link-test` | **Test only** (PS-046). With `--host` / `--join`: once slots 0 and 1 are in the session and in the overworld, both form a link group, `OpenLink()`, run the player-data exchange and 3 × 200-byte `SendBlock` rounds, close, and repeat every second. Each step is logged as `[MP] link test: ...`. Kill one instance and the other logs `link-error path reached` and shows the game's link error screen (recovery is PS-048; close the window). | off |
 | `--mp-link-stats` | PS-052: log link cable measurements (rows, blocks, waits) for each link activity. See "Fast cable measurements" below. | off |
 | `--mp-link-rows` | **Test only** (PS-052). Send link blocks row by row like the GBA cable (no `LINK_BLOCK`), to compare. | off |
+| `--mp-net-loss <pct>` | **Test only** (PS-054). Drop `pct` % (0–100) of this game's UDP datagrams at random, both directions. See "Faking a bad connection" below. | 0 |
+| `--mp-net-dropout <s>` | **Test only** (PS-054). Length of the simulated signal loss that **F4** starts (0–600 s; 0 = until F4 is pressed again). F4 works without this flag. | 0 |
 | `--mp-fake-protocol <n>` | **Test only.** Advertise protocol version `n` (0–65535) in HELLO, so a normal host answers `REJECT(VERSION)`. | off |
 | `--mp-fake-build <id>` | **Test only.** Hash `<id>` (1–15 printable ASCII) instead of the real build id, so a normal host answers `REJECT(BUILD)`. | off |
 | `--debug-slow-save` | **Test only.** Pause 50 ms after each 4 KB sector while the save file is written (1.6 s per file write; one in-game save writes the file twice, so about 3.2 s), so the process can be killed mid-save. Added by PS-014. | off |
@@ -214,3 +216,39 @@ To compare a battle: play the same battle once with `--mp-link-stats` on both, o
 `--mp-link-stats --mp-link-rows` on both, and compare the `link stats` lines (and the feel).
 The flight recorder shows a tick that delivered a whole block as `rxB=<link id>,<size>`, and a tick
 that sent one as `tx=FB0C`.
+
+## Faking a bad connection (PS-054)
+
+A session survives a signal loss (protocol.md 7.6): about 2 s goes unnoticed, a longer one makes
+the client reconnect by itself (same slot, "Reconnecting..." / "Reconnected!" toasts), and only
+after about 30–35 s is the player dropped as before. To try it on one PC without unplugging
+anything, the game can drop its own network traffic:
+
+- **F4** cuts this game's network completely (nothing sent or received), as when a phone loses its
+  signal. Press F4 again to bring it back, or start the game with `--mp-net-dropout <s>` and F4
+  cuts it for exactly `s` seconds. F4 also opens the F3 overlay, which shows `SIM DROPOUT` (with
+  the seconds left), `NET RECONNECTING` while the client retries, and the real RTT / loss.
+  Alt+F4 is not affected (it still closes the window).
+- **`--mp-net-loss <pct>`** drops that share of datagrams at random for the whole run (overlay:
+  `SIM LOSS`). 5–20 % is a bad mobile link; ENet resends what matters, so the game should just
+  feel laggier.
+
+The simulation is per game instance and both directions, so press F4 on the **client** to test the
+client's signal loss (the host sees the same thing a real loss would show it). Every start and end
+is logged (`[MP] net sim: ...`) in the console and `mp_log.txt`.
+
+### Recipe (two instances on one PC)
+
+```
+pokemon-spectrum64 --save a.sav --host --title HOST
+pokemon-spectrum64 --save b.sav --join 127.0.0.1 --title CLIENT --mp-net-dropout 10
+```
+
+Continue both saves and meet on one map, then press F4 in the CLIENT window:
+
+| Dropout | What you should see |
+|---|---|
+| 2 s (`--mp-net-dropout 2`) | Both players freeze for a moment, then carry on. No notice anywhere. |
+| 10 s | After 4–7 s the client shows "Reconnecting..." and the host "NAME lost signal..."; the client's avatar stands still on the host. When the 10 s are over the client reconnects within a few seconds: "Reconnected!" / "NAME reconnected.", same slot, both keep walking. PLAYERS shows the client as `LOST` while it is away. |
+| 40 s | As 10 s, but the client gives up after its 30 s window ("The connection to the host was lost. You are now playing offline.") and the host shows "NAME left the game." after its 35 s grace. |
+| during a trade or battle | A loss longer than about 4 s ends it like a disconnect does today: the PS-048 link error screen and "Continue from last save". A trade that was already committed by the host is finished on the dropped side by the PS-050 journal after the reconnect ("trade completed"), otherwise it is cancelled on both. Shorter losses only stall the trade or battle. |
