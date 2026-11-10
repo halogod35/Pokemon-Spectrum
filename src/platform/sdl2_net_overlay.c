@@ -36,11 +36,6 @@ void Platform_ToggleNetOverlay(void)
     sVisible = !sVisible;
 }
 
-void Platform_ShowNetOverlay(void)
-{
-    sVisible = TRUE;
-}
-
 // 3x5 glyphs: five rows of three bits, top row in the highest octal digit, bit 2 = left.
 static u16 GlyphBits(char c)
 {
@@ -143,7 +138,7 @@ void Platform_DrawNetOverlay(struct SDL_Renderer *renderer)
     if (info.simDropout && info.simDropoutLeftMs != 0)
         snprintf(lines[lineCount++], sizeof(lines[0]), "SIM DROPOUT %uS", (unsigned)((info.simDropoutLeftMs + 999) / 1000));
     else if (info.simDropout)
-        snprintf(lines[lineCount++], sizeof(lines[0]), "SIM DROPOUT F4");
+        snprintf(lines[lineCount++], sizeof(lines[0]), "SIM DROPOUT");
     if (info.simLossPercent != 0)
         snprintf(lines[lineCount++], sizeof(lines[0]), "SIM LOSS %u%%", (unsigned)info.simLossPercent);
     // PS-058: audio queued (ms) and underruns since start; "AUD OFF" if the device did not open.

@@ -257,7 +257,7 @@ static void MpApplyHostLimits(ENetHost *host)
     host->maximumPacketSize = MP_MAX_PACKET_SIZE;
     host->maximumWaitingData = MP_ENET_MAX_WAITING_DATA;
     // PS-054: simulated network conditions. Both hooks do nothing unless a test or the
-    // --mp-net-loss / F4 dev tools switched them on for this instance.
+    // --mp-net-loss or a selftest switched them on for this instance.
     host->intercept = MpSimIntercept;
     host->sendFilter = MpSimSendFilter;
 }

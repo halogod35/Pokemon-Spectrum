@@ -506,4 +506,4 @@ Contract: protocol.md 7.6 (rules), 6.17 `RESUME`, 6.18 `PLAYER_STATUS`, 7.3 (tim
   `sendFilter` hook. **The hook is a local patch to the vendored ENet** (`libs/enet`: a field in
   `ENetHost`, its NULL init in `host.c`, and the check before `enet_socket_send` in `protocol.c`,
   all marked "Pokemon Spectrum (PS-054)"); re-apply it if ENet is updated. Used by the selftest and
-  the dev flags `--mp-net-loss` / `--mp-net-dropout` + F4 (dev-harness.md).
+  the dev flag `--mp-net-loss` and the selftest dropouts (dev-harness.md).

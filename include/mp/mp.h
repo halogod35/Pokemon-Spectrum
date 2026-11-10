@@ -253,8 +253,8 @@ struct MpNetOverlay
     u32 rttVarMs;           // of that peer
     u32 lossPermille;       // worst connected peer (ENet: reliable packets, 10 s windows)
     bool8 reconnecting;     // PS-054: client, MP_IsReconnecting()
-    bool8 simDropout;       // PS-054: a simulated dropout (F4) is cutting the network now
-    u32 simDropoutLeftMs;   // ... for this much longer (0 = until F4 is pressed again)
+    bool8 simDropout;       // PS-054: a simulated dropout (selftest) is cutting the network now
+    u32 simDropoutLeftMs;   // ... for this much longer (0 = until switched off)
     u8 simLossPercent;      // PS-054: --mp-net-loss
 };
 void MP_GetNetOverlay(struct MpNetOverlay *out);
@@ -368,11 +368,9 @@ bool8 MP_IsReconnecting(void);
 
 // Dev / test: simulated network conditions for this game instance (both directions), applied to
 // every UDP datagram the transport sends or receives. --mp-net-loss <percent> drops that share
-// at random; F4 (MP_ToggleNetSimDropout) cuts the network completely, for --mp-net-dropout
-// <seconds> or until F4 is pressed again (0). Never used unless asked for.
+// at random. The selftests can also cut the network completely (MpTransport_SetSimBlackout).
+// Never used unless asked for.
 void MP_SetNetSimLoss(u8 percent);
-void MP_SetNetSimDropoutLength(u32 ms);
-void MP_ToggleNetSimDropout(void);
 
 // ---------------------------------------------------------------------------
 // Events

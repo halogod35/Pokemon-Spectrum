@@ -42,9 +42,6 @@ struct MpNetTiming gMpNetTiming =
     .attemptMs = 3000,
 };
 
-// PS-054 dev tools: F4 dropout length (0 = until F4 again).
-static u32 sSimDropoutMs = 0;
-
 void MpNetTiming_Set(u32 divisor)
 {
     struct MpNetTiming *t = &gMpNetTiming;
@@ -681,16 +678,6 @@ void MP_SetNetSimLoss(u8 percent)
     MpTransport_SetSimLoss((u16)((percent > 100 ? 100 : percent) * 10));
     if (percent != 0)
         MP_LOG("net sim: dropping %u%% of all datagrams at random (--mp-net-loss)\n", (unsigned)(percent > 100 ? 100 : percent));
-}
-
-void MP_SetNetSimDropoutLength(u32 ms)
-{
-    sSimDropoutMs = ms;
-}
-
-void MP_ToggleNetSimDropout(void)
-{
-    MpTransport_SetSimBlackout(!MpTransport_GetSimBlackout(NULL), sSimDropoutMs);
 }
 
 bool8 MP_IsHost(void)
