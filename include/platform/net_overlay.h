@@ -9,6 +9,8 @@ struct SDL_Renderer;
 
 // F3 in ProcessEvents(): show / hide.
 void Platform_ToggleNetOverlay(void);
+// PS-054: F4 (simulated dropout) shows the overlay so the test is visible.
+void Platform_ShowNetOverlay(void);
 // After SDL_RenderCopy of the game texture, before SDL_RenderPresent. Does nothing when hidden.
 void Platform_DrawNetOverlay(struct SDL_Renderer *renderer);
 

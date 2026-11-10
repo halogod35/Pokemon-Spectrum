@@ -19,7 +19,7 @@
 #define OVERLAY_X           2
 #define OVERLAY_Y           2
 #define OVERLAY_PAD         2
-#define OVERLAY_LINES       5
+#define OVERLAY_LINES       7   // PS-054: + the two simulated-conditions lines
 #define OVERLAY_LINE_CHARS  20
 #define GLYPH_W             3
 #define GLYPH_H             5
@@ -33,6 +33,11 @@ static SDL_Rect sRects[MAX_RECTS];
 void Platform_ToggleNetOverlay(void)
 {
     sVisible = !sVisible;
+}
+
+void Platform_ShowNetOverlay(void)
+{
+    sVisible = TRUE;
 }
 
 // 3x5 glyphs: five rows of three bits, top row in the highest octal digit, bit 2 = left.
@@ -122,7 +127,9 @@ void Platform_DrawNetOverlay(struct SDL_Renderer *renderer)
     }
     else
     {
-        if (info.inSession)
+        if (info.reconnecting) // PS-054
+            snprintf(lines[lineCount++], sizeof(lines[0]), "NET RECONNECTING");
+        else if (info.inSession)
             snprintf(lines[lineCount++], sizeof(lines[0]), "NET %s %uP", info.isHost ? "HOST" : "CLIENT", (unsigned)info.players);
         else
             snprintf(lines[lineCount++], sizeof(lines[0]), "NET CONNECTING");
@@ -131,6 +138,13 @@ void Platform_DrawNetOverlay(struct SDL_Renderer *renderer)
         snprintf(lines[lineCount++], sizeof(lines[0]), "RTT %u+-%u MS", (unsigned)info.rttMs, (unsigned)info.rttVarMs);
         snprintf(lines[lineCount++], sizeof(lines[0]), "LOSS %u.%u%%", (unsigned)(info.lossPermille / 10), (unsigned)(info.lossPermille % 10));
     }
+    // PS-054 dev tools: the simulated conditions, so a test run is never mistaken for a real one.
+    if (info.simDropout && info.simDropoutLeftMs != 0)
+        snprintf(lines[lineCount++], sizeof(lines[0]), "SIM DROPOUT %uS", (unsigned)((info.simDropoutLeftMs + 999) / 1000));
+    else if (info.simDropout)
+        snprintf(lines[lineCount++], sizeof(lines[0]), "SIM DROPOUT F4");
+    if (info.simLossPercent != 0)
+        snprintf(lines[lineCount++], sizeof(lines[0]), "SIM LOSS %u%%", (unsigned)info.simLossPercent);
 
     for (i = 0; i < lineCount; i++)
     {

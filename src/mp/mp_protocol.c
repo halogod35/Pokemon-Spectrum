@@ -146,11 +146,13 @@ static u8 MpParseEntryAt(const u8 *payload, struct MpMsgPlayerEntry *out)
     memset(out, 0, sizeof(*out));
     out->slot = payload[0];
     out->epoch = payload[1];
-    out->entryFlags = payload[2] & MP_ENTRY_FLAG_HOST; // bits 1-7 reserved, ignored
+    out->entryFlags = payload[2] & (MP_ENTRY_FLAG_HOST | MP_ENTRY_FLAG_LOST); // bits 2-7 reserved, ignored
     if (out->slot >= MP_MAX_PLAYERS || out->epoch == 0)
         return MP_PARSE_ERR_BAD_FIELD;
     if (((out->entryFlags & MP_ENTRY_FLAG_HOST) != 0) != (out->slot == 0))
         return MP_PARSE_ERR_BAD_FIELD;
+    if ((out->entryFlags & MP_ENTRY_FLAG_LOST) && out->slot == 0)
+        return MP_PARSE_ERR_BAD_FIELD; // PS-054: the host is never "connection lost"
     if (!MP_ReadPlayerSummary(&payload[4], MP_PLAYER_SUMMARY_WIRE_SIZE, &out->summary))
         return MP_PARSE_ERR_BAD_SUMMARY;
     return MP_PARSE_OK;
@@ -167,7 +169,7 @@ static void MpWriteEntry(struct MpWriter *w, const struct MpMsgPlayerEntry *e)
     }
     MpWriteU8(w, e->slot);
     MpWriteU8(w, e->epoch);
-    MpWriteU8(w, (e->slot == 0) ? MP_ENTRY_FLAG_HOST : 0);
+    MpWriteU8(w, (e->slot == 0) ? MP_ENTRY_FLAG_HOST : (e->entryFlags & MP_ENTRY_FLAG_LOST));
     MpWriteU8(w, 0);
     MpWriteBytes(w, summary, sizeof(summary));
 }
@@ -209,7 +211,7 @@ u8 MpProto_ParseWelcome(const u8 *payload, u32 len, struct MpMsgWelcome *out)
     bool8 haveSelf = FALSE;
 
     memset(out, 0, sizeof(*out));
-    if (payload == NULL || len < 4)
+    if (payload == NULL || len < MP_WELCOME_HEAD_SIZE)
         return MP_PARSE_ERR_TRUNCATED;
     n = payload[2];
     if (n == 0 || n > MP_MAX_PLAYERS)
@@ -222,12 +224,16 @@ u8 MpProto_ParseWelcome(const u8 *payload, u32 len, struct MpMsgWelcome *out)
     out->yourSlot = payload[0];
     out->yourEpoch = payload[1];
     out->playerCount = n;
+    out->flags = payload[3] & MP_WELCOME_FLAG_RESUMED; // bits 1-7 reserved, ignored
+    memcpy(out->token, &payload[4], MP_SESSION_TOKEN_SIZE);
     if (out->yourSlot == 0 || out->yourSlot >= MP_MAX_PLAYERS || out->yourEpoch == 0)
+        goto bad_field;
+    if (MpProto_TokenIsZero(out->token))
         goto bad_field;
 
     for (i = 0; i < n; i++)
     {
-        result = MpParseEntryAt(&payload[4 + MP_PLAYER_ENTRY_SIZE * i], &out->players[i]);
+        result = MpParseEntryAt(&payload[MP_WELCOME_HEAD_SIZE + MP_PLAYER_ENTRY_SIZE * i], &out->players[i]);
         if (result != MP_PARSE_OK)
         {
             memset(out, 0, sizeof(*out));
@@ -268,9 +274,112 @@ u16 MpProto_WriteWelcome(u8 *buf, u16 cap, const struct MpMsgWelcome *msg)
     MpWriteU8(&w, msg->yourSlot);
     MpWriteU8(&w, msg->yourEpoch);
     MpWriteU8(&w, msg->playerCount);
-    MpWriteU8(&w, 0);
+    MpWriteU8(&w, msg->flags & MP_WELCOME_FLAG_RESUMED);
+    MpWriteBytes(&w, msg->token, MP_SESSION_TOKEN_SIZE);
     for (i = 0; i < msg->playerCount; i++)
         MpWriteEntry(&w, &msg->players[i]);
+    return MpFinishWrite(&w);
+}
+
+// ---------------------------------------------------------------------------
+// RESUME (PS-054, protocol.md 6.17) and PLAYER_STATUS (6.18)
+// ---------------------------------------------------------------------------
+
+bool8 MpProto_TokenIsZero(const u8 *token)
+{
+    u32 i;
+
+    for (i = 0; i < MP_SESSION_TOKEN_SIZE; i++)
+    {
+        if (token[i] != 0)
+            return FALSE;
+    }
+    return TRUE;
+}
+
+u8 MpProto_ParseResume(const u8 *payload, u32 len, struct MpMsgResume *out)
+{
+    u8 result;
+
+    memset(out, 0, sizeof(*out));
+    result = MpCheckExactSize(payload, len, MP_RESUME_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+    result = MpProto_ParseHelloPrefix(payload, len, &out->protocolVersion, &out->buildHash);
+    if (result != MP_PARSE_OK)
+    {
+        memset(out, 0, sizeof(*out));
+        return result;
+    }
+    out->buildFlags = payload[12];
+    out->slot = payload[13];
+    out->epoch = payload[14];
+    memcpy(out->token, &payload[32], MP_SESSION_TOKEN_SIZE);
+    if (out->slot == 0 || out->slot >= MP_MAX_PLAYERS || out->epoch == 0 || MpProto_TokenIsZero(out->token))
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_BAD_FIELD;
+    }
+    if (!MP_ReadPlayerSummary(&payload[16], MP_PLAYER_SUMMARY_WIRE_SIZE, &out->summary))
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_BAD_SUMMARY;
+    }
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteResume(u8 *buf, u16 cap, const struct MpMsgResume *msg)
+{
+    struct MpWriter w;
+    u8 summary[MP_PLAYER_SUMMARY_WIRE_SIZE];
+
+    if (MP_WritePlayerSummary(summary, sizeof(summary), &msg->summary) == 0)
+        return 0;
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_RESUME, (u8)(msg->protocolVersion & 0xFF), MP_RESUME_SIZE);
+    MpWriteBytes(&w, sHelloMagic, sizeof(sHelloMagic));
+    MpWriteU16(&w, msg->protocolVersion);
+    MpWriteU16(&w, 0);
+    MpWriteU32(&w, msg->buildHash);
+    MpWriteU8(&w, msg->buildFlags);
+    MpWriteU8(&w, msg->slot);
+    MpWriteU8(&w, msg->epoch);
+    MpWriteU8(&w, 0);
+    MpWriteBytes(&w, summary, sizeof(summary));
+    MpWriteBytes(&w, msg->token, MP_SESSION_TOKEN_SIZE);
+    return MpFinishWrite(&w);
+}
+
+u8 MpProto_ParsePlayerStatus(const u8 *payload, u32 len, struct MpMsgPlayerStatus *out)
+{
+    u8 result;
+
+    memset(out, 0, sizeof(*out));
+    result = MpCheckExactSize(payload, len, MP_PLAYER_STATUS_SIZE);
+    if (result != MP_PARSE_OK)
+        return result;
+    out->slot = payload[0];
+    out->epoch = payload[1];
+    out->status = payload[2];
+    if (out->slot == 0 || out->slot >= MP_MAX_PLAYERS || out->epoch == 0
+     || (out->status != MP_PLAYER_STATUS_ONLINE && out->status != MP_PLAYER_STATUS_LOST))
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_BAD_FIELD;
+    }
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WritePlayerStatus(u8 *buf, u16 cap, const struct MpMsgPlayerStatus *msg)
+{
+    struct MpWriter w;
+
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_PLAYER_STATUS, MP_PROTOCOL_VERSION, MP_PLAYER_STATUS_SIZE);
+    MpWriteU8(&w, msg->slot);
+    MpWriteU8(&w, msg->epoch);
+    MpWriteU8(&w, msg->status);
+    MpWriteU8(&w, 0);
     return MpFinishWrite(&w);
 }
 

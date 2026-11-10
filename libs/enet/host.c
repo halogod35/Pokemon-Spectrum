@@ -110,6 +110,7 @@ enet_host_create (const ENetAddress * address, size_t peerCount, size_t channelL
     host -> compressor.destroy = NULL;
 
     host -> intercept = NULL;
+    host -> sendFilter = NULL; /* Pokemon Spectrum (PS-054) */
 
     enet_list_clear (& host -> dispatchQueue);
 

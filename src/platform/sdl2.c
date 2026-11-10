@@ -272,6 +272,8 @@ int main(int argc, char **argv)
     MP_SetLinkTest(gPlatformArgs.mpLinkTest); // MP: PS-046 --mp-link-test
     MP_LinkSetFastBlocks(!gPlatformArgs.mpLinkRows); // MP: PS-052 --mp-link-rows
     MP_SetLinkStats(gPlatformArgs.mpLinkStats); // MP: PS-052 --mp-link-stats
+    MP_SetNetSimLoss(gPlatformArgs.mpNetLoss); // MP: PS-054 --mp-net-loss
+    MP_SetNetSimDropoutLength(gPlatformArgs.mpNetDropoutSec * 1000); // MP: PS-054 --mp-net-dropout (F4)
     if (gPlatformArgs.hasFakeProtocol) // MP:
         MP_SetFakeProtocolVersion(gPlatformArgs.fakeProtocol);
     if (gPlatformArgs.fakeBuild[0] != '\0') // MP:
@@ -396,6 +398,8 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --mp-link-test       Test only: with --host / --join, slots 0 and 1 loop the virtual link cable test\n"
         "  --mp-link-stats      Log link cable measurements (rows, blocks, waits) for each link activity\n"
         "  --mp-link-rows       Test only: send link blocks row by row like the GBA cable (no fast blocks)\n"
+        "  --mp-net-loss <pct>  Test only: drop pct %% (0-100) of network packets at random, both directions\n"
+        "  --mp-net-dropout <s> Test only: F4 cuts the network for s seconds (default 0: until F4 again)\n"
         "  --mp-fake-protocol <n>  Test only: advertise protocol version n (host rejects with VERSION)\n"
         "  --mp-fake-build <id>    Test only: hash this build id instead of the real one (BUILD reject)\n"
         "  --debug-slow-save    Test only: pause %d ms per 4 KB sector while writing the save (kill test)\n"
@@ -586,6 +590,28 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--mp-link-rows") == 0) // MP: PS-052
         {
             gPlatformArgs.mpLinkRows = TRUE;
+        }
+        else if (strcmp(arg, "--mp-net-loss") == 0) // MP: PS-054 simulated packet loss
+        {
+            unsigned long percent;
+
+            if (value == NULL)
+                goto missing_value;
+            if (!ParseUnsigned(value, 0, 100, &percent))
+                goto bad_value;
+            gPlatformArgs.mpNetLoss = (u8)percent;
+            i++;
+        }
+        else if (strcmp(arg, "--mp-net-dropout") == 0) // MP: PS-054 F4 dropout length
+        {
+            unsigned long seconds;
+
+            if (value == NULL)
+                goto missing_value;
+            if (!ParseUnsigned(value, 0, 600, &seconds))
+                goto bad_value;
+            gPlatformArgs.mpNetDropoutSec = (u32)seconds;
+            i++;
         }
         else if (strcmp(arg, "--debug-slow-save") == 0) // MP: PS-014 kill-during-save test
         {
@@ -1144,6 +1170,13 @@ void ProcessEvents(void)
             case SDLK_F3: // MP: PS-053 network overlay
                 if (!event.key.repeat)
                     Platform_ToggleNetOverlay();
+                break;
+            case SDLK_F4: // MP: PS-054 simulated dropout (test tool; not with Alt: Alt+F4 closes the window)
+                if (!event.key.repeat && !(event.key.keysym.mod & KMOD_ALT))
+                {
+                    MP_ToggleNetSimDropout();
+                    Platform_ShowNetOverlay();
+                }
                 break;
             case SDLK_SPACE:
                 if (!speedUp)

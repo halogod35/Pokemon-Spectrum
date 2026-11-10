@@ -60,6 +60,8 @@ struct PlatformArgs
     bool8 mpLinkTest;                            // --mp-link-test (MP: PS-046 virtual link cable harness)
     bool8 mpLinkStats;                           // --mp-link-stats (MP: PS-052 link measurements in the log)
     bool8 mpLinkRows;                            // --mp-link-rows (MP: PS-052 send blocks as rows, like the GBA cable)
+    u8 mpNetLoss;                                // --mp-net-loss <0..100> (MP: PS-054 simulated random packet loss, percent)
+    u32 mpNetDropoutSec;                         // --mp-net-dropout <0..600> (MP: PS-054 F4 dropout length, 0 = until F4 again)
     bool8 debugSlowSave;                         // --debug-slow-save (MP: PS-014, kill-during-save test)
     bool8 saveSelftest;                          // --save-selftest (MP: PS-014)
     bool8 hasFakeProtocol;                       // --mp-fake-protocol given (MP: PS-012)

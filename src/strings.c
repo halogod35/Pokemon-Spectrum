@@ -60,6 +60,12 @@ const u8 gText_MpLeftGame[] = _("You left the multiplayer game.");
 // MP: join/leave notices and the PLAYERS list (PS-033)
 const u8 gText_MpToastJoined[] = _(" joined the game.");
 const u8 gText_MpToastLeft[] = _(" left the game.");
+// MP: dropouts (PS-054)
+const u8 gText_MpToastReconnecting[] = _("Reconnecting...");
+const u8 gText_MpToastReconnected[] = _("Reconnected!");
+const u8 gText_MpToastPlayerLost[] = _(" lost signal...");
+const u8 gText_MpToastPlayerBack[] = _(" reconnected.");
+const u8 gText_MpPlayersLost[] = _("LOST");
 const u8 gText_MpSomeone[] = _("A player");
 const u8 gText_MenuMpPlayers[] = _("PLAYERS");
 const u8 gText_MpPlayersTitle[] = _("PLAYERS  {STR_VAR_1}/{STR_VAR_2}");

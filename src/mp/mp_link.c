@@ -381,7 +381,7 @@ static void MpLinkHostHandleJoin(u8 slot, u8 mask)
     }
     for (i = 0; i < MP_MAX_PLAYERS; i++)
     {
-        if ((mask & (1 << i)) && !gMpSession->slotUsed[i])
+        if ((mask & (1 << i)) && (!gMpSession->slotUsed[i] || gMpSession->players[i].connectionLost)) // PS-054: not while reconnecting
         {
             MpLinkHostSendCtl(slot, MP_MSG_LINK_END, 0, MP_LINK_END_REFUSED, 0);
             return;
@@ -979,7 +979,7 @@ bool8 MP_LinkJoin(u8 slotMask)
     struct MpSession *s = gMpSession;
     u32 i;
 
-    if (s->state != MP_STATE_IN_SESSION || s->localSlot >= MP_MAX_PLAYERS)
+    if (s->state != MP_STATE_IN_SESSION || s->localSlot >= MP_MAX_PLAYERS || s->client.reconnecting) // PS-054
         return FALSE;
     if ((slotMask & ~0x0F) != 0 || !(slotMask & (1 << s->localSlot)) || MpProto_LinkMaskCount(slotMask) < 2)
         return FALSE;

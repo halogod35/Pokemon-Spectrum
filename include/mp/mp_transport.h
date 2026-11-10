@@ -49,6 +49,26 @@ bool8 MpTransport_Listen(u16 port, u8 maxPeers);
 // Creates a client host and starts connecting to `ipv4` (strict dotted quad, never DNS)
 // on `port`. The result arrives later as a CONNECT or DISCONNECT event for peer 0.
 bool8 MpTransport_Connect(const char *ipv4, u16 port);
+// PS-054: a client host that lost its peer dials `ipv4`:`port` again on the same ENet host
+// (same socket, same statistics): every peer is reset silently, then a new connect starts.
+// The result arrives as a CONNECT or DISCONNECT event for peer 0. FALSE if this instance has
+// no client host or the address is invalid.
+bool8 MpTransport_Reconnect(const char *ipv4, u16 port);
+// PS-054: ENet peer timeouts for peers connecting from now on (enet_peer_timeout limit 0 =
+// ENet's default retry count, minimum, maximum; enet_peer_ping_interval). 0 = the default.
+#define MP_TRANSPORT_TIMEOUT_MIN_MS 4000
+#define MP_TRANSPORT_TIMEOUT_MAX_MS 7000
+#define MP_TRANSPORT_PING_MS        500     // ENet's own default
+void MpTransport_SetPeerTimeouts(u32 minMs, u32 maxMs, u32 pingMs);
+// PS-054: simulated network conditions on the selected instance, both directions, kept until
+// changed (Close / Listen / Connect do not reset them). Loss: that share of datagrams (0..1000
+// per mille) is dropped at random. Blackout: every datagram is dropped, for `durationMs`
+// (0 = until switched off). GetSimBlackout also gives the time left (0 if untimed).
+void MpTransport_SetSimLoss(u16 permille);
+u16 MpTransport_GetSimLoss(void);
+void MpTransport_SetSimBlackout(bool8 on, u32 durationMs);
+bool8 MpTransport_GetSimBlackout(u32 *leftMs);
+u32 MpTransport_GetSimDropped(void);
 // Queues `len` bytes on `channel` to `peer`. FALSE if the peer is not connected, or the
 // arguments are out of range (len > MP_MAX_PACKET_SIZE, channel >= MP_CHANNEL_COUNT).
 bool8 MpTransport_Send(u8 peer, u8 channel, const u8 *data, u16 len, bool8 reliable);
@@ -72,7 +92,7 @@ u32 MpTransport_GetTimeMs(void);
 // ENet's smoothed round-trip time for `peer` in ms, 0 if unknown.
 u16 MpTransport_GetRttMs(u8 peer);
 // PS-053: ENet's own counters for this instance (mp_netstats.c, the F3 overlay).
-#define MP_TRANSPORT_STATS_PEERS 4  // == MP_HOST_PEER_COUNT (the host's peer count)
+#define MP_TRANSPORT_STATS_PEERS 6  // == MP_HOST_PEER_COUNT (the host's peer count)
 
 struct MpTransportPeerStats
 {
