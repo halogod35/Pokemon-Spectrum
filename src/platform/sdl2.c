@@ -227,6 +227,8 @@ int main(int argc, char **argv)
     MP_Init(); // MP: no socket is opened here
     MP_SetDebugLogging(gPlatformArgs.mpDebug); // MP:
     MP_SetLinkTest(gPlatformArgs.mpLinkTest); // MP: PS-046 --mp-link-test
+    MP_LinkSetFastBlocks(!gPlatformArgs.mpLinkRows); // MP: PS-052 --mp-link-rows
+    MP_SetLinkStats(gPlatformArgs.mpLinkStats); // MP: PS-052 --mp-link-stats
     if (gPlatformArgs.hasFakeProtocol) // MP:
         MP_SetFakeProtocolVersion(gPlatformArgs.fakeProtocol);
     if (gPlatformArgs.fakeBuild[0] != '\0') // MP:
@@ -347,6 +349,8 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --mp-debug           Verbose multiplayer/network logging\n"
         "  --mp-selftest        Run the multiplayer self-test (no window), print OK/FAILED and exit\n"
         "  --mp-link-test       Test only: with --host / --join, slots 0 and 1 loop the virtual link cable test\n"
+        "  --mp-link-stats      Log link cable measurements (rows, blocks, waits) for each link activity\n"
+        "  --mp-link-rows       Test only: send link blocks row by row like the GBA cable (no fast blocks)\n"
         "  --mp-fake-protocol <n>  Test only: advertise protocol version n (host rejects with VERSION)\n"
         "  --mp-fake-build <id>    Test only: hash this build id instead of the real one (BUILD reject)\n"
         "  --debug-slow-save    Test only: pause %d ms per 4 KB sector while writing the save (kill test)\n"
@@ -525,6 +529,14 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--mp-link-test") == 0) // MP: PS-046
         {
             gPlatformArgs.mpLinkTest = TRUE;
+        }
+        else if (strcmp(arg, "--mp-link-stats") == 0) // MP: PS-052
+        {
+            gPlatformArgs.mpLinkStats = TRUE;
+        }
+        else if (strcmp(arg, "--mp-link-rows") == 0) // MP: PS-052
+        {
+            gPlatformArgs.mpLinkRows = TRUE;
         }
         else if (strcmp(arg, "--debug-slow-save") == 0) // MP: PS-014 kill-during-save test
         {

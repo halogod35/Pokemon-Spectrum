@@ -7,6 +7,9 @@
 // commands (LINK_CMD) and, once per MP_Update, emits rows: one command (or zeros) per member,
 // sent to every member including the sender (LINK_ROW). A member closing or re-opening ends
 // the bus (BUS_END). The host sequences groups it is not part of too (Director ruling).
+// PS-052 fast cable: a member's whole SendBlock comes as one LINK_BLOCK; the host emits the
+// rows queued so far, then relays the block to every member (sender included), so the bus stays
+// one sequenced stream per group. Members queue blocks in the same receive queue as rows.
 //
 // Member: the request / group state, the open sequence, the received-row queue that
 // MP_LinkMain1 drains one row per game tick, and a watchdog on our own commands' echoes.
@@ -31,6 +34,7 @@ enum
 {
     MP_LINK_RX_ROW,
     MP_LINK_RX_BUS_END,
+    MP_LINK_RX_BLOCK,                           // PS-052: a whole block; its data is in the member's block pool
 };
 
 struct MpLinkHostGroup
@@ -62,11 +66,14 @@ struct MpLinkHost
     u32 rowsEmitted;
     u32 groupsFormed;
     u32 cmdsRefused;                            // PS-047 pre-filter
+    u32 blocksRelayed;                          // PS-052
 };
 
 struct MpLinkRxItem
 {
     u8 type;                                    // MP_LINK_RX_*
+    u8 linkId;                                  // MP_LINK_RX_BLOCK: the sender
+    u16 size;                                   // MP_LINK_RX_BLOCK: bytes
     u16 cmds[MP_LINK_MAX_MEMBERS][MP_LINK_CMD_WORDS];
 };
 
@@ -99,6 +106,13 @@ struct MpLinkMember
     bool8 doneSent;                             // LINK_DONE sent for this group
     u8 peerDoneMask;                            // LINK_DONE from the host: who is done, by link id
     u16 finishWait;                             // frames MP_LinkActivityTryFinish waited
+    // PS-052: the data of the MP_LINK_RX_BLOCK items in the receive queue. Blocks are queued and
+    // popped in queue order, so the oldest block item's data is always blk[blkHead].
+    u8 blkHead;
+    u8 blkCount;
+    u8 blk[MP_LINK_RX_BLOCK_SLOTS][MP_LINK_BLOCK_MAX];
+    u32 blocksSent;
+    u32 blocksReceived;
 };
 
 static struct MpLinkHost sLinkHost[MP_SESSION_INSTANCE_COUNT];
@@ -147,8 +161,10 @@ static const char *MpLinkEndName(u8 reason)
 
 static void MpLinkMemberHandleCtl(u8 type, const struct MpMsgLinkCtl *ctl);
 static void MpLinkMemberHandleRow(const struct MpMsgLinkRow *row);
+static void MpLinkMemberHandleBlock(const struct MpMsgLinkBlock *block);
 static void MpLinkHostHandleCtl(u8 slot, u8 type, const struct MpMsgLinkCtl *ctl);
 static void MpLinkHostHandleCmd(u8 slot, const struct MpMsgLinkCmd *cmd);
+static void MpLinkHostHandleBlock(u8 slot, const struct MpMsgLinkBlock *block);
 static void MpLinkHostEmitRows(struct MpLinkHostGroup *g);
 
 // ===========================================================================
@@ -564,6 +580,51 @@ static void MpLinkHostEmitRows(struct MpLinkHostGroup *g)
     }
 }
 
+// PS-052: a whole block from a member (its SendBlock as one message instead of INIT_BLOCK +
+// CONT_BLOCK rows). The bus stays one sequenced stream per group: every command queued so far
+// (the sender's earlier ones included) goes out as rows first, then the block goes to every
+// member, the sender included (like its rows), with the sender's link id.
+static void MpLinkHostHandleBlock(u8 slot, const struct MpMsgLinkBlock *block)
+{
+    struct MpLinkHostGroup *g = MpLinkHostGroupOfSlot(slot);
+    struct MpMsgLinkBlock relay;
+    u8 slots[MP_LINK_MAX_MEMBERS];
+    u8 count;
+    u16 len;
+    u32 i;
+
+    if (g == NULL || g->id != block->groupId || !g->busUp || g->busEpoch != block->busEpoch)
+        return; // stale: the bus it was sent on has ended
+    if (block->size == 0 || block->size > MP_LINK_BLOCK_MAX)
+        return; // the parser refuses these; the host's own member never sends them
+    MpLinkHostEmitRows(g);
+    if (!g->used || !g->busUp)
+        return; // emitting to our own member ended the group (receive overflow)
+    relay = *block;
+    relay.groupId = g->id;
+    relay.busEpoch = g->busEpoch;
+    relay.linkId = MpLinkRankOf(g->memberMask, slot);
+    MpLinkHostState()->blocksRelayed++;
+    // Copy the slots: delivering to our own member can end the group (receive overflow).
+    memcpy(slots, g->slots, sizeof(slots));
+    count = g->count;
+    len = MpProto_WriteLinkBlock(sLinkBuf, sizeof(sLinkBuf), &relay);
+    for (i = 0; i < count && i < MP_LINK_MAX_MEMBERS; i++)
+    {
+        u8 to = slots[i];
+
+        if (to == gMpSession->localSlot)
+        {
+            MpLinkMemberHandleBlock(&relay);
+            len = MpProto_WriteLinkBlock(sLinkBuf, sizeof(sLinkBuf), &relay); // sLinkBuf may have been reused
+        }
+        else if (to < MP_MAX_PLAYERS && gMpSession->slotPeer[to] != MP_PEER_NONE && len != 0)
+        {
+            MpSession_SendTo(gMpSession->slotPeer[to], sLinkBuf, len, MP_CHANNEL_CONTROL, TRUE);
+        }
+    }
+}
+
 void MpLink_HostUpdate(void)
 {
     struct MpLinkHost *h = MpLinkHostState();
@@ -634,6 +695,15 @@ bool8 MpLink_OnHostReceive(u8 slot, u8 channel, u8 type, const u8 *payload, u32 
             return FALSE;
         MpLinkHostHandleCmd(slot, &cmd);
         return TRUE;
+    case MP_MSG_LINK_BLOCK: // PS-052 (C -> H: linkId ignored, the sender's real link id is used)
+    {
+        static struct MpMsgLinkBlock sBlock; // 506 bytes: not on the stack of the receive loop
+
+        if (MpProto_ParseLinkBlock(payload, len, &sBlock) != MP_PARSE_OK)
+            return FALSE;
+        MpLinkHostHandleBlock(slot, &sBlock);
+        return TRUE;
+    }
     case MP_MSG_TRADE_COMMIT: // PS-044 (protocol.md 6.15)
         return MpTradeCommit_OnHostReceive(slot, payload, len);
     case MP_MSG_TRADE_RECOVER: // PS-050 (protocol.md 6.16)
@@ -651,6 +721,8 @@ static void MpLinkMemberClearRx(struct MpLinkMember *m)
 {
     m->rxHead = 0;
     m->rxCount = 0;
+    m->blkHead = 0; // PS-052
+    m->blkCount = 0;
 }
 
 // PS-051: a new group, request or open starts a new link activity.
@@ -787,6 +859,43 @@ static void MpLinkMemberHandleRow(const struct MpMsgLinkRow *row)
     }
 }
 
+// PS-052: a whole block from the bus. It is queued like a row, so the game sees it in bus order.
+static void MpLinkMemberHandleBlock(const struct MpMsgLinkBlock *block)
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+    struct MpLinkRxItem *item;
+    u16 size = block->size;
+
+    if (m->state != MP_LINK_STATE_GROUPED || block->groupId != m->groupId || m->phase != MP_LINK_PHASE_BUS
+     || block->busEpoch != m->busEpoch || m->busEnded || block->linkId >= m->count)
+        return; // stale (an older bus or group), or a link id not in our group
+    if (size == 0 || size > MP_LINK_BLOCK_MAX)
+        return; // the parser refuses these
+    if (m->rxCount >= MP_LINK_RX_QUEUE_SIZE || m->blkCount >= MP_LINK_RX_BLOCK_SLOTS)
+    {
+        MP_SLOG("link: receive queue overflow (%u items, %u blocks)\n", (unsigned)m->rxCount, (unsigned)m->blkCount);
+        if (gMpSession->state == MP_STATE_IN_SESSION)
+            MpLinkMemberSendCtl(MP_MSG_LINK_LEAVE, 0, 0, 0); // the others get LINK_END(LEFT)
+        MpLinkMemberEnd(MP_LINK_END_RX_OVERFLOW);
+        return;
+    }
+    item = &m->rx[(m->rxHead + m->rxCount) % MP_LINK_RX_QUEUE_SIZE];
+    item->type = MP_LINK_RX_BLOCK;
+    item->linkId = block->linkId;
+    item->size = size;
+    memcpy(m->blk[(m->blkHead + m->blkCount) % MP_LINK_RX_BLOCK_SLOTS], block->data, size);
+    m->blkCount++;
+    m->rxCount++;
+    m->blocksReceived++;
+    if (m->rxCount > m->rxPeak)
+        m->rxPeak = m->rxCount;
+    if (block->linkId == m->linkId && m->outstanding > 0)
+    {
+        m->outstanding--; // our own block is back from the bus
+        m->lastProgressMs = MpTransport_GetTimeMs();
+    }
+}
+
 bool8 MpLink_OnClientReceive(u8 channel, u8 type, const u8 *payload, u32 len)
 {
     struct MpMsgLinkCtl ctl;
@@ -811,6 +920,15 @@ bool8 MpLink_OnClientReceive(u8 channel, u8 type, const u8 *payload, u32 len)
             return FALSE;
         MpLinkMemberHandleRow(&row);
         return TRUE;
+    case MP_MSG_LINK_BLOCK: // PS-052 (H -> C: linkId = the sender)
+    {
+        static struct MpMsgLinkBlock sBlock; // 506 bytes: not on the stack of the receive loop
+
+        if (MpProto_ParseLinkBlock(payload, len, &sBlock) != MP_PARSE_OK)
+            return FALSE;
+        MpLinkMemberHandleBlock(&sBlock);
+        return TRUE;
+    }
     case MP_MSG_TRADE_COMMIT: // PS-044 (protocol.md 6.15)
         return MpTradeCommit_OnClientReceive(payload, len);
     case MP_MSG_TRADE_RECOVER: // PS-050 (protocol.md 6.16)
@@ -961,6 +1079,7 @@ void MpLink_CableGetInfo(struct MpLinkCableInfo *out)
     out->count = m->count;
     out->openCount = MpProto_LinkMaskCount(m->openMask);
     out->queued = m->rxCount;
+    out->outstanding = m->outstanding;
 }
 
 void MpLink_CableOpen(void)
@@ -1028,6 +1147,91 @@ void MpLink_CableSend(const u16 *cmd)
     MpSession_SendTo(0, sLinkBuf, len, MP_CHANNEL_CONTROL, TRUE);
 }
 
+// PS-052: one whole block, in order with our commands (they reach the host on the same ordered
+// channel, or by direct calls on the host).
+bool8 MpLink_CableSendBlock(const u8 *data, u16 size)
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+    static struct MpMsgLinkBlock sMsg; // 506 bytes
+    u16 len;
+
+    if (m->state != MP_LINK_STATE_GROUPED || m->phase != MP_LINK_PHASE_BUS || m->busEnded)
+        return FALSE;
+    if (data == NULL || size == 0 || size > MP_LINK_BLOCK_MAX)
+        return FALSE;
+    memset(&sMsg, 0, sizeof(sMsg));
+    sMsg.groupId = m->groupId;
+    sMsg.busEpoch = m->busEpoch;
+    sMsg.linkId = 0; // the host uses our real link id
+    sMsg.size = size;
+    memcpy(sMsg.data, data, size);
+    if (m->outstanding == 0)
+        m->lastProgressMs = MpTransport_GetTimeMs();
+    m->outstanding++;
+    m->blocksSent++;
+    if (gMpSession->isHost)
+    {
+        MpLinkHostHandleBlock(gMpSession->localSlot, &sMsg);
+        return TRUE;
+    }
+    len = MpProto_WriteLinkBlock(sLinkBuf, sizeof(sLinkBuf), &sMsg);
+    if (len == 0)
+        return FALSE; // cannot happen: the size is checked above
+    MpSession_SendTo(0, sLinkBuf, len, MP_CHANNEL_CONTROL, TRUE);
+    return TRUE;
+}
+
+static u8 MpLinkPopType(u8 rxType)
+{
+    switch (rxType)
+    {
+    case MP_LINK_RX_ROW:     return MP_LINK_POP_ROW;
+    case MP_LINK_RX_BUS_END: return MP_LINK_POP_BUS_END;
+    case MP_LINK_RX_BLOCK:   return MP_LINK_POP_BLOCK;
+    default:                 return MP_LINK_POP_NONE;
+    }
+}
+
+u8 MpLink_CableHeadType(void)
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+
+    if (m->rxCount == 0)
+        return MP_LINK_POP_NONE;
+    return MpLinkPopType(m->rx[m->rxHead].type);
+}
+
+bool8 MpLink_CableHeadRow(u16 (*cmds)[MP_LINK_CMD_WORDS])
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+    const struct MpLinkRxItem *item;
+
+    if (m->rxCount == 0)
+        return FALSE;
+    item = &m->rx[m->rxHead];
+    if (item->type != MP_LINK_RX_ROW)
+        return FALSE;
+    memcpy(cmds, item->cmds, sizeof(item->cmds));
+    return TRUE;
+}
+
+const u8 *MpLink_CableHeadBlock(u8 *linkId, u16 *size)
+{
+    struct MpLinkMember *m = MpLinkMemberState();
+    const struct MpLinkRxItem *item;
+
+    *linkId = 0;
+    *size = 0;
+    if (m->rxCount == 0 || m->blkCount == 0)
+        return NULL;
+    item = &m->rx[m->rxHead];
+    if (item->type != MP_LINK_RX_BLOCK)
+        return NULL;
+    *linkId = item->linkId;
+    *size = (item->size <= MP_LINK_BLOCK_MAX) ? item->size : MP_LINK_BLOCK_MAX;
+    return m->blk[m->blkHead];
+}
+
 u8 MpLink_CablePop(u16 (*cmds)[MP_LINK_CMD_WORDS])
 {
     struct MpLinkMember *m = MpLinkMemberState();
@@ -1040,7 +1244,18 @@ u8 MpLink_CablePop(u16 (*cmds)[MP_LINK_CMD_WORDS])
     m->rxCount--;
     if (item->type == MP_LINK_RX_BUS_END)
         return MP_LINK_POP_BUS_END;
-    memcpy(cmds, item->cmds, sizeof(item->cmds));
+    if (item->type == MP_LINK_RX_BLOCK)
+    {
+        // PS-052: its data was the oldest block in the pool (blocks are queued in item order)
+        if (m->blkCount > 0)
+        {
+            m->blkHead = (u8)((m->blkHead + 1) % MP_LINK_RX_BLOCK_SLOTS);
+            m->blkCount--;
+        }
+        return MP_LINK_POP_BLOCK;
+    }
+    if (cmds != NULL)
+        memcpy(cmds, item->cmds, sizeof(item->cmds));
     return MP_LINK_POP_ROW;
 }
 
@@ -1114,4 +1329,7 @@ void MpLink_GetStats(struct MpLinkStats *out)
     out->rowsEmitted = h->rowsEmitted;
     out->groupsFormed = h->groupsFormed;
     out->cmdsRefused = h->cmdsRefused;
+    out->blocksSent = m->blocksSent;
+    out->blocksReceived = m->blocksReceived;
+    out->blocksRelayed = h->blocksRelayed;
 }

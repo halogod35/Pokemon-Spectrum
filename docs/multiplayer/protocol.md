@@ -1,7 +1,7 @@
 # Pokémon Spectrum — Multiplayer Wire Protocol
 
 - **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests), PS-046 (virtual link cable), PS-042 (trainer card), PS-043 (view party)
-- **Protocol version:** `MP_PROTOCOL_VERSION = 9` (2 = `INTERACT_*`, PS-041; 3 = `LINK_*`, PS-046; 4 = `TRAINER_CARD_DATA`, PS-042; 5 = `PARTY_DATA`, PS-043; 6 = `TRADE_COMMIT`, PS-044; 7 = `TRADE_RECOVER`, PS-050; 8 = INTERACT kind BATTLE_DOUBLE, PS-045; 9 = `LINK_DONE`, PS-051; see section 11)
+- **Protocol version:** `MP_PROTOCOL_VERSION = 10` (2 = `INTERACT_*`, PS-041; 3 = `LINK_*`, PS-046; 4 = `TRAINER_CARD_DATA`, PS-042; 5 = `PARTY_DATA`, PS-043; 6 = `TRADE_COMMIT`, PS-044; 7 = `TRADE_RECOVER`, PS-050; 8 = INTERACT kind BATTLE_DOUBLE, PS-045; 9 = `LINK_DONE`, PS-051; 10 = `LINK_BLOCK`, PS-052; see section 11)
 - **Status:** draft for Director approval
 - **Companion docs:** `design.md` (modules, API, build), `include/mp/mp.h` (public API)
 
@@ -122,7 +122,8 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 | `0x6C` | `TRADE_COMMIT` | both (READY C → H; COMMIT / ABORT H → C) | 0 | 8 | IN_SESSION (PS-044, 6.15) |
 | `0x6D` | `TRADE_RECOVER` | both (routed by the host) | 0 | 32 | IN_SESSION (PS-050, 6.16) |
 | `0x6E` | `LINK_DONE` | both (done C → H; done mask H → C) | 0 | 4 | IN_SESSION (PS-051, 6.12) |
-| `0x6F`–`0x7F` | reserved: `LINK_*` | | 0 | | |
+| `0x6F` | `LINK_BLOCK` | both (a whole block C → H; relayed H → C) | 0 | 8 + n (n = 1..500) | IN_SESSION (PS-052, 6.12) |
+| `0x70`–`0x7F` | reserved: `LINK_*` | | 0 | | |
 | `0x80`–`0xEF` | reserved | | | | |
 | `0xF0` | `DEBUG_ECHO` | both | 0 | 0..64 | only under `--mp-selftest` (PS-011). Session code drops it. |
 | `0xF1`–`0xFE` | reserved: debug | | | | |
@@ -499,7 +500,7 @@ the message only name the other party, and the host checks them against its tabl
   pending request is dropped. `PLAYER_LEFT` for the target ends the request (`UNAVAILABLE`).
 - A client receiving any INTERACT message whose `slot` is its own slot counts it malformed.
 
-### 6.12 Virtual link cable `LINK_*` (0x60–0x6B) — PS-046, channel 0
+### 6.12 Virtual link cable `LINK_*` (0x60–0x6B, 0x6E, 0x6F) — PS-046, PS-051, PS-052, channel 0
 
 Emerald's cable link (`src/link.c`) runs unchanged over the session; see
 `research/PS-040-link-report.md` section 2 for the cable semantics being reproduced. The
@@ -614,7 +615,49 @@ that has not come within ~5 s. Order on channel 0 (the leader closes first):
 `ROW…(BOTH_CANCEL)`, `DONE(g, 0b01)`, `BUS_END(g, e)`, and later `END(g, DONE)`. So a slow follower
 knows the leader is done before it reaches the `BUS_END`.
 
-Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x6F`–`0x7F` type; `0x6C` is 6.15, `0x6D` 6.16):
+**Whole blocks (PS-052, version 10).** On the GBA cable a `SendBlock` is an `INIT_BLOCK` row, three
+idle ticks and one `CONT_BLOCK` row per 14 bytes (a 256-byte block is about 23 ticks), and every
+row goes through the host. Since version 10 a member sends a block of 1..500 bytes
+(`MP_LINK_BLOCK_MAX`) as **one** `LINK_BLOCK` instead; bigger blocks still use the rows. Both work on
+every version-10 member, so members may differ (`--mp-link-rows` forces the rows, for comparison).
+
+**`0x6F` `LINK_BLOCK`**, payload 8 + n bytes:
+
+| Offset | Size | Field | Notes |
+|---|---|---|---|
+| 0 | 1 | `groupId` | != 0 |
+| 1 | 1 | `busEpoch` | != 0 |
+| 2 | 1 | `linkId` | C → H: 0, ignored (the host uses the sender's real link id). H → C: the sender's link id, < 4 |
+| 3 | 1 | reserved | 0, ignored |
+| 4 | 2 | `size` | n, 1..500 |
+| 6 | 2 | reserved | 0, ignored |
+| 8 | n | `data` | the block |
+
+Valid: the fields above and `length == 8 + size` exactly (TRUNCATED / OVERSIZED otherwise).
+The largest message is 4 + 8 + 500 = 512 bytes, the packet limit.
+
+Host: a `BLOCK(g, epoch)` from a member of the bus `g`/`epoch` (stale otherwise, dropped silently)
+first **emits every row still queued** for the bus, then sends the block, with the sender's link
+id, to every member, the sender included (like its rows). Each member's commands and blocks reach
+the host in order on channel 0, so a group's bus stays **one sequenced stream**: every member sees
+the same rows and blocks in the same order.
+
+Member: a block for the current bus is queued in the same receive queue as the rows (it counts
+towards `MP_LINK_RX_QUEUE_SIZE`; at most 64 blocks wait, overflow ends the link with `RX_OVERFLOW`).
+Our own block coming back counts for the watchdog like our own command in a row. The game side
+(`MP_LinkMain1`) hands the blocks queued ahead of the next row to `link.c`, which fills
+`sBlockRecv`, `gBlockRecvBuffer` (or `gDecompressionBuffer` above 256 bytes) and the received flag
+(or completes the player-data exchange) exactly as the last `CONT_BLOCK` row would. Pacing keeps the
+GBA guarantees: at most one block per link id per tick, and while the game has not taken the
+previous block from that link id (its received flag is still set), the next one waits at most the
+ticks the GBA cable needed for it. On the sending side the link task is finished at once.
+
+Row pacing (no wire change): rows that pile up in the receive queue are played up to 8 per tick, but
+only rows that carry nothing but block data (`INIT_BLOCK`, `CONT_BLOCK`, zeros), never right after
+another command, and only until a block completes in that tick. Every other command still reaches
+the game on its own tick, followed by its link callback, as on the GBA.
+
+Malformed (parser failure, wrong direction, wrong channel, an unassigned `0x70`–`0x7F` type; `0x6C` is 6.15, `0x6D` 6.16):
 dropped and counted against the 8.2 budget. Stale (other group, old epoch, old sequence): silent.
 
 ### 6.13 `TRAINER_CARD_DATA` (0x43) — both directions, channel 0, payload 56 bytes
@@ -1153,9 +1196,9 @@ The build hash `0x12345678` is an illustrative value (a real one is an FNV-1a re
 Packet = 36 bytes:
 
 ```
-01 09 20 00                 header: type HELLO, version 9, length 32
+01 0A 20 00                 header: type HELLO, version 10, length 32
 50 53 4D 50                 magic "PSMP"
-09 00                       protocolVersion 9
+0A 00                       protocolVersion 10
 00 00                       reserved
 78 56 34 12                 buildHash 0x12345678
 00                          buildFlags
@@ -1184,3 +1227,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 7 | PS-050 | Trade journal recovery: `TRADE_COMMIT` grows to 8 bytes (`tradeId`), new `TRADE_RECOVER` (0x6D, 32 bytes, 6.16). The post-trade save is written to disk at the signature (BUG-003). Version bumped to 7. |
 | 8 | PS-045 | INTERACT `kind` 5 BATTLE_DOUBLE (6.11): a battle request that asks for a DOUBLE link battle; `kind` 2 BATTLE is now the single link battle. Prompted, routed and answered exactly like BATTLE. Version bumped to 8: a version-7 peer rejects kind 5 as malformed. No new message: the battle itself runs over the PS-046 cable (`LINK_*`) unchanged. Worked example (10) updated to version 8. |
 | 9 | PS-051 | `LINK_DONE` (0x6E, 6.12): the agreed end of a link activity. A member that is done sends it, then closes its cable (no close-link handshake). The host relays the done mask, ends the group with the new `END` reason 5 DONE once all are done (or 3 s after the first), and emits queued rows before it handles `DONE` / `CLOSE`. A finishing member does not treat `BUS_END` or the group ending as a hardware error (fixes BUG-007). Version bumped to 9: a version-8 peer counts `0x6E` as malformed. Worked example (10) updated to version 9. |
+| 10 | PS-052 | `LINK_BLOCK` (0x6F, 6.12 "Whole blocks"): a `SendBlock` of 1..500 bytes travels as one message instead of its `INIT_BLOCK` + `CONT_BLOCK` rows; the host emits the queued rows, then relays the block to every member with the sender's link id (one sequenced stream per group). Bigger blocks keep the rows. Row pacing plays backlogged block-data rows up to 8 per tick (no wire change). Version bumped to 10: a version-9 peer counts `0x6F` as malformed. Worked example (10) updated to version 10. |

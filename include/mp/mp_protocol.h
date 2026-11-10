@@ -58,6 +58,7 @@
 #define MP_MSG_TRADE_COMMIT     0x6C    // C -> H (READY), H -> C (COMMIT / ABORT). PS-044, protocol.md 6.15
 #define MP_MSG_TRADE_RECOVER    0x6D    // C -> H -> C, or H -> C (arbiter). PS-050, protocol.md 6.16
 #define MP_MSG_LINK_DONE        0x6E    // C -> H (done), H -> C (done mask). PS-051, protocol.md 6.12
+#define MP_MSG_LINK_BLOCK       0x6F    // C -> H (a whole SendBlock), H -> C (relayed, sender's link id). PS-052, protocol.md 6.12
 #define MP_MSG_LINK_FIRST       0x60    // reserved LINK_* range (protocol.md 4)
 #define MP_MSG_LINK_LAST        0x7F
 #define MP_MSG_DEBUG_ECHO       0xF0    // --mp-selftest only
@@ -79,6 +80,9 @@
 #define MP_LINK_MAX_MEMBERS     4       // == MAX_LINK_PLAYERS in include/link.h
 #define MP_LINK_CMD_SIZE        (4 + 2 * MP_LINK_CMD_WORDS)                 // 20
 #define MP_LINK_ROW_SIZE(n)     (8 + 2 * MP_LINK_CMD_WORDS * (n))           // 8 + 16n
+#define MP_LINK_BLOCK_HEADER    8       // PS-052 LINK_BLOCK: groupId, busEpoch, linkId, reserved, size u16, reserved u16
+#define MP_LINK_BLOCK_MAX       (MP_MAX_PAYLOAD_SIZE - MP_LINK_BLOCK_HEADER) // 500; bigger blocks use the row path
+#define MP_LINK_BLOCK_SIZE(n)   (MP_LINK_BLOCK_HEADER + (n))
 #define MP_INTERACT_SIZE        8       // all three INTERACT_* messages
 #define MP_TRADE_COMMIT_SIZE    8       // PS-044: op, groupId, seq, reason; PS-050: tradeId
 #define MP_TRADE_RECOVER_SIZE   32      // PS-050
@@ -262,6 +266,18 @@ struct MpMsgLinkRow
     u16 cmds[MP_LINK_MAX_MEMBERS][MP_LINK_CMD_WORDS]; // [link id]; rows >= count are 0
 };
 
+// LINK_BLOCK (PS-052, protocol.md 6.12): one whole SendBlock on the bus, in place of its
+// INIT_BLOCK + CONT_BLOCK rows. C -> H: linkId is 0 (the host uses the sender's real link id);
+// H -> C: linkId = the sender's link id. size 1..MP_LINK_BLOCK_MAX; payload = header + size bytes.
+struct MpMsgLinkBlock
+{
+    u8 groupId;
+    u8 busEpoch;
+    u8 linkId;
+    u16 size;
+    u8 data[MP_LINK_BLOCK_MAX];
+};
+
 // TRADE_COMMIT (PS-044, protocol.md 6.15): the host-arbitrated commit of a direct trade's
 // save. op = MP_TRADE_OP_*; groupId = the link group the trade runs on (!= 0); seq = the
 // trade's number within that group (!= 0); reason = MP_TRADE_ABORT_* (mp.h) for ABORT, else 0.
@@ -353,6 +369,11 @@ u8 MpProto_ParseLinkCmd(const u8 *payload, u32 len, struct MpMsgLinkCmd *out);
 u16 MpProto_WriteLinkCmd(u8 *buf, u16 cap, const struct MpMsgLinkCmd *msg);
 u8 MpProto_ParseLinkRow(const u8 *payload, u32 len, struct MpMsgLinkRow *out);
 u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg);
+// LINK_BLOCK (PS-052): len >= 8; groupId != 0; busEpoch != 0; linkId < 4; size 1..MP_LINK_BLOCK_MAX;
+// len == 8 + size exactly (TRUNCATED / OVERSIZED otherwise). Reserved bytes are ignored.
+u8 MpProto_ParseLinkBlock(const u8 *payload, u32 len, struct MpMsgLinkBlock *out);
+// Returns 0 if the size is 0 or above MP_LINK_BLOCK_MAX.
+u16 MpProto_WriteLinkBlock(u8 *buf, u16 cap, const struct MpMsgLinkBlock *msg);
 // TRADE_COMMIT (PS-044, PS-050): exactly 8 bytes; op 1..3; groupId != 0; seq != 0; reason 0 for
 // READY / COMMIT and MP_TRADE_ABORT_FIRST..LAST for ABORT; tradeId != 0 for READY. The direction is checked by the caller.
 u8 MpProto_ParseTradeCommit(const u8 *payload, u32 len, struct MpMsgTradeCommit *out);

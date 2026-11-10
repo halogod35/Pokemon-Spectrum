@@ -971,6 +971,68 @@ u16 MpProto_WriteLinkRow(u8 *buf, u16 cap, const struct MpMsgLinkRow *msg)
     return MpFinishWrite(&w);
 }
 
+// LINK_BLOCK (PS-052): groupId u8, busEpoch u8, linkId u8, reserved u8, size u16, reserved u16,
+// then `size` bytes of block data.
+u8 MpProto_ParseLinkBlock(const u8 *payload, u32 len, struct MpMsgLinkBlock *out)
+{
+    struct MpReader r;
+    u16 size;
+
+    memset(out, 0, sizeof(*out));
+    if (payload == NULL || len < MP_LINK_BLOCK_HEADER)
+        return MP_PARSE_ERR_TRUNCATED;
+    MpReader_Init(&r, payload, len);
+    out->groupId = MpReadU8(&r);
+    out->busEpoch = MpReadU8(&r);
+    out->linkId = MpReadU8(&r);
+    MpReadU8(&r); // reserved
+    size = MpReadU16(&r);
+    MpReadU16(&r); // reserved
+    if (size == 0 || size > MP_LINK_BLOCK_MAX)
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_BAD_FIELD;
+    }
+    if (len < (u32)MP_LINK_BLOCK_SIZE(size))
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_TRUNCATED;
+    }
+    if (len > (u32)MP_LINK_BLOCK_SIZE(size))
+    {
+        memset(out, 0, sizeof(*out));
+        return MP_PARSE_ERR_OVERSIZED;
+    }
+    MpReadBytes(&r, out->data, size);
+    if (r.error || out->groupId == 0 || out->busEpoch == 0 || out->linkId >= MP_LINK_MAX_MEMBERS)
+    {
+        u8 result = r.error ? MP_PARSE_ERR_TRUNCATED : MP_PARSE_ERR_BAD_FIELD;
+
+        memset(out, 0, sizeof(*out));
+        return result;
+    }
+    out->size = size;
+    return MP_PARSE_OK;
+}
+
+u16 MpProto_WriteLinkBlock(u8 *buf, u16 cap, const struct MpMsgLinkBlock *msg)
+{
+    struct MpWriter w;
+
+    if (msg->size == 0 || msg->size > MP_LINK_BLOCK_MAX)
+        return 0;
+    MpWriter_Init(&w, buf, cap);
+    MpWriteHeader(&w, MP_MSG_LINK_BLOCK, MP_PROTOCOL_VERSION, MP_LINK_BLOCK_SIZE(msg->size));
+    MpWriteU8(&w, msg->groupId);
+    MpWriteU8(&w, msg->busEpoch);
+    MpWriteU8(&w, msg->linkId);
+    MpWriteU8(&w, 0);
+    MpWriteU16(&w, msg->size);
+    MpWriteU16(&w, 0);
+    MpWriteBytes(&w, msg->data, msg->size);
+    return MpFinishWrite(&w);
+}
+
 // ===========================================================================
 // TRADE_COMMIT (PS-044, protocol.md 6.15; tradeId since PS-050)
 // ===========================================================================

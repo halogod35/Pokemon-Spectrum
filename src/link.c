@@ -507,6 +507,10 @@ u16 LinkMain2(const u16 *heldKeys)
     if (gLinkStatus & LINK_STAT_CONN_ESTABLISHED)
     {
         ProcessRecvCmds(SIO_MULTI_CNT->id);
+        // MP: PS-052 row pacing. Rows backlogged on the PC cable that carry only block data are
+        // played now instead of one per tick (at most one block completes per tick).
+        while (MP_LinkCatchUpRow(gRecvCmds))
+            ProcessRecvCmds(SIO_MULTI_CNT->id);
         if (gLinkCallback != NULL)
             gLinkCallback();
         TrySetLinkErrorBuffer();
@@ -537,6 +541,45 @@ static bool8 MpIsLinkPlayerBlockMagicOk(const struct LinkPlayerBlock *block)
 {
     return memcmp(block->magic1, sASCIIGameFreakInc, sizeof(sASCIIGameFreakInc)) == 0
         && memcmp(block->magic2, sASCIIGameFreakInc, sizeof(sASCIIGameFreakInc)) == 0;
+}
+
+// MP: PS-052. The end of a received block, moved out of ProcessRecvCmds' CONT_BLOCK case
+// unchanged, so a whole block from the fast cable (MP_LinkDeliverWholeBlock) completes exactly
+// as the last CONT_BLOCK row would: the player data of the exchange, or the received flag.
+static void MpBlockRecvComplete(u8 i, bool8 whole)
+{
+    if (gRemoteLinkPlayersNotReceived[i] == TRUE)
+    {
+        struct LinkPlayerBlock *block;
+        struct LinkPlayer *linkPlayer;
+
+        block = (struct LinkPlayerBlock *)&gBlockRecvBuffer[i];
+        linkPlayer = &gLinkPlayers[i];
+        *linkPlayer = block->linkPlayer;
+        if ((linkPlayer->version & 0xFF) == VERSION_RUBY || (linkPlayer->version & 0xFF) == VERSION_SAPPHIRE)
+        {
+            linkPlayer->progressFlagsCopy = 0;
+            linkPlayer->neverRead = 0;
+            linkPlayer->progressFlags = 0;
+        }
+        ConvertLinkPlayerName(linkPlayer);
+        if (!MpIsLinkPlayerBlockMagicOk(block)) // MP: PS-047, was strcmp on unterminated peer data
+        {
+            // MP: PS-051. This path never set gLinkErrorOccurred nor logged: say what came.
+            MP_LinkBadPlayerBlock(i, sBlockRecv[i].size, (const u8 *)gBlockRecvBuffer[i]);
+            gLinkErrorOccurred = TRUE;
+            SetMainCallback2(CB2_LinkError);
+        }
+        else
+        {
+            HandleReceiveRemoteLinkPlayer(i);
+        }
+    }
+    else
+    {
+        SetBlockReceivedFlag(i);
+    }
+    MP_LinkOnBlockReceived(i, sBlockRecv[i].size, whole); // MP: PS-052 stats / pacing
 }
 
 static void ProcessRecvCmds(u8 unused)
@@ -626,39 +669,7 @@ static void ProcessRecvCmds(u8 unused)
                 sBlockRecv[i].pos += (CMD_LENGTH - 1) * 2;
 
                 if (sBlockRecv[i].pos >= sBlockRecv[i].size)
-                {
-                    if (gRemoteLinkPlayersNotReceived[i] == TRUE)
-                    {
-                        struct LinkPlayerBlock *block;
-                        struct LinkPlayer *linkPlayer;
-
-                        block = (struct LinkPlayerBlock *)&gBlockRecvBuffer[i];
-                        linkPlayer = &gLinkPlayers[i];
-                        *linkPlayer = block->linkPlayer;
-                        if ((linkPlayer->version & 0xFF) == VERSION_RUBY || (linkPlayer->version & 0xFF) == VERSION_SAPPHIRE)
-                        {
-                            linkPlayer->progressFlagsCopy = 0;
-                            linkPlayer->neverRead = 0;
-                            linkPlayer->progressFlags = 0;
-                        }
-                        ConvertLinkPlayerName(linkPlayer);
-                        if (!MpIsLinkPlayerBlockMagicOk(block)) // MP: PS-047, was strcmp on unterminated peer data
-                        {
-                            // MP: PS-051. This path never set gLinkErrorOccurred nor logged: say what came.
-                            MP_LinkBadPlayerBlock(i, sBlockRecv[i].size, (const u8 *)gBlockRecvBuffer[i]);
-                            gLinkErrorOccurred = TRUE;
-                            SetMainCallback2(CB2_LinkError);
-                        }
-                        else
-                        {
-                            HandleReceiveRemoteLinkPlayer(i);
-                        }
-                    }
-                    else
-                    {
-                        SetBlockReceivedFlag(i);
-                    }
-                }
+                    MpBlockRecvComplete(i, FALSE); // MP: PS-052, the original code moved into a function
             }
                 break;
             case LINKCMD_READY_CLOSE_LINK:
@@ -999,6 +1010,16 @@ static bool32 InitBlockSend(const void *src, size_t size)
             memcpy(gBlockSendBuffer, src, size);
 
         sBlockSend.src = gBlockSendBuffer;
+    }
+    // MP: PS-052 fast cable. On the PC cable the whole block goes to the bus at once as one
+    // message: no INIT_BLOCK / CONT_BLOCK rows, so the link task is finished right away (as it is
+    // after LinkCB_BlockSendEnd on the GBA). Receivers get it where the rows would have put it.
+    if (size <= 0xFFFF && MP_LinkOnSendBlock(sBlockSend.src, (u16)size))
+    {
+        sBlockSend.active = FALSE;
+        sBlockSend.pos = size;
+        gLinkCallback = NULL;
+        return TRUE;
     }
     BuildSendCmd(LINKCMD_INIT_BLOCK);
     gLinkCallback = LinkCB_BlockSendBegin;
@@ -1976,6 +1997,34 @@ u32 MP_LinkSelftestState(u8 *buf, u32 cap, bool8 load)
 void MP_LinkSelftestProcessRecvCmds(void)
 {
     ProcessRecvCmds(0);
+}
+
+// MP: PS-052 fast cable. A whole block from link id `who` (LINK_BLOCK, mp_link_cable.c calls
+// this from MP_LinkMain1 in bus order). Exactly what the INIT_BLOCK + CONT_BLOCK rows of the same
+// block would have done to sBlockRecv, gBlockRecvBuffer / gDecompressionBuffer and the received
+// flags, with the PS-047 size rule (the bus never carries more than MP_LINK_BLOCK_MAX bytes here).
+void MP_LinkDeliverWholeBlock(u8 who, const u8 *data, u16 size)
+{
+    struct BlockTransfer *blockRecv;
+
+    if (who >= MAX_LINK_PLAYERS || data == NULL)
+        return;
+    blockRecv = &sBlockRecv[who];
+    blockRecv->pos = 0;
+    blockRecv->size = size;
+    blockRecv->multiplayerId = who + 0x80; // INIT_BLOCK word 2 (the sender's id + 0x80)
+    if (size == 0 || size > sizeof(gDecompressionBuffer))
+    {
+        MP_LinkRejectDataF("whole block size %u out of range (player %u)", (unsigned)size, (unsigned)who);
+        blockRecv->size = 0;
+        return;
+    }
+    if (size > BLOCK_BUFFER_SIZE)
+        memcpy(gDecompressionBuffer, data, size);
+    else
+        memcpy(gBlockRecvBuffer[who], data, size);
+    blockRecv->pos = size;
+    MpBlockRecvComplete(who, TRUE);
 }
 #endif
 
