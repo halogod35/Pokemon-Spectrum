@@ -54,6 +54,7 @@ struct PlatformArgs
     char savePath[PLATFORM_ARG_PATH_SIZE];       // --save, default PLATFORM_DEFAULT_SAVE_PATH
     u8 mpRole;                                   // PLATFORM_MP_ROLE_*
     bool8 mpDebug;                               // --mp-debug
+    bool8 mpNetStats;                            // --mp-net-stats (MP: PS-053 traffic log)
     bool8 mpSelftest;                            // --mp-selftest (MP: PS-011)
     bool8 mpLinkTest;                            // --mp-link-test (MP: PS-046 virtual link cable harness)
     bool8 debugSlowSave;                         // --debug-slow-save (MP: PS-014, kill-during-save test)

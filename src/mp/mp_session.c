@@ -10,6 +10,7 @@
 #include "mp/mp_summary.h"
 #include "mp/mp_transport.h"
 #include "mp/mp_link.h"
+#include "mp/mp_netstats.h"
 
 bool8 gMpDebugLogging = FALSE;
 
@@ -341,6 +342,7 @@ void MP_Update(void)
 
     MpTransport_Poll(MpOnTransportEvent);
     now = MpTransport_GetTimeMs();
+    MpNetStats_Update(now); // PS-053: overlay rates, --mp-net-stats summary (no-op if the poll closed it)
 
     if (s->flushing)
     {

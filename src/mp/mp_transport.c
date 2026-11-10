@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "mp/mp_internal.h"
+#include "mp/mp_netstats.h"
 #include "mp/mp_protocol.h"
 #include "mp/mp_transport.h"
 
@@ -37,10 +38,60 @@ bool8 MpTransport_Init(void)
     return TRUE;
 }
 
+static u8 MpContextIndex(const struct MpTransportContext *ctx)
+{
+    return (u8)(ctx - sContexts);
+}
+
+// PS-053: ENet's counters for `ctx` (all zero if it has no host).
+static void MpFillStats(const struct MpTransportContext *ctx, struct MpTransportStats *out)
+{
+    ENetHost *host = ctx->host;
+    size_t i;
+
+    memset(out, 0, sizeof(*out));
+    if (host == NULL)
+        return;
+    out->open = TRUE;
+    out->wireSentBytes = host->totalSentData;
+    out->wireRecvBytes = host->totalReceivedData;
+    out->wireSentDatagrams = host->totalSentPackets;
+    out->wireRecvDatagrams = host->totalReceivedPackets;
+    for (i = 0; i < host->peerCount && i < MP_TRANSPORT_STATS_PEERS; i++)
+    {
+        const ENetPeer *peer = &host->peers[i];
+        struct MpTransportPeerStats *p = &out->peers[i];
+
+        p->connected = (peer->state == ENET_PEER_STATE_CONNECTED);
+        if (!p->connected)
+            continue;
+        p->rttMs = peer->roundTripTime;
+        p->rttVarMs = peer->roundTripTimeVariance;
+        p->lossPermille = (u32)(((u64)peer->packetLoss * 1000) / ENET_PEER_PACKET_LOSS_SCALE);
+        if (p->lossPermille > 1000)
+            p->lossPermille = 1000;
+    }
+}
+
+void MpTransport_GetStats(struct MpTransportStats *out)
+{
+    if (out != NULL)
+        MpFillStats(sCtx, out);
+}
+
+u8 MpTransport_GetInstance(void)
+{
+    return MpContextIndex(sCtx);
+}
+
 static void MpCloseContext(struct MpTransportContext *ctx)
 {
     if (ctx->host != NULL)
     {
+        struct MpTransportStats stats;
+
+        MpFillStats(ctx, &stats);
+        MpNetStats_OnClose(MpContextIndex(ctx), &stats, (u32)enet_time_get()); // PS-053: session-end table
         enet_host_destroy(ctx->host);
         ctx->host = NULL;
     }
@@ -96,6 +147,7 @@ bool8 MpTransport_Listen(u16 port, u8 maxPeers)
     MpApplyHostLimits(host);
     sCtx->host = host;
     sCtx->isServer = TRUE;
+    MpNetStats_OnOpen(MpContextIndex(sCtx), (u32)enet_time_get());
     MP_DLOG("transport: listening on 0.0.0.0:%u, %u peers\n", (unsigned)port, (unsigned)maxPeers);
     return TRUE;
 }
@@ -179,6 +231,7 @@ bool8 MpTransport_Connect(const char *ipv4, u16 port)
     }
     sCtx->host = host;
     sCtx->isServer = FALSE;
+    MpNetStats_OnOpen(MpContextIndex(sCtx), (u32)enet_time_get());
     MP_DLOG("transport: connecting to %s:%u\n", ipv4, (unsigned)port);
     return TRUE;
 }
@@ -225,6 +278,7 @@ bool8 MpTransport_Send(u8 peerId, u8 channel, const u8 *data, u16 len, bool8 rel
             enet_packet_destroy(packet);
         return FALSE;
     }
+    MpNetStats_OnSend(MpContextIndex(sCtx), peerId, data, len);
     return TRUE;
 }
 
@@ -270,6 +324,8 @@ static void MpDispatchEvent(ENetEvent *ev, MpTransportCallback callback)
             return;
         if (peerId != MP_PEER_NONE && ev->packet->dataLength <= MP_MAX_PACKET_SIZE && callback != NULL)
         {
+            // Before the callback: it may close this host (MpCloseContext logs the table).
+            MpNetStats_OnRecv(MpContextIndex(sCtx), peerId, ev->packet->data, (u32)ev->packet->dataLength);
             out.type = MP_TRANSPORT_EV_RECEIVE;
             out.channel = ev->channelID;
             out.data = ev->packet->data;

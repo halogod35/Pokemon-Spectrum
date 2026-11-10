@@ -19,6 +19,7 @@ its own save file and its own multiplayer role, without going through menus.
 | `--port <n>` | Port for `--host` / `--join` (1–65535). | 27500 |
 | `--name <text>` | Debug override for the name other players see (never saved). 1–7 characters, `A-Z a-z 0-9` only. Anything else exits with code 2 before the window opens. | the save's name |
 | `--mp-debug` | Verbose multiplayer/network logging. | off |
+| `--mp-net-stats` | Network traffic log (PS-053): a summary every 10 s and a per-message-type table when the session ends. See "Network statistics" below. **F3** toggles the in-game overlay with or without this flag. | off |
 | `--mp-selftest` | Run the multiplayer self-test (loopback on 127.0.0.1, UDP 27590–27599) without a window or a save, print `[MP] selftest OK` / `FAILED`, and exit 0 / 1. Added by PS-011. | off |
 | `--mp-link-test` | **Test only** (PS-046). With `--host` / `--join`: once slots 0 and 1 are in the session and in the overworld, both form a link group, `OpenLink()`, run the player-data exchange and 3 × 200-byte `SendBlock` rounds, close, and repeat every second. Each step is logged as `[MP] link test: ...`. Kill one instance and the other logs `link-error path reached` and shows the game's link error screen (recovery is PS-048; close the window). | off |
 | `--mp-fake-protocol <n>` | **Test only.** Advertise protocol version `n` (0–65535) in HELLO, so a normal host answers `REJECT(VERSION)`. | off |
@@ -165,3 +166,33 @@ received. The dump header lists the offsets of `CB2_LinkError`, `CB2_Overworld`,
 
 **Play-test bug reports:** send `mp_log*.txt` from **both** machines (and
 `pokeemerald_crash.txt` if there is one).
+
+## Network statistics (PS-053)
+
+Every packet the game hands to ENet, and every packet ENet delivers, is counted per message type
+and per peer (`src/mp/mp_netstats.c`, a few additions per packet, always on). Nothing about the
+traffic changes. Three ways to look at it:
+
+- **F3 overlay** (any time): a small box at the top left of the game picture with
+  `NET HOST 3P` / `NET CLIENT 3P`, `UP` and `DN` in kbit/s, `RTT` (ms, +- variance) and `LOSS`.
+  It shows the worst connected peer, so on a host that is the slowest client. The rates are over
+  the last second and count what goes over the network: ENet's UDP payload plus an estimated
+  28 bytes of IPv4 + UDP header per datagram. The overlay is drawn by SDL on top of the picture;
+  it never touches the game's frame buffer.
+- **`--mp-net-stats`**: every 10 s a `[MP] netstats: last 10.0 s: ...` line with up and down
+  rates (our message bytes, ENet bytes, kbit/s with IP/UDP), the top three message types by bytes,
+  and RTT and loss per peer. When the session's transport closes (leave, error, quit) a full table
+  follows: count and bytes sent and received per message type with each type's share, totals,
+  ENet's own wire totals, per-peer totals, RTT and loss.
+- **`--mp-selftest`** runs the traffic benchmark (PS-053) at the end: a host + 1 client and a
+  host + 3 clients over loopback at 60 Hz, measuring idle, walking, mach bike, a trainer card +
+  party view, a trade and a link battle. Look for the `[MP] netbench:` lines in the output (the CI
+  log of the "Multiplayer self-test" step): one line per instance per activity, a line per message
+  type, and at the end the summary table. The trade and battle rows run the real session and link
+  bus with the command stream of the game's link screens (block sizes from `trade.c` and
+  `battle_main.c`); the menu waits and the per-turn battle traffic are estimates.
+
+Terms: **msg** = our packets (4-byte header + payload); **ENet** = UDP payload (msg plus ENet's
+command headers, acknowledgements and its own pings); **IP** = ENet + 28 bytes per datagram.
+ENet's RTT and loss come from the peer (`roundTripTime`, `roundTripTimeVariance`, `packetLoss`;
+loss is measured on reliable packets over 10 s windows).

@@ -71,6 +71,31 @@ bool8 MpTransport_IsOpen(void);
 u32 MpTransport_GetTimeMs(void);
 // ENet's smoothed round-trip time for `peer` in ms, 0 if unknown.
 u16 MpTransport_GetRttMs(u8 peer);
+// PS-053: ENet's own counters for this instance (mp_netstats.c, the F3 overlay).
+#define MP_TRANSPORT_STATS_PEERS 4  // == MP_HOST_PEER_COUNT (the host's peer count)
+
+struct MpTransportPeerStats
+{
+    bool8 connected;
+    u32 rttMs;              // ENet's smoothed round-trip time
+    u32 rttVarMs;           // ENet's round-trip time variance
+    u32 lossPermille;       // ENet's mean loss of reliable packets (10 s windows), 0..1000
+};
+
+struct MpTransportStats
+{
+    bool8 open;
+    u32 wireSentBytes;      // UDP payload bytes sent (ENet host total: our data + ENet headers/acks/pings)
+    u32 wireRecvBytes;
+    u32 wireSentDatagrams;
+    u32 wireRecvDatagrams;
+    struct MpTransportPeerStats peers[MP_TRANSPORT_STATS_PEERS];
+};
+
+// Fills `out` for this instance (all zero if no host).
+void MpTransport_GetStats(struct MpTransportStats *out);
+// The selected instance (0 = the game).
+u8 MpTransport_GetInstance(void);
 // Selftest only: makes `instance` (0 or 1) the target of every other call.
 void MpTransport_SelectInstance(u8 instance);
 // Strict IPv4 dotted-quad check: four decimal octets 0..255, 1-3 digits each.

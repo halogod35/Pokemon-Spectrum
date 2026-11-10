@@ -57,7 +57,7 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
-        run: timeout 240 ./pokeemerald${{ matrix.bits }} --mp-selftest
+        run: timeout 360 ./pokeemerald${{ matrix.bits }} --mp-selftest # PS-053: +~70 s for the traffic benchmark
 
       # PS-014: crash-safe save I/O (write .tmp + fsync + rename, read back, leftover .tmp,
       # slow-save path, in-memory ReadFlash). Uses pokeemerald.sav.selftest, never a real save.

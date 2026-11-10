@@ -30,6 +30,7 @@
 #include "mp/mp.h" // MP:
 #include "platform/text_input.h" // MP: Join Game IP entry keyboard input (PS-021)
 #include "mp_menu.h" // MP: MpUi_Update, the single MP event consumer (PS-022)
+#include "platform/net_overlay.h" // MP: PS-053 F3 network overlay
 
 extern void (*const gIntrTable[])(void);
 
@@ -226,6 +227,7 @@ int main(int argc, char **argv)
 
     MP_Init(); // MP: no socket is opened here
     MP_SetDebugLogging(gPlatformArgs.mpDebug); // MP:
+    MP_SetNetStatsLogging(gPlatformArgs.mpNetStats); // MP: PS-053 --mp-net-stats
     MP_SetLinkTest(gPlatformArgs.mpLinkTest); // MP: PS-046 --mp-link-test
     if (gPlatformArgs.hasFakeProtocol) // MP:
         MP_SetFakeProtocolVersion(gPlatformArgs.fakeProtocol);
@@ -315,6 +317,7 @@ int main(int argc, char **argv)
         lastGameTime = curGameTime;
 
         SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
+        Platform_DrawNetOverlay(sdlRenderer); // MP: PS-053 F3 overlay, on top of the game picture
         SDL_RenderPresent(sdlRenderer);
     }
 
@@ -345,6 +348,7 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --port <n>           Multiplayer port for --host / --join\n"
         "  --name <text>        Debug override for the displayed player name (max %d bytes)\n"
         "  --mp-debug           Verbose multiplayer/network logging\n"
+        "  --mp-net-stats       Log network traffic every 10 s and a per-message table at session end (F3: overlay)\n"
         "  --mp-selftest        Run the multiplayer self-test (no window), print OK/FAILED and exit\n"
         "  --mp-link-test       Test only: with --host / --join, slots 0 and 1 loop the virtual link cable test\n"
         "  --mp-fake-protocol <n>  Test only: advertise protocol version n (host rejects with VERSION)\n"
@@ -517,6 +521,10 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--mp-debug") == 0)
         {
             gPlatformArgs.mpDebug = TRUE;
+        }
+        else if (strcmp(arg, "--mp-net-stats") == 0) // MP: PS-053
+        {
+            gPlatformArgs.mpNetStats = TRUE;
         }
         else if (strcmp(arg, "--mp-selftest") == 0) // MP:
         {
@@ -1079,6 +1087,10 @@ void ProcessEvents(void)
                 {
                     paused = !paused;
                 }
+                break;
+            case SDLK_F3: // MP: PS-053 network overlay
+                if (!event.key.repeat)
+                    Platform_ToggleNetOverlay();
                 break;
             case SDLK_SPACE:
                 if (!speedUp)

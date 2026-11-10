@@ -225,6 +225,27 @@ void MP_SetDebugLogging(bool8 enabled);
 // "[MP] selftest OK" or "[MP] selftest FAILED (<n>)". Returns the exit status (0 / 1).
 s32 MP_RunSelftest(void);
 
+// PS-053 network statistics. The counters always run; --mp-net-stats logs a summary every
+// 10 s and a full per-message-type table when the session's transport closes.
+void MP_SetNetStatsLogging(bool8 enabled);
+
+// The F3 overlay (sdl2_net_overlay.c): the game's session (instance 0), rates over the last
+// second. Bandwidth is on the wire: ENet's UDP payload plus an estimated 28 bytes of
+// IPv4 + UDP header per datagram.
+struct MpNetOverlay
+{
+    bool8 open;             // a transport is open (connecting, in session or leaving)
+    bool8 inSession;
+    bool8 isHost;
+    u8 players;             // MP_GetPlayerCount()
+    u32 upBitsPerSec;
+    u32 downBitsPerSec;
+    u32 rttMs;              // worst connected peer
+    u32 rttVarMs;           // of that peer
+    u32 lossPermille;       // worst connected peer (ENet: reliable packets, 10 s windows)
+};
+void MP_GetNetOverlay(struct MpNetOverlay *out);
+
 // ---------------------------------------------------------------------------
 // Build identity and test overrides (protocol.md section 9)
 // ---------------------------------------------------------------------------

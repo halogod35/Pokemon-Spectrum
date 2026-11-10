@@ -48,5 +48,8 @@ u32 MpSelftest_Trade(void);
 // the linkup state machine (pure + random-input fuzz), and in process a link group that ends
 // (or a partner that leaves the session) during the start.
 u32 MpSelftest_Battle(void);
+// PS-053: the netstats counters, and the traffic benchmark (host + 1 and host + 3 clients over
+// loopback at 60 Hz: idle, walk, bike, view, trade, battle). Prints the "[MP] netbench:" tables.
+u32 MpSelftest_NetBench(void);
 
 #endif // GUARD_MP_MP_SELFTEST_H
