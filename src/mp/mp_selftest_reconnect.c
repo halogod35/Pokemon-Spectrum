@@ -594,8 +594,6 @@ static void TestRealTiming(void)
         memcpy(wrong, curToken, sizeof(wrong));
         wrong[3] ^= 0x5A;
         R_CHECK(RawResume(1, epoch1, wrong, &c1Summary) == MP_REASON_RESUME_REFUSED && !sRaw.welcomed, "wrong token: REJECT(RESUME_REFUSED)");
-        R_CHECK(RawResume(1, epoch1, oldToken, &c1Summary) == MP_REASON_RESUME_REFUSED && !sRaw.welcomed,
-                "replayed token (already used, or never handed out): REJECT(RESUME_REFUSED)");
         R_CHECK(RawResume(1, (u8)(epoch1 + 1), curToken, &c1Summary) == MP_REASON_RESUME_REFUSED, "right token, wrong epoch: REJECT(RESUME_REFUSED)");
         R_CHECK(RawResume(3, epoch1, curToken, &c1Summary) == MP_REASON_RESUME_REFUSED, "a free slot: REJECT(RESUME_REFUSED)");
         other = c1Summary;
@@ -691,6 +689,8 @@ static void TestScaledTiming(void)
     u8 epoch1;
     u32 start;
     u8 st1, st2;
+    u8 usedToken[MP_SESSION_TOKEN_SIZE];
+    struct MpPlayerSummary c1Summary;
 
     MpNetTiming_Set(10);
     if (!StartSession())
@@ -703,6 +703,8 @@ static void TestScaledTiming(void)
     // "20 s" (2 s at /10)
     failuresBefore = sFail;
     Sel(R_C1);
+    memcpy(usedToken, gMpSession->client.token, sizeof(usedToken));
+    c1Summary = gMpSession->localSummary;
     MpTransport_SetSimBlackout(TRUE, 2000);
     start = MpTransport_GetTimeMs();
     R_CHECK(PumpUntil(CondC1Reconnecting, 1500), "\"20 s\": C1 notices and starts reconnecting");
@@ -724,6 +726,17 @@ static void TestScaledTiming(void)
     R_CHECK(EpochOf(R_C1, 1) == epoch1 && EpochOf(R_C2, 1) == epoch1, "\"20 s\": same slot and epoch");
     CheckTables("\"20 s\": same tables");
     Report("\"20 s\" dropout: silent reconnect, slot and epoch kept", failuresBefore);
+
+    // Replay: the token C1 just used for its RESUME is spent.
+    failuresBefore = sFail;
+    Sel(R_C1);
+    R_CHECK(memcmp(usedToken, gMpSession->client.token, sizeof(usedToken)) != 0, "replay: the RESUME got a new token");
+    R_CHECK(RawResume(1, epoch1, usedToken, &c1Summary) == MP_REASON_RESUME_REFUSED && !sRaw.welcomed,
+            "replay: a RESUME with the spent token gets REJECT(RESUME_REFUSED)");
+    PumpFor(100);
+    R_CHECK(CondSettled() && sEv[R_HOST].left == 0 && sEv[R_C2].left == 0, "replay: C1 undisturbed");
+    CheckTables("replay: same tables");
+    Report("a replayed (spent) token is refused (AD-9)", failuresBefore);
 
     // Trade in its commit, (a): the host commits before it notices the drop.
     failuresBefore = sFail;

@@ -28,7 +28,7 @@ changes what a peer accepts is a wire change and **must** bump `MP_PROTOCOL_VERS
 | Compression | none |
 | `host->maximumPacketSize` | `MP_MAX_PACKET_SIZE` = **512** (ENet ≥ 1.3.13 has this field; it defaults to 32 MB, which is a memory DoS) |
 | `host->maximumWaitingData` | 16384 |
-| `enet_peer_timeout(peer, 0, 4000, 7000)`, `enet_peer_ping_interval(peer, 500)` | Set on every peer when its ENet connection is established (a client: also when it dials). PS-054: was 5000 / 10000. A loss of about 2 s is ridden out; a longer one is noticed after 4–7 s and handed to the reconnect (7.6). |
+| `enet_peer_timeout(peer, 0, 4000, 7000)`, `enet_peer_ping_interval(peer, 500)` | Set on every peer when its ENet connection is established (a client: also when it dials). PS-054: was 5000 / 10000. A loss of about 2 s is ridden out; a longer one is noticed after 4–7 s or after 6 s of silence (idle timer, 7.3), and handed to the reconnect (7.6). |
 | Service | `enet_host_service(host, &ev, 0)` in a loop, on the main thread, once per `MP_Update()`, **at most 64 events per call** (bounds frame time under a flood; the rest are handled next frame) |
 
 ### 1.1 Channels
@@ -1044,7 +1044,7 @@ peer, state ERROR, `MP_EVENT_CONNECT_FAILED(MP_REASON_TIMEOUT)`.
 | Timer | Value | Who | Action on expiry |
 |---|---|---|---|
 | Connect / handshake | 5000 ms (`MP_CONNECT_TIMEOUT_MS`) | client: `MP_Join` → WELCOME/REJECT. Host: ENet connect → HELLO. | client: CONNECT_FAILED(TIMEOUT). Host: reset peer silently. |
-| Idle | 10000 ms (`MP_IDLE_TIMEOUT_MS`) | every peer, time since **any** packet was received from that peer | PS-054: a lost connection (7.6). Host: hold the slot. Client: reconnect. |
+| Idle | 6000 ms (`MP_IDLE_TIMEOUT_MS`; PS-054, was 10000) | every peer, time since **any** packet was received from that peer | PS-054: a lost connection (7.6). Host: hold the slot. Client: reconnect. |
 | ENet peer timeout | **The session must set this explicitly** on every peer as soon as its ENet connection is established: `enet_peer_timeout(peer, 0, 4000, 7000)` and `enet_peer_ping_interval(peer, 500)` (limit 0 = ENet default retry count, minimum 4000 ms, maximum 7000 ms; PS-054, was 5000 / 10000). ENet's defaults (up to 30 s) are too long. | ENet | surfaces as an ENet DISCONNECT event: a lost connection (7.6) |
 | Reconnect grace | 35000 ms (`MP_RECONNECT_GRACE_MS`, PS-054) | host, per lost slot, from the loss | free the slot: `PLAYER_LEFT(CONNECTION_LOST)` as before PS-054 |
 | Reconnect window | 30000 ms (`MP_RECONNECT_WINDOW_MS`, PS-054) | client, from the loss | give up: state ERROR, `DISCONNECTED(CONNECTION_LOST)` |
@@ -1054,7 +1054,7 @@ peer, state ERROR, `MP_EVENT_CONNECT_FAILED(MP_REASON_TIMEOUT)`.
 | Presence keep-alive | 1000 ms | every IN_SESSION player | resend current presence (new `seq`) |
 
 **Acceptance tolerance:** a peer that vanishes without BYE (process killed, cable pulled) must be
-detected within **15 s** of its last packet (nominally 4–7 s). Since PS-054 detection starts the
+detected within **15 s** of its last packet (nominally 4–6 s: the ENet timeout, or at the latest the 6 s idle timer). Since PS-054 detection starts the
 reconnect logic of 7.6: the host reports `PLAYER_STATUS(LOST)` at once and `PLAYER_LEFT` only after
 the 35 s grace; a client reports `DISCONNECTED` only after its 30 s reconnect window.
 

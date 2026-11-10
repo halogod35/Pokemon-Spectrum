@@ -34,7 +34,7 @@
 #define MP_ADDRESS_MAX_LEN       15      // "255.255.255.255" (IPv4 dotted quad only in M1).
 
 #define MP_CONNECT_TIMEOUT_MS    5000    // MP_Join -> WELCOME/REJECT, and host: connect -> HELLO.
-#define MP_IDLE_TIMEOUT_MS       10000   // Nothing received from a peer for this long -> drop it.
+#define MP_IDLE_TIMEOUT_MS       6000    // Nothing received from a peer for this long -> connection lost (PS-054: was 10000; PING / keep-alive arrive every 1 s).
 #define MP_PING_INTERVAL_MS      1000
 #define MP_LEAVE_FLUSH_MS        1000    // How long MP_Leave keeps pumping to deliver BYE.
 

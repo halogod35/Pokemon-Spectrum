@@ -249,6 +249,6 @@ Continue both saves and meet on one map, then press F4 in the CLIENT window:
 | Dropout | What you should see |
 |---|---|
 | 2 s (`--mp-net-dropout 2`) | Both players freeze for a moment, then carry on. No notice anywhere. |
-| 10 s | After 4–7 s the client shows "Reconnecting..." and the host "NAME lost signal..."; the client's avatar stands still on the host. When the 10 s are over the client reconnects within a few seconds: "Reconnected!" / "NAME reconnected.", same slot, both keep walking. PLAYERS shows the client as `LOST` while it is away. |
+| 10 s | After 4–6 s the client shows "Reconnecting..." and the host "NAME lost signal..."; the client's avatar stands still on the host. When the 10 s are over the client reconnects within a few seconds: "Reconnected!" / "NAME reconnected.", same slot, both keep walking. PLAYERS shows the client as `LOST` while it is away. |
 | 40 s | As 10 s, but the client gives up after its 30 s window ("The connection to the host was lost. You are now playing offline.") and the host shows "NAME left the game." after its 35 s grace. |
 | during a trade or battle | A loss longer than about 4 s ends it like a disconnect does today: the PS-048 link error screen and "Continue from last save". A trade that was already committed by the host is finished on the dropped side by the PS-050 journal after the reconnect ("trade completed"), otherwise it is cancelled on both. Shorter losses only stall the trade or battle. |
