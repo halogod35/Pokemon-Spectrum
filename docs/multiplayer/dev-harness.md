@@ -32,6 +32,11 @@ its own save file and its own multiplayer role, without going through menus.
 | `--save-selftest` | Check the crash-safe save I/O on `<save>.selftest` (never the real save) without a window, print `[save] selftest OK` / `FAILED`, and exit 0 / 1. Added by PS-014. | off |
 | `--title <text>` | Window title (max 127 bytes). | `Pokémon Spectrum`, `Pokémon Spectrum [HOST]` or `Pokémon Spectrum [CLIENT]` |
 | `--scale <n>` | Initial window scale, 1–10. | 1 |
+| `--audio-stats` | PS-058: log the audio numbers once per second (queue level, underruns, clipped samples, sample jumps, main loop stalls) to the console and to `pokemon-spectrum_audio.txt` in the working directory, plus a summary at exit. See "Audio (PS-058)" below. | off |
+| `--audio-dump <file.wav>` | PS-058: write the exact audio stream the game sends to the sound card (32-bit float WAV, 42048 Hz, stereo; about 20 MB per minute). | off |
+| `--audio-queue-ms <n>` | PS-058: how much audio is kept ready ahead of the sound card, 20–200 ms. Larger survives longer hitches but delays sound effects. | 50 |
+| `--audio-legacy` | **Test only** (PS-058). The v0.1.0 audio pacing (one sound frame per loop, no fades), to compare by ear. | off |
+| `--debug-loop-hz <hz>` | **Test only** (PS-058). Hold the main loop to `<hz>` iterations per second (10–1000, up to 3 decimals, e.g. `59.94`), like vsync on a monitor with that refresh rate. Used by the CI audio check. | off |
 | `-h`, `--help` | Print help and exit. | |
 
 Rules:
@@ -252,3 +257,48 @@ Continue both saves and meet on one map, then press F4 in the CLIENT window:
 | 10 s | After 4–6 s the client shows "Reconnecting..." and the host "NAME lost signal..."; the client's avatar stands still on the host. When the 10 s are over the client reconnects within a few seconds: "Reconnected!" / "NAME reconnected.", same slot, both keep walking. PLAYERS shows the client as `LOST` while it is away. |
 | 40 s | As 10 s, but the client gives up after its 30 s window ("The connection to the host was lost. You are now playing offline.") and the host shows "NAME left the game." after its 35 s grace. |
 | during a trade or battle | A loss longer than about 4 s ends it like a disconnect does today: the PS-048 link error screen and "Continue from last save". A trade that was already committed by the host is finished on the dropped side by the PS-050 journal after the reconnect ("trade completed"), otherwise it is cancelled on both. Shorter losses only stall the trade or battle. |
+## Audio (PS-058)
+
+The sound engine (m4a mixer + PSG) runs on the main thread, one GBA frame (701 stereo samples
+at 42048 Hz) per call, and writes into a ring buffer that SDL's audio thread reads
+(`src/platform/sdl2_audio.c`). Each main loop iteration tops the ring up to the queue target
+(`--audio-queue-ms`, default 50 ms), producing up to 8 frames at once to catch up. If the ring
+still runs dry (window dragged on Windows, a long hitch), the sound fades out over 1.5 ms and
+fades back in, instead of cutting hard to silence (a click).
+
+**Why the pops happened in v0.1.0:** the game produced at most one sound frame per loop
+iteration, and the loop runs once per monitor refresh (vsync). 60 frames x 701 samples is 42060
+samples/s, only 0.03% above the 42048 the sound card plays. On a 59.94 Hz monitor (very common),
+or with any drift, the queue could never fill and ran dry several times a second. Measured in
+CI with the loop held to 59.94 or 60 Hz: 4-5 underruns a second, each one a click.
+
+**Measuring on your PC:**
+
+```
+pokemon-spectrum64.exe --audio-stats --audio-dump audio.wav
+```
+
+Play normally (walk, a battle, a menu, fast-forward), then close the game. The console and
+`pokemon-spectrum_audio.txt` have one line per second and a summary:
+
+```
+[audio] last 12.0s: queue 48/58/66 ms (min/avg/max), underruns 0, clipped 0 (peak 0.42), jumps>0.5 0 (at buffer edges 0, max 0.18), stalls>20ms 0 (max 0 ms), loops 60, buffers 61
+```
+
+- **queue**: audio waiting to be played. It should never reach 0.
+- **underruns**: the sound card had nothing to play (a gap). Should be 0. If they come
+  with **stalls** (main loop iterations over 20 ms), the game itself hitched.
+- **clipped**: samples past +-1.0 (distortion). Should be 0.
+- **jumps**: sample-to-sample steps over 0.5 in the stream we send (a click baked into the
+  sound itself). "At buffer edges" counts those between two GBA frames.
+- **loops**: main loop iterations per second, about your monitor's refresh rate.
+
+**F3** shows the same on the overlay: `AUD <queue>MS U<underruns> C<clipped>`.
+
+`--audio-legacy` switches back to the v0.1.0 pacing to compare by ear. `--audio-queue-ms 100`
+gives more margin on a PC that hitches (sound effects 50 ms later).
+
+**CI** ("Audio check" step, Linux jobs): 20 s of intro and title music with the dummy SDL
+drivers at a free-running loop, 59.94 Hz and 60 Hz (must have 0 underruns and 0 clipped
+samples), plus 30 Hz and `--audio-legacy` at 59.94 Hz (reported only). The 64-bit job uploads
+the WAV dumps and logs as the `audio-check-linux64` artifact.

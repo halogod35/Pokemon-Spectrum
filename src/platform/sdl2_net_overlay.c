@@ -15,11 +15,12 @@
 #include "global.h"
 #include "platform/net_overlay.h"
 #include "mp/mp.h"
+#include "platform/audio.h" // PS-058
 
 #define OVERLAY_X           2
 #define OVERLAY_Y           2
 #define OVERLAY_PAD         2
-#define OVERLAY_LINES       7   // PS-054: + the two simulated-conditions lines
+#define OVERLAY_LINES       8   // 5 net + 2 simulated conditions (PS-054) + 1 audio (PS-058)
 #define OVERLAY_LINE_CHARS  20
 #define GLYPH_W             3
 #define GLYPH_H             5
@@ -145,6 +146,19 @@ void Platform_DrawNetOverlay(struct SDL_Renderer *renderer)
         snprintf(lines[lineCount++], sizeof(lines[0]), "SIM DROPOUT F4");
     if (info.simLossPercent != 0)
         snprintf(lines[lineCount++], sizeof(lines[0]), "SIM LOSS %u%%", (unsigned)info.simLossPercent);
+    // PS-058: audio queued (ms) and underruns since start; "AUD OFF" if the device did not open.
+    {
+        struct PlatformAudioOverlay audio;
+
+        Platform_GetAudioOverlay(&audio);
+        if (!audio.open)
+            snprintf(lines[lineCount++], sizeof(lines[0]), "AUD OFF");
+        else
+            snprintf(lines[lineCount++], sizeof(lines[0]), "AUD %uMS U%u C%u",
+                     (unsigned)(audio.queueMs > 999 ? 999 : audio.queueMs),
+                     (unsigned)(audio.underruns > 999 ? 999 : audio.underruns),
+                     (unsigned)(audio.clipped > 999 ? 999 : audio.clipped));
+    }
 
     for (i = 0; i < lineCount; i++)
     {

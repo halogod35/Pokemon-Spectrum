@@ -31,6 +31,7 @@
 #include "platform/text_input.h" // MP: Join Game IP entry keyboard input (PS-021)
 #include "mp_menu.h" // MP: MpUi_Update, the single MP event consumer (PS-022)
 #include "platform/net_overlay.h" // MP: PS-053 F3 network overlay
+#include "platform/audio.h" // PS-058 audio output, --audio-stats, --audio-dump
 
 extern void (*const gIntrTable[])(void);
 
@@ -78,6 +79,7 @@ static bool WriteSaveFileAtomic(const char *path, const u8 *data, u32 size, u32 
 static int RunSaveSelftest(void);
 
 static int ParsePlatformArgs(int argc, char **argv);
+static void ThrottleLoop(void);
 
 static void UpdateInternalClock(void);
 
@@ -247,24 +249,7 @@ int main(int argc, char **argv)
     isFrameAvailable.value = 0;
     vBlankSemaphore = SDL_CreateSemaphore(0);
 
-    SDL_AudioSpec want;
-
-    SDL_memset(&want, 0, sizeof(want)); /* or SDL_zero(want) */
-    want.freq = 42048;
-    want.format = AUDIO_F32;
-    want.channels = 2;
-    want.samples = 1024;
-    cgb_audio_init(want.freq);
-
-
-    if (SDL_OpenAudio(&want, 0) < 0)
-        SDL_Log("Failed to open audio: %s", SDL_GetError());
-    else
-    {
-        if (want.format != AUDIO_F32) /* we let this one thing change. */
-            SDL_Log("We didn't get Float32 audio format.");
-        SDL_PauseAudio(0);
-    }
+    Platform_AudioOpen(); // PS-058: src/platform/sdl2_audio.c
 
     MP_Init(); // MP: no socket is opened here
     MP_SetDebugLogging(gPlatformArgs.mpDebug); // MP:
@@ -344,14 +329,6 @@ int main(int argc, char **argv)
                 accumulator -= fixedTimestep;
             }
 
-            //samples per frame is 701, that gets multipled by two when being queued and then multipled by four because samples are float32 which are 4 bytes long hence the divide by 8
-            //this number is then checked against samples per frame multipled by three rounded down to 2000 to give it enough margin of error while not desyncing
-            //this is all done to sync audio to gameplay
-            if (SDL_GetQueuedAudioSize(1)/8 < 2000)
-            {
-                AudioUpdate();
-            }
-
             if (videoScaleChanged)
             {
                 SDL_SetWindowSize(sdlWindow, DISPLAY_WIDTH * videoScale, DISPLAY_HEIGHT * videoScale);
@@ -359,19 +336,49 @@ int main(int argc, char **argv)
             }
         }
 
+        // PS-058: the sound engine runs here, paced by the audio queue (sdl2_audio.c), not by game ticks.
+        Platform_AudioPump(paused);
+
         lastGameTime = curGameTime;
 
         SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
         Platform_DrawNetOverlay(sdlRenderer); // MP: PS-053 F3 overlay, on top of the game picture
         SDL_RenderPresent(sdlRenderer);
+        ThrottleLoop(); // PS-058: --debug-loop-hz
     }
 
     MP_Shutdown(); // MP:
     // MP: PS-014: nothing to close, the save file is only open while it is read or replaced.
 
+    Platform_AudioClose(); // PS-058
     SDL_DestroyWindow(sdlWindow);
     SDL_Quit();
     return 0;
+}
+
+// PS-058: --debug-loop-hz <hz>. Test only: holds each main loop iteration to 1/hz seconds, like a
+// monitor with that refresh rate under vsync (for example 59.94), so audio pacing can be tested
+// headless. The loop still runs slower if it can't keep up.
+static void ThrottleLoop(void)
+{
+    static u64 sNext;
+    u64 freq, period, now;
+
+    if (gPlatformArgs.debugLoopMilliHz == 0)
+        return;
+    freq = SDL_GetPerformanceFrequency();
+    period = freq * 1000 / gPlatformArgs.debugLoopMilliHz;
+    now = SDL_GetPerformanceCounter();
+    if (sNext == 0 || now > sNext + period * 4)
+        sNext = now; // first call, or far behind: start over
+    sNext += period;
+    while ((now = SDL_GetPerformanceCounter()) < sNext)
+    {
+        u64 leftMs = (sNext - now) * 1000 / freq;
+
+        if (leftMs > 2)
+            SDL_Delay((Uint32)(leftMs - 1));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -406,11 +413,18 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --save-selftest      Check the crash-safe save file I/O on <save>" SAVE_SELFTEST_SUFFIX ", print OK/FAILED and exit\n"
         "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
         "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
+        "  --audio-stats        Log audio queue level, underruns, clipping and loop stalls every second\n"
+        "                       (console and pokemon-spectrum_audio.txt)\n"
+        "  --audio-dump <file.wav>  Write the exact audio stream sent to SDL (32-bit float WAV)\n"
+        "  --audio-queue-ms <n> Audio kept ready ahead of the sound card, %d-%d ms (default %d)\n"
+        "  --audio-legacy       Test only: v0.1.0 audio pacing without fades, to compare by ear\n"
+        "  --debug-loop-hz <hz> Test only: run the main loop at this rate, e.g. 59.94 (simulated vsync)\n"
         "  -h, --help           Show this help and exit\n"
         "\n"
         "If a port is given more than once (--host <port>, --join ip:port, --port), the last one wins.\n",
         programName, PLATFORM_MP_DEFAULT_PORT, PLATFORM_MP_DEFAULT_PORT,
-        PLATFORM_ARG_NAME_SIZE - 1, SAVE_SLOW_DELAY_MS, PLATFORM_MAX_SCALE);
+        PLATFORM_ARG_NAME_SIZE - 1, SAVE_SLOW_DELAY_MS, PLATFORM_MAX_SCALE,
+        PLATFORM_AUDIO_MIN_QUEUE_MS, PLATFORM_AUDIO_MAX_QUEUE_MS, PLATFORM_AUDIO_DEFAULT_QUEUE_MS);
 }
 
 // Parses a decimal number in [minValue, maxValue]. The whole string must be digits.
@@ -434,6 +448,36 @@ static bool ParseUnsigned(const char *str, unsigned long minValue, unsigned long
     if (value < minValue)
         return false;
 
+    *out = value;
+    return true;
+}
+
+// PS-058: parses "59.94" (up to 3 decimals) as thousandths (59940), in [minValue, maxValue].
+static bool ParseMilli(const char *str, u32 minValue, u32 maxValue, u32 *out)
+{
+    u32 value = 0, decimals = 0;
+    bool seenDot = false;
+    const char *c;
+
+    if (str == NULL || *str == '\0' || *str == '.')
+        return false;
+    for (c = str; *c != '\0'; c++)
+    {
+        if (*c == '.' && !seenDot)
+        {
+            seenDot = true;
+            continue;
+        }
+        if (*c < '0' || *c > '9' || decimals == 3 || value > 100000000)
+            return false;
+        value = value * 10 + (u32)(*c - '0');
+        if (seenDot)
+            decimals++;
+    }
+    for (; decimals < 3; decimals++)
+        value *= 10;
+    if (value < minValue || value > maxValue)
+        return false;
     *out = value;
     return true;
 }
@@ -500,6 +544,7 @@ static int ParsePlatformArgs(int argc, char **argv)
     gPlatformArgs.mpRole = PLATFORM_MP_ROLE_NONE;
     gPlatformArgs.port = PLATFORM_MP_DEFAULT_PORT;
     gPlatformArgs.scale = 1;
+    gPlatformArgs.audioQueueMs = PLATFORM_AUDIO_DEFAULT_QUEUE_MS;
 
     for (i = 1; i < argc; i++)
     {
@@ -655,6 +700,41 @@ static int ParsePlatformArgs(int argc, char **argv)
             if (strlen(value) >= sizeof(gPlatformArgs.windowTitle))
                 goto bad_value;
             title = value;
+            i++;
+        }
+        else if (strcmp(arg, "--audio-stats") == 0) // PS-058
+        {
+            gPlatformArgs.audioStats = TRUE;
+        }
+        else if (strcmp(arg, "--audio-dump") == 0) // PS-058
+        {
+            if (value == NULL || value[0] == '\0')
+                goto missing_value;
+            if (!CopyArgString(gPlatformArgs.audioDump, sizeof(gPlatformArgs.audioDump), value))
+                goto bad_value;
+            i++;
+        }
+        else if (strcmp(arg, "--audio-legacy") == 0) // PS-058
+        {
+            gPlatformArgs.audioLegacy = TRUE;
+        }
+        else if (strcmp(arg, "--audio-queue-ms") == 0) // PS-058
+        {
+            unsigned long ms;
+
+            if (value == NULL)
+                goto missing_value;
+            if (!ParseUnsigned(value, PLATFORM_AUDIO_MIN_QUEUE_MS, PLATFORM_AUDIO_MAX_QUEUE_MS, &ms))
+                goto bad_value;
+            gPlatformArgs.audioQueueMs = (u32)ms;
+            i++;
+        }
+        else if (strcmp(arg, "--debug-loop-hz") == 0) // PS-058
+        {
+            if (value == NULL)
+                goto missing_value;
+            if (!ParseMilli(value, 10000, 1000000, &gPlatformArgs.debugLoopMilliHz))
+                goto bad_value;
             i++;
         }
         else if (strcmp(arg, "--scale") == 0)
@@ -1080,10 +1160,7 @@ static int RunSaveSelftest(void)
     return 1;
 }
 
-void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame)
-{
-    SDL_QueueAudio(1, audioBuffer, samplesPerFrame);
-}
+// PS-058: Platform_QueueAudio is in sdl2_audio.c.
 
 
 // Key mappings
@@ -1245,21 +1322,10 @@ u16 GetXInputKeys()
 
         /* Speedup */
         // Note: 'speedup' variable is only (un)set on keyboard input
-        double oldTimeScale = timeScale;
+        // PS-058: the audio is no longer paused and flushed here. It keeps playing at normal speed,
+        // the same as with Space on the keyboard. (Pausing cut the sound with a click, and during a
+        // link the time lock reset timeScale every loop, which toggled the device on and off.)
         timeScale = (state.Gamepad.bRightTrigger > 0x80 || speedUp) ? 5.0 : 1.0;
-
-        if (oldTimeScale != timeScale)
-        {
-            if (timeScale > 1.0)
-            {
-                SDL_PauseAudio(1);
-            }
-            else
-            {
-                SDL_ClearQueuedAudio(1);
-                SDL_PauseAudio(0);
-            }
-        }
     }
 
     return xinputKeys;
