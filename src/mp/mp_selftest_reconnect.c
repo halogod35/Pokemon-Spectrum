@@ -519,7 +519,6 @@ static void TestRealTiming(void)
     u32 failuresBefore;
     u8 oldToken[MP_SESSION_TOKEN_SIZE];
     u8 curToken[MP_SESSION_TOKEN_SIZE];
-    struct MpPlayerSummary c1Summary, other;
     u8 epoch1;
     u32 start, elapsed, dropped;
     bool8 reconnected;
@@ -561,13 +560,16 @@ static void TestRealTiming(void)
     memset(sEv, 0, sizeof(sEv));
     Sel(R_C1);
     memcpy(oldToken, gMpSession->client.token, sizeof(oldToken));
-    c1Summary = gMpSession->localSummary;
     MpTransport_SetSimBlackout(TRUE, 5000);
     start = MpTransport_GetTimeMs();
     PumpFor(2000);
     R_CHECK(StateOf(R_C1) == MP_STATE_IN_SESSION && MP_GetPlayerCount() == 3, "5 s: C1 keeps its session and table during the dropout");
     PumpFor(3000);
     R_CHECK(PumpUntil(CondSettled, 12000), "5 s: back to normal after the signal returns");
+    // ENet may still time out a few seconds after the signal is back (its retry back-off checks
+    // late); the client then reconnects silently. Wait that out and check again.
+    PumpFor(8000);
+    R_CHECK(PumpUntil(CondSettled, 12000), "5 s: still normal a while later");
     elapsed = MpTransport_GetTimeMs() - start;
     reconnected = sEv[R_C1].reconnected != 0;
     MP_LOG("selftest: reconnect: 5 s dropout: settled after %u ms (%s; C1 reconnecting %u, reconnected %u; host saw lost %u, back %u)\n",
@@ -585,9 +587,20 @@ static void TestRealTiming(void)
         R_CHECK(memcmp(oldToken, curToken, sizeof(oldToken)) != 0, "5 s: the RESUME got a new token");
     Report("5 s dropout: same slot and epoch, nobody saw PLAYER_LEFT", failuresBefore);
 
-    // Tokens (AD-9). C1 is connected throughout and must not be disturbed.
-    failuresBefore = sFail;
+    StopSession();
+}
+
+// Tokens (AD-9), on a settled session. C1 is connected throughout and must not be disturbed.
+static void TestTokens(u8 epoch1)
+{
+    u32 failuresBefore = sFail;
+    u8 curToken[MP_SESSION_TOKEN_SIZE];
+    struct MpPlayerSummary c1Summary, other;
+
     memset(sEv, 0, sizeof(sEv));
+    Sel(R_C1);
+    memcpy(curToken, gMpSession->client.token, sizeof(curToken));
+    c1Summary = gMpSession->localSummary;
     {
         u8 wrong[MP_SESSION_TOKEN_SIZE];
 
@@ -610,9 +623,7 @@ static void TestRealTiming(void)
     Sel(R_HOST);
     R_CHECK(memcmp(gMpSession->slotToken[1], curToken, sizeof(curToken)) == 0, "a refused RESUME does not change the token");
     CheckTables("tokens: same tables");
-    Report("wrong / replayed / other-save tokens are refused (AD-9)", failuresBefore);
-
-    StopSession();
+    Report("wrong token, wrong epoch, free slot and other-save tokens are refused (AD-9)", failuresBefore);
 }
 
 // ---------------------------------------------------------------------------
@@ -737,6 +748,7 @@ static void TestScaledTiming(void)
     R_CHECK(CondSettled() && sEv[R_HOST].left == 0 && sEv[R_C2].left == 0, "replay: C1 undisturbed");
     CheckTables("replay: same tables");
     Report("a replayed (spent) token is refused (AD-9)", failuresBefore);
+    TestTokens(epoch1);
 
     // Trade in its commit, (a): the host commits before it notices the drop.
     failuresBefore = sFail;
