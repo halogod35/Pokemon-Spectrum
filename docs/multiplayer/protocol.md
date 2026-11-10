@@ -1,7 +1,7 @@
 # Pokémon Spectrum — Multiplayer Wire Protocol
 
 - **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests), PS-046 (virtual link cable), PS-042 (trainer card), PS-043 (view party)
-- **Protocol version:** `MP_PROTOCOL_VERSION = 10` (2 = `INTERACT_*`, PS-041; 3 = `LINK_*`, PS-046; 4 = `TRAINER_CARD_DATA`, PS-042; 5 = `PARTY_DATA`, PS-043; 6 = `TRADE_COMMIT`, PS-044; 7 = `TRADE_RECOVER`, PS-050; 8 = INTERACT kind BATTLE_DOUBLE, PS-045; 9 = `LINK_DONE`, PS-051; 10 = `LINK_BLOCK`, PS-052; see section 11)
+- **Protocol version:** `MP_PROTOCOL_VERSION = 11` (2 = `INTERACT_*`, PS-041; 3 = `LINK_*`, PS-046; 4 = `TRAINER_CARD_DATA`, PS-042; 5 = `PARTY_DATA`, PS-043; 6 = `TRADE_COMMIT`, PS-044; 7 = `TRADE_RECOVER`, PS-050; 8 = INTERACT kind BATTLE_DOUBLE, PS-045; 9 = `LINK_DONE`, PS-051; 10 = `LINK_BLOCK`, PS-052; 11 = reconnect token, `RESUME`, `PLAYER_STATUS`, PS-054; see section 11)
 - **Status:** draft for Director approval
 - **Companion docs:** `design.md` (modules, API, build), `include/mp/mp.h` (public API)
 
@@ -22,13 +22,13 @@ changes what a peer accepts is a wire change and **must** bump `MP_PROTOCOL_VERS
 | Topology | Star. Clients connect **only** to the host. The host relays (AD-2). |
 | ENet channel count | **2** |
 | ENet connect `data` | `0x504D5350` (`MP_CONNECT_MAGIC`). The host immediately resets (`enet_peer_reset`) any incoming ENet connection whose connect data differs, without sending anything. |
-| Host peer count | `MP_MAX_PLAYERS` (= 4). 3 for clients + **1 spare**, so a 5th player can connect at the ENet level and receive `REJECT(FULL)` instead of a silent ENet refusal. |
+| Host peer count | `MP_MAX_PLAYERS + 2` (= 6, PS-054). 3 for clients + **1 spare**, so a 5th player can connect at the ENet level and receive `REJECT(FULL)` instead of a silent ENet refusal, + 2 so a reconnecting client (7.6) can connect while the host still holds its stale peer. |
 | Client peer count | 1 |
 | Bandwidth limits | 0 / 0 (unlimited; our traffic is tiny) |
 | Compression | none |
 | `host->maximumPacketSize` | `MP_MAX_PACKET_SIZE` = **512** (ENet ≥ 1.3.13 has this field; it defaults to 32 MB, which is a memory DoS) |
 | `host->maximumWaitingData` | 16384 |
-| `enet_peer_timeout(peer, 0, 5000, 10000)` | Set on every peer when its ENet connection is established |
+| `enet_peer_timeout(peer, 0, 4000, 7000)`, `enet_peer_ping_interval(peer, 500)` | Set on every peer when its ENet connection is established (a client: also when it dials). PS-054: was 5000 / 10000. A loss of about 2 s is ridden out; a longer one is noticed after 4–7 s or after 6 s of silence (idle timer, 7.3), and handed to the reconnect (7.6). |
 | Service | `enet_host_service(host, &ev, 0)` in a loop, on the main thread, once per `MP_Update()`, **at most 64 events per call** (bounds frame time under a flood; the rest are handled next frame) |
 
 ### 1.1 Channels
@@ -89,15 +89,17 @@ Total packet size = `4 + length`. Constraints (checked before anything else):
 |---|---|---|---|---|---|
 | `0x00` | *(invalid)* | — | — | — | never |
 | `0x01` | `HELLO` | C → H | 0 | 32 | host: peer is pending (before handshake) |
-| `0x02` | `WELCOME` | H → C | 0 | 4 + 20·N (N = 1..4) | client: CONNECTING |
-| `0x03` | `REJECT` | H → C | 0 | 8 | client: CONNECTING |
+| `0x02` | `WELCOME` | H → C | 0 | 12 + 20·N (N = 1..4) | client: CONNECTING, or reconnecting (7.6) |
+| `0x03` | `REJECT` | H → C | 0 | 8 | client: CONNECTING, or reconnecting |
 | `0x04` | `PLAYER_JOINED` | H → C | 0 | 20 | client: IN_SESSION |
 | `0x05` | `PLAYER_LEFT` | H → C | 0 | 4 | client: IN_SESSION |
 | `0x06` | `PLAYER_UPDATE` | C → H, H → C | 0 | 20 | IN_SESSION |
 | `0x07` | `BYE` | both | 0 | 4 | any connected state |
 | `0x08` | `PING` | both | 1 | 4 | IN_SESSION |
 | `0x09` | `PONG` | both | 1 | 4 | IN_SESSION |
-| `0x0A`–`0x0F` | reserved: session/control | | 0 | | |
+| `0x0A` | `RESUME` | C → H | 0 | 40 | host: peer is pending (instead of HELLO; PS-054, 6.17) |
+| `0x0B` | `PLAYER_STATUS` | H → C | 0 | 4 | client: IN_SESSION (PS-054, 6.18) |
+| `0x0C`–`0x0F` | reserved: session/control | | 0 | | |
 | `0x10` | `PRESENCE` | C → H, H → C | 1 | 16 | IN_SESSION |
 | `0x11`–`0x1F` | reserved: presence/world | | 1 | | |
 | `0x20`–`0x3F` | reserved: social (chat, emotes) | | | | later |
@@ -170,7 +172,7 @@ Used by `WELCOME`, `PLAYER_JOINED` and `PLAYER_UPDATE`.
 |---|---|---|---|---|
 | 0 | 1 | u8 | `slot` | `< MP_MAX_PLAYERS` (further rules per message) |
 | 1 | 1 | u8 | `epoch` | `!= 0` |
-| 2 | 1 | u8 | `entryFlags` | bit 0 `MP_ENTRY_FLAG_HOST`: set **iff** `slot == 0`. Bits 1–7 reserved (ignored). |
+| 2 | 1 | u8 | `entryFlags` | bit 0 `MP_ENTRY_FLAG_HOST`: set **iff** `slot == 0`. Bit 1 `MP_ENTRY_FLAG_LOST` (PS-054): the player's connection is lost and the host holds its slot (7.6); never on slot 0 (BAD_FIELD); only meaningful in `WELCOME`, ignored elsewhere. Bits 2–7 reserved (ignored). |
 | 3 | 1 | u8 | reserved | ignored |
 | 4 | 16 | PlayerSummary | `summary` | 5.1 |
 
@@ -220,15 +222,16 @@ After any `REJECT`, the host calls `enet_peer_disconnect_later` and frees the pe
 If no HELLO arrives within `MP_CONNECT_TIMEOUT_MS` (5000 ms) of the ENet connect, the host resets
 the peer silently.
 
-### 6.2 `WELCOME` (0x02) — host → client, channel 0, payload 4 + 20·N bytes
+### 6.2 `WELCOME` (0x02) — host → client, channel 0, payload 12 + 20·N bytes
 
 | Offset | Size | Type | Field | Validation (client) |
 |---|---|---|---|---|
 | 0 | 1 | u8 | `yourSlot` | 1..3 |
 | 1 | 1 | u8 | `yourEpoch` | `!= 0` |
-| 2 | 1 | u8 | `playerCount` N | 1..`MP_MAX_PLAYERS`, and `length == 4 + 20*N` |
-| 3 | 1 | u8 | reserved | ignored |
-| 4 | 20·N | PlayerEntry[N] | `players` | see below |
+| 2 | 1 | u8 | `playerCount` N | 1..`MP_MAX_PLAYERS`, and `length == 12 + 20*N` |
+| 3 | 1 | u8 | `flags` | bit 0 `RESUMED` (PS-054): the answer to a `RESUME` (6.17). Bits 1–7 reserved (ignored). Was reserved before version 11. |
+| 4 | 8 | u8[8] | `token` | PS-054: the recipient's reconnect token, random, **not all zero** (else BAD_FIELD). Every WELCOME carries a new one. |
+| 12 | 20·N | PlayerEntry[N] | `players` | see below |
 
 The table lists **every** occupied slot including the host (slot 0) and the recipient. Order is
 ascending slot, but receivers must not rely on that.
@@ -242,7 +245,11 @@ Client validation (any failure → drop the connection with `BYE(PROTOCOL_ERROR)
 
 On success: state IN_SESSION, local slot = `yourSlot`, the table is replaced wholesale,
 `MP_EVENT_SESSION_STARTED` is queued (no `PLAYER_JOINED` events for players who were already
-there), and the client immediately sends its current `PRESENCE`.
+there), and the client immediately sends its current `PRESENCE`. The client keeps `token` for a
+`RESUME` (7.6); entries with `MP_ENTRY_FLAG_LOST` are players whose slot the host is holding.
+
+A WELCOME with `RESUMED` set answers a `RESUME`; it is handled as described in 7.6 (same slot and
+epoch required, the table is merged instead of replaced).
 
 ### 6.3 `REJECT` (0x03) — host → client, channel 0, payload 8 bytes
 
@@ -251,7 +258,7 @@ there), and the client immediately sends its current `PRESENCE`.
 
 | Offset | Size | Type | Field | Value |
 |---|---|---|---|---|
-| 0 | 1 | u8 | `reason` | `1` VERSION, `2` BUILD, `3` FULL, `4` BAD_DATA. `5`–`31` reserved. |
+| 0 | 1 | u8 | `reason` | `1` VERSION, `2` BUILD, `3` FULL, `4` BAD_DATA, `5` RESUME_REFUSED, `6` RESUME_MISMATCH (PS-054, answers to `RESUME` only, 6.17). `7`–`31` reserved. |
 | 1 | 1 | u8 | reserved | 0 |
 | 2 | 2 | u16 | `hostProtocolVersion` | host's protocol version (honours the host's `--mp-fake-protocol`) |
 | 4 | 4 | u32 | `hostBuildHash` | host's `MP_GetBuildHash()` (logged by the client; the UI shows only the reason) |
@@ -951,6 +958,55 @@ and no journal left. This is checked by `MpSelftest_Trade`'s crash simulation ov
 
 ---
 
+### 6.17 `RESUME` (0x0A) — client → host, channel 0, payload 40 bytes (PS-054)
+
+The first message on a **new** ENet connection of a client that lost its connection (7.6), in
+place of `HELLO`. HELLO's layout, frozen prefix included, with the held slot and epoch in bytes
+13–14 and the token from the last WELCOME appended:
+
+| Offset | Size | Type | Field | Value |
+|---|---|---|---|---|
+| 0 | 12 | | frozen prefix | as HELLO: `magic`, `protocolVersion`, reserved, `buildHash` |
+| 12 | 1 | u8 | `buildFlags` | as HELLO |
+| 13 | 1 | u8 | `slot` | the slot the client held, 1..3 (else BAD_FIELD) |
+| 14 | 1 | u8 | `epoch` | its epoch, `!= 0` |
+| 15 | 1 | u8 | reserved | 0 |
+| 16 | 16 | PlayerSummary | `summary` | the client's current summary (5.1) |
+| 32 | 8 | u8[8] | `token` | from the last WELCOME; not all zero (else BAD_FIELD) |
+
+**Host processing** (the peer must be pending, as for HELLO; a RESUME from a peer already in the
+table is a second HELLO: `BYE(PROTOCOL_ERROR)`):
+
+1. HELLO steps 2–4 (prefix, VERSION, BUILD) with the same REJECTs.
+2. Exact size, fields and summary → else `REJECT(BAD_DATA)`.
+3. `slot` is occupied, its epoch equals `epoch`, and `token` equals the token the host last gave
+   that slot → else `REJECT(RESUME_REFUSED)`. A token works **once**: the WELCOME that answers it
+   carries a new one, so a replayed RESUME is refused. The token is forgotten when the slot is freed.
+4. The summary's trainer id, name and gender equal the slot's → else `REJECT(RESUME_MISMATCH)`
+   (the right token from a different save; badges may differ). A refused RESUME changes nothing.
+5. Accept: if the slot still has a peer (the client noticed the dead link first), that peer is
+   reset and the slot's interaction requests and link group end, as at a loss (7.6). The slot is
+   bound to the new peer, `connectionLost` is cleared and the summary stored, then in this order:
+   1. `WELCOME` with `RESUMED`, a new token, the full table (lost slots flagged);
+   2. the cached `PRESENCE` of every other player (channel 1);
+   3. if the slot was held: `PLAYER_STATUS(ONLINE)` to every other client, and
+      `MP_EVENT_PLAYER_RECONNECTED` locally;
+   4. if the summary changed while away: `PLAYER_UPDATE` to every other client.
+
+### 6.18 `PLAYER_STATUS` (0x0B) — host → client, channel 0, payload 4 bytes (PS-054)
+
+| Offset | Size | Type | Field | Validation (client) |
+|---|---|---|---|---|
+| 0 | 1 | u8 | `slot` | 1..3, a remote slot (not ours) |
+| 1 | 1 | u8 | `epoch` | `!= 0`; a stale epoch is ignored |
+| 2 | 1 | u8 | `status` | `0` ONLINE, `1` LOST (else BAD_FIELD) |
+| 3 | 1 | u8 | reserved | ignored |
+
+LOST: the host lost that player's connection and holds its slot (7.6); the client sets
+`MpPlayer.connectionLost`, ends its own requests with that player and queues
+`MP_EVENT_PLAYER_RECONNECTING`. ONLINE: the player is back (`MP_EVENT_PLAYER_RECONNECTED`). A
+status equal to the current one is ignored.
+
 ## 7. Session rules
 
 ### 7.1 Connect sequence
@@ -988,16 +1044,19 @@ peer, state ERROR, `MP_EVENT_CONNECT_FAILED(MP_REASON_TIMEOUT)`.
 | Timer | Value | Who | Action on expiry |
 |---|---|---|---|
 | Connect / handshake | 5000 ms (`MP_CONNECT_TIMEOUT_MS`) | client: `MP_Join` → WELCOME/REJECT. Host: ENet connect → HELLO. | client: CONNECT_FAILED(TIMEOUT). Host: reset peer silently. |
-| Idle | 10000 ms (`MP_IDLE_TIMEOUT_MS`) | every peer, time since **any** packet was received from that peer | host: drop client, `PLAYER_LEFT(CONNECTION_LOST)`. Client: `DISCONNECTED(CONNECTION_LOST)`. |
-| ENet peer timeout | **The session must set this explicitly** on every peer as soon as its ENet connection is established: `enet_peer_timeout(peer, 0, 5000, 10000)` (limit 0 = ENet default retry count, minimum 5000 ms, maximum 10000 ms). ENet's defaults (up to 30 s) are too long. | ENet | surfaces as an ENet DISCONNECT event, handled as CONNECTION_LOST |
+| Idle | 6000 ms (`MP_IDLE_TIMEOUT_MS`; PS-054, was 10000) | every peer, time since **any** packet was received from that peer | PS-054: a lost connection (7.6). Host: hold the slot. Client: reconnect. |
+| ENet peer timeout | **The session must set this explicitly** on every peer as soon as its ENet connection is established: `enet_peer_timeout(peer, 0, 4000, 7000)` and `enet_peer_ping_interval(peer, 500)` (limit 0 = ENet default retry count, minimum 4000 ms, maximum 7000 ms; PS-054, was 5000 / 10000). ENet's defaults (up to 30 s) are too long. | ENet | surfaces as an ENet DISCONNECT event: a lost connection (7.6) |
+| Reconnect grace | 35000 ms (`MP_RECONNECT_GRACE_MS`, PS-054) | host, per lost slot, from the loss | free the slot: `PLAYER_LEFT(CONNECTION_LOST)` as before PS-054 |
+| Reconnect window | 30000 ms (`MP_RECONNECT_WINDOW_MS`, PS-054) | client, from the loss | give up: state ERROR, `DISCONNECTED(CONNECTION_LOST)` |
+| Reconnect attempt | 3000 ms; waits 250, 500, 1000, 2000, 2000 … ms between attempts | client | reset the attempt's peer, wait, dial again |
 | Leave flush | 1000 ms (`MP_LEAVE_FLUSH_MS`) | after `MP_Leave()` | reset remaining peers, destroy ENet host |
 | Ping interval | 1000 ms | host ↔ each client | send PING |
 | Presence keep-alive | 1000 ms | every IN_SESSION player | resend current presence (new `seq`) |
 
 **Acceptance tolerance:** a peer that vanishes without BYE (process killed, cable pulled) must be
-detected and reported (`PLAYER_LEFT` on the others, or `DISCONNECTED` on a client) within
-**15 s** of its last packet. The nominal value is 10 s; the extra 5 s covers ENet's
-retransmission back-off and frame timing.
+detected within **15 s** of its last packet (nominally 4–6 s: the ENet timeout, or at the latest the 6 s idle timer). Since PS-054 detection starts the
+reconnect logic of 7.6: the host reports `PLAYER_STATUS(LOST)` at once and `PLAYER_LEFT` only after
+the 35 s grace; a client reports `DISCONNECTED` only after its 30 s reconnect window.
 
 All timers use `MpTransport_GetTimeMs()` (wraps `enet_time_get()`, milliseconds, u32) with
 wrap-safe `(u32)(now - start) >= timeout` comparisons. They are wall-clock, so pausing (Ctrl+P)
@@ -1024,6 +1083,7 @@ or speed-up does not cause timeouts. The network is still pumped while the game 
 | `TRAINER_CARD_DATA` | forward to the requester along the matching TRAINER_CARD route (6.13), at most one per route |
 | `PARTY_DATA` | forward to the requester along the matching VIEW_PARTY route (6.14), in order, at most two per route |
 | `BYE` | remove client, broadcast `PLAYER_LEFT` |
+| `RESUME` (pending peer only) | 6.17: give the held slot back, or REJECT (PS-054) |
 | `LINK_JOIN` `LINK_LEAVE` `LINK_OPEN` `LINK_CLOSE` `LINK_START` `LINK_CMD` | link bus (6.12): not forwarded as such; the host answers with `LINK_GROUP` / `END` / `STATUS` / `BUS_START` / `BUS_END` / `ROW` |
 | `TRADE_COMMIT` READY | trade commit arbiter (6.15): not forwarded; the host answers `TRADE_COMMIT` COMMIT / ABORT to the members |
 | `TRADE_RECOVER` | journal recovery (6.16): its own remembered decision first (to sender and target), then routed to the target with `slot` = the sender |
@@ -1031,6 +1091,52 @@ or speed-up does not cause timeouts. The network is still pumped while the game 
 
 The host's own presence and summary changes are sent by the host to every client directly
 (slot 0).
+
+### 7.6 Dropouts and reconnect (PS-054)
+
+A connection is **lost** when ENet reports a DISCONNECT for a peer in the player table, or the idle
+timer expires. A `BYE`, a kick or a REJECT is not a loss and ends the session as before.
+
+**Host**, when it loses a client:
+
+1. The slot's interaction requests end (6.11: requesters get UNAVAILABLE, targets CANCELLED) and
+   its link group ends with `LINK_END(LOST)` for the other members, exactly as if it had left: the
+   partners' PS-048 link-error recovery runs, an undecided `TRADE_COMMIT` round is aborted, and the
+   host's remembered decisions (6.15, 6.16) are kept.
+2. The slot, name, epoch, summary, token and cached presence are **held**; the slot has no peer.
+   `PLAYER_STATUS(LOST)` goes to every other client; locally `MP_EVENT_PLAYER_RECONNECTING`.
+   Requests to the slot are answered UNAVAILABLE and link groups with it are refused.
+3. A valid `RESUME` (6.17) within `MP_RECONNECT_GRACE_MS` gives the slot back.
+4. Otherwise, after the grace, the slot is freed with `PLAYER_LEFT(CONNECTION_LOST)` as before.
+5. A `HELLO` whose trainer id, name and gender equal a held slot's (the player restarted the game)
+   frees the held slot first (`PLAYER_LEFT(CONNECTION_LOST)`), then joins normally.
+
+**Client**, when it loses the host while IN_SESSION (and holds a token):
+
+1. It stays IN_SESSION with its table; `MP_IsReconnecting()` is TRUE; `MP_EVENT_RECONNECTING` is
+   queued. Its link group ends locally (`MP_LINK_END_SESSION`, the PS-048 path); a trade waiting
+   for its commit presumes ABORT (IN_DOUBT) and its PS-050 journal stays; interaction requests end.
+   It sends nothing else (no PRESENCE, PING, requests or link joins) until it is back.
+2. It re-dials the host from the same ENet host (`MpTransport_Reconnect`): one attempt = ENet
+   connect + `RESUME` + wait for the answer, at most 3000 ms; between attempts it waits 250 ms,
+   doubling to 2000 ms.
+3. `WELCOME(RESUMED)` for its own slot and epoch: back. The table is merged: players that are still
+   there (same epoch) keep their presence; differences are reported as `PLAYER_JOINED` / `LEFT` /
+   `UPDATED` / `RECONNECTING` / `RECONNECTED` events. The new token replaces the old one;
+   `MP_EVENT_RECONNECTED`; the current PRESENCE is sent. A WELCOME for another slot or epoch is a
+   protocol error.
+4. `REJECT` (any reason), or `MP_RECONNECT_WINDOW_MS` over: state ERROR,
+   `DISCONNECTED(CONNECTION_LOST)` (as before PS-054).
+
+The grace (35 s) is longer than the window (30 s), so a client never comes back to a slot the host
+has just freed. Short losses of about 2 s never reach this: ENet retransmits and nothing is lost.
+
+**Trade journal and link-error recovery.** Nothing new is needed: a loss ends the link activity
+exactly like a player leaving. If the host had already sent COMMIT for the round, the other member
+signs and the lost member (IN_DOUBT) keeps its READY journal; after the reconnect its journal's
+`TRADE_RECOVER` gets the host's remembered COMMIT and rolls forward. If not, both abort and the
+host answers ABORTED. If the client never comes back, its journal stays until it meets the partner
+or host again, as before.
 
 ---
 
@@ -1196,9 +1302,9 @@ The build hash `0x12345678` is an illustrative value (a real one is an FNV-1a re
 Packet = 36 bytes:
 
 ```
-01 0A 20 00                 header: type HELLO, version 10, length 32
+01 0B 20 00                 header: type HELLO, version 11, length 32
 50 53 4D 50                 magic "PSMP"
-0A 00                       protocolVersion 10
+0B 00                       protocolVersion 11
 00 00                       reserved
 78 56 34 12                 buildHash 0x12345678
 00                          buildFlags
@@ -1228,3 +1334,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 8 | PS-045 | INTERACT `kind` 5 BATTLE_DOUBLE (6.11): a battle request that asks for a DOUBLE link battle; `kind` 2 BATTLE is now the single link battle. Prompted, routed and answered exactly like BATTLE. Version bumped to 8: a version-7 peer rejects kind 5 as malformed. No new message: the battle itself runs over the PS-046 cable (`LINK_*`) unchanged. Worked example (10) updated to version 8. |
 | 9 | PS-051 | `LINK_DONE` (0x6E, 6.12): the agreed end of a link activity. A member that is done sends it, then closes its cable (no close-link handshake). The host relays the done mask, ends the group with the new `END` reason 5 DONE once all are done (or 3 s after the first), and emits queued rows before it handles `DONE` / `CLOSE`. A finishing member does not treat `BUS_END` or the group ending as a hardware error (fixes BUG-007). Version bumped to 9: a version-8 peer counts `0x6E` as malformed. Worked example (10) updated to version 9. |
 | 10 | PS-052 | `LINK_BLOCK` (0x6F, 6.12 "Whole blocks"): a `SendBlock` of 1..500 bytes travels as one message instead of its `INIT_BLOCK` + `CONT_BLOCK` rows; the host emits the queued rows, then relays the block to every member with the sender's link id (one sequenced stream per group). Bigger blocks keep the rows. Row pacing plays backlogged block-data rows up to 8 per tick (no wire change). Version bumped to 10: a version-9 peer counts `0x6F` as malformed. Worked example (10) updated to version 10. |
+| 11 | PS-054 | Survive dropouts (7.6). `WELCOME` grows to 12 + 20·N: byte 3 is `flags` (bit 0 RESUMED), bytes 4–11 a random reconnect `token` (never zero). New `RESUME` (0x0A, 40 bytes, 6.17: HELLO's layout + slot, epoch, token) and `PLAYER_STATUS` (0x0B, 4 bytes, 6.18: a player's connection LOST / ONLINE). `PlayerEntry` flag bit 1 LOST (WELCOME only). REJECT reasons 5 RESUME_REFUSED and 6 RESUME_MISMATCH. A lost connection (ENet timeout, now 4000 / 7000 ms, or idle) no longer frees the slot at once: the host holds it for 35 s, the client retries for 30 s. Host peer count 6. Version bumped to 11: a version-10 peer would read the token as player entries. Worked example (10) updated to version 11. |

@@ -337,6 +337,8 @@ s32 MP_RunSelftest(void)
     // PS-012: protocol.md 8.3 parser fuzzing, then the in-process session scenario.
     sFailures += MpSelftest_Parsers();
     sFailures += MpSelftest_Session();
+    // PS-054: dropouts and reconnect (simulated signal loss, tokens, mid-trade).
+    sFailures += MpSelftest_Reconnect();
     // PS-030: presence parser, receive paths and the host + clients presence scenario.
     sFailures += MpSelftest_Presence();
     // PS-031: remote-avatar decision logic (pure functions).

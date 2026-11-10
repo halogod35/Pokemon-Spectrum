@@ -1724,7 +1724,11 @@ enet_protocol_send_outgoing_commands (ENetHost * host, ENetEvent * event, int ch
 
         currentPeer -> lastSendTime = host -> serviceTime;
 
-        sentLength = enet_socket_send (host -> socket, & currentPeer -> address, host -> buffers, host -> bufferCount);
+        /* Pokemon Spectrum (PS-054): simulated packet loss drops the datagram here, as the network would. */
+        if (host -> sendFilter != NULL && host -> sendFilter (host, & currentPeer -> address))
+          sentLength = 0;
+        else
+          sentLength = enet_socket_send (host -> socket, & currentPeer -> address, host -> buffers, host -> bufferCount);
 
         enet_protocol_remove_sent_unreliable_commands (currentPeer, & sentUnreliableCommands);
 

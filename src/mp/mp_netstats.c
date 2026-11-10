@@ -468,6 +468,9 @@ void MP_GetNetOverlay(struct MpNetOverlay *out)
     out->inSession = (MP_GetState() == MP_STATE_IN_SESSION);
     out->isHost = MP_IsHost();
     out->players = MP_GetPlayerCount();
+    out->reconnecting = MP_IsReconnecting(); // PS-054
+    out->simDropout = MpTransport_GetSimBlackout(&out->simDropoutLeftMs);
+    out->simLossPercent = (u8)(MpTransport_GetSimLoss() / 10);
     if (!n->open)
         return;
     out->upBitsPerSec = n->upBitsPerSec;

@@ -20,7 +20,7 @@
 #define OVERLAY_X           2
 #define OVERLAY_Y           2
 #define OVERLAY_PAD         2
-#define OVERLAY_LINES       6   // PS-058: + one audio line
+#define OVERLAY_LINES       8   // 5 net + 2 simulated conditions (PS-054) + 1 audio (PS-058)
 #define OVERLAY_LINE_CHARS  20
 #define GLYPH_W             3
 #define GLYPH_H             5
@@ -123,7 +123,9 @@ void Platform_DrawNetOverlay(struct SDL_Renderer *renderer)
     }
     else
     {
-        if (info.inSession)
+        if (info.reconnecting) // PS-054
+            snprintf(lines[lineCount++], sizeof(lines[0]), "NET RECONNECTING");
+        else if (info.inSession)
             snprintf(lines[lineCount++], sizeof(lines[0]), "NET %s %uP", info.isHost ? "HOST" : "CLIENT", (unsigned)info.players);
         else
             snprintf(lines[lineCount++], sizeof(lines[0]), "NET CONNECTING");
@@ -132,6 +134,13 @@ void Platform_DrawNetOverlay(struct SDL_Renderer *renderer)
         snprintf(lines[lineCount++], sizeof(lines[0]), "RTT %u+-%u MS", (unsigned)info.rttMs, (unsigned)info.rttVarMs);
         snprintf(lines[lineCount++], sizeof(lines[0]), "LOSS %u.%u%%", (unsigned)(info.lossPermille / 10), (unsigned)(info.lossPermille % 10));
     }
+    // PS-054 dev tools: the simulated conditions, so a test run is never mistaken for a real one.
+    if (info.simDropout && info.simDropoutLeftMs != 0)
+        snprintf(lines[lineCount++], sizeof(lines[0]), "SIM DROPOUT %uS", (unsigned)((info.simDropoutLeftMs + 999) / 1000));
+    else if (info.simDropout)
+        snprintf(lines[lineCount++], sizeof(lines[0]), "SIM DROPOUT");
+    if (info.simLossPercent != 0)
+        snprintf(lines[lineCount++], sizeof(lines[0]), "SIM LOSS %u%%", (unsigned)info.simLossPercent);
     // PS-058: audio queued (ms) and underruns since start; "AUD OFF" if the device did not open.
     {
         struct PlatformAudioOverlay audio;

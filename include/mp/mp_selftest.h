@@ -11,6 +11,10 @@ u32 MpSelftest_Parsers(void);
 // PS-012: in-process session scenario (host + 3 clients, rejects, kick, leave, timeouts,
 // UDP flood, host BYE, host loss).
 u32 MpSelftest_Session(void);
+// PS-054: dropouts. RESUME / PLAYER_STATUS parsers and tokens; host + 2 clients with a simulated
+// signal loss on one client: 1 s and 5 s at real timing, refused tokens (wrong, replayed, other
+// save), then "20 s", mid-trade and "40 s" with every PS-054 timer scaled down 10x.
+u32 MpSelftest_Reconnect(void);
 // PS-030: PRESENCE parser fuzzing, MP_IsValidMap, seq wraparound, the receive paths
 // (stale / duplicate / foreign epoch / overflow), and an in-process host + clients scenario
 // with relay order, cached presence for a late joiner and the < 2 KB/s walking budget.

@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      10      // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045), 9 = LINK_DONE + END reason DONE (PS-051), 10 = LINK_BLOCK fast cable (PS-052).
+#define MP_PROTOCOL_VERSION      11      // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045), 9 = LINK_DONE + END reason DONE (PS-051), 10 = LINK_BLOCK fast cable (PS-052), 11 = reconnect token, RESUME, PLAYER_STATUS (PS-054).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -34,7 +34,7 @@
 #define MP_ADDRESS_MAX_LEN       15      // "255.255.255.255" (IPv4 dotted quad only in M1).
 
 #define MP_CONNECT_TIMEOUT_MS    5000    // MP_Join -> WELCOME/REJECT, and host: connect -> HELLO.
-#define MP_IDLE_TIMEOUT_MS       10000   // Nothing received from a peer for this long -> drop it.
+#define MP_IDLE_TIMEOUT_MS       6000    // Nothing received from a peer for this long -> connection lost (PS-054: was 10000; PING / keep-alive arrive every 1 s).
 #define MP_PING_INTERVAL_MS      1000
 #define MP_LEAVE_FLUSH_MS        1000    // How long MP_Leave keeps pumping to deliver BYE.
 
@@ -64,7 +64,9 @@ enum
     MP_REASON_BUILD             = 2,  // Build hash mismatch.
     MP_REASON_FULL              = 3,  // All MP_MAX_PLAYERS slots taken.
     MP_REASON_BAD_DATA          = 4,  // Malformed HELLO / player summary.
-    // 5..31 reserved for future REJECT reasons.
+    MP_REASON_RESUME_REFUSED    = 5,  // PS-054: RESUME with an unknown / expired slot, an old epoch or a wrong token.
+    MP_REASON_RESUME_MISMATCH   = 6,  // PS-054: RESUME with the right token but a different save (trainer id / name / gender).
+    // 7..31 reserved for future REJECT reasons.
     // --- Local reasons ---
     MP_REASON_TIMEOUT           = 32, // Client: no WELCOME/REJECT within MP_CONNECT_TIMEOUT_MS.
     MP_REASON_CONNECTION_LOST   = 33, // Idle timeout or transport-level disconnect.
@@ -165,6 +167,8 @@ struct MpPlayer
     bool8 isLocal;                  // TRUE for the entry describing this game instance.
     u16 pingMs;                     // Last measured round trip to this player's peer (0 = unknown / local).
     bool8 hasPresence;              // FALSE until the first PRESENCE from this player is accepted.
+    bool8 connectionLost;           // PS-054: the player's connection dropped; the host holds the slot while it
+                                    // reconnects (MP_RECONNECT_GRACE_MS). Its avatar stands idle. Never set for us.
     u8 presenceOverflow;            // Set when the step queue overflowed; PS-031 should snap. Cleared by MP_ClearPresenceOverflow.
     struct MpPlayerSummary summary;
     struct MpPresence presence;     // Latest accepted presence (for local: the last value passed to MP_SetLocalPresence).
@@ -190,6 +194,11 @@ enum
     MP_EVENT_INTERACT_RESULT,   // Our request ended. slot = target, result = MP_INTERACT_RESULT_*.
     MP_EVENT_INTERACT_CANCELLED,// The request to us is gone (requester cancelled or left, or it timed out).
                                 // slot = requester, result = MP_INTERACT_RESULT_CANCELLED / TIMEOUT.
+    // PS-054 dropouts (see "Reconnect" below)
+    MP_EVENT_RECONNECTING,      // Client: our connection to the host dropped; retrying silently. Still IN_SESSION.
+    MP_EVENT_RECONNECTED,       // Client: back in the session with the same slot. slot = our slot.
+    MP_EVENT_PLAYER_RECONNECTING, // slot's connection dropped; the host holds its slot (MpPlayer.connectionLost).
+    MP_EVENT_PLAYER_RECONNECTED,  // slot is back.
     MP_EVENT_COUNT,
 };
 
@@ -243,6 +252,10 @@ struct MpNetOverlay
     u32 rttMs;              // worst connected peer
     u32 rttVarMs;           // of that peer
     u32 lossPermille;       // worst connected peer (ENet: reliable packets, 10 s windows)
+    bool8 reconnecting;     // PS-054: client, MP_IsReconnecting()
+    bool8 simDropout;       // PS-054: a simulated dropout (selftest) is cutting the network now
+    u32 simDropoutLeftMs;   // ... for this much longer (0 = until switched off)
+    u8 simLossPercent;      // PS-054: --mp-net-loss
 };
 void MP_GetNetOverlay(struct MpNetOverlay *out);
 
@@ -331,6 +344,33 @@ const struct MpPlayer *MP_GetPlayer(u8 slot);
 u16 MP_GetPort(void);               // Port being hosted on / connected to, 0 if OFFLINE.
 // ASCII name of a reason code, for logs only (UI owns its own game-charset strings).
 const char *MP_GetReasonName(u8 reason);
+
+// ---------------------------------------------------------------------------
+// Dropouts and reconnect (PS-054, protocol.md 7.6)
+// ---------------------------------------------------------------------------
+// WELCOME gives every client a random session token. When a client's connection drops while
+// IN_SESSION (ENet timeout, idle timeout, transport disconnect - but not BYE or a kick):
+//   - the client stays IN_SESSION with its table (remote avatars stand idle), queues
+//     MP_EVENT_RECONNECTING and retries the host with RESUME(slot, epoch, token) and backoff for
+//     up to MP_RECONNECT_WINDOW_MS. Success: MP_EVENT_RECONNECTED, same slot and epoch, a new token.
+//     Failure (window over, or REJECT): DISCONNECTED(CONNECTION_LOST) as before PS-054.
+//   - the host keeps the slot, name, epoch and presence for MP_RECONNECT_GRACE_MS (connectionLost
+//     set, PLAYER_STATUS to the others, MP_EVENT_PLAYER_RECONNECTING), then frees it as before
+//     (PLAYER_LEFT(CONNECTION_LOST)).
+//   - a link activity (trade / battle) does not survive the drop: it ends exactly as if the player
+//     had left (PS-048 recovery, PS-050 journal); the journal resolves after the reconnect.
+// A short loss (about 2 s) is ridden out by ENet without any of this.
+#define MP_RECONNECT_GRACE_MS   35000   // host: how long a lost client's slot is held
+#define MP_RECONNECT_WINDOW_MS  30000   // client: how long it keeps trying
+
+// TRUE while this client is retrying the host after a dropout (state is still IN_SESSION).
+bool8 MP_IsReconnecting(void);
+
+// Dev / test: simulated network conditions for this game instance (both directions), applied to
+// every UDP datagram the transport sends or receives. --mp-net-loss <percent> drops that share
+// at random. The selftests can also cut the network completely (MpTransport_SetSimBlackout).
+// Never used unless asked for.
+void MP_SetNetSimLoss(u8 percent);
 
 // ---------------------------------------------------------------------------
 // Events

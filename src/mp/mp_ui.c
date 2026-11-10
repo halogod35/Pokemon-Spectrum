@@ -174,6 +174,8 @@ const u8 *MpUi_GetReasonText(u8 reason)
         return gText_MpReasonKicked;
     case MP_REASON_CONNECTION_LOST:
     case MP_REASON_PROTOCOL_ERROR:
+    case MP_REASON_RESUME_REFUSED:  // PS-054 (a client never shows these: it reports CONNECTION_LOST)
+    case MP_REASON_RESUME_MISMATCH:
         return gText_MpReasonLost;
     case MP_REASON_BIND_FAILED:
         return gText_MpReasonBindFailed;
@@ -209,10 +211,11 @@ static void MpUi_QueueToast(const u8 *name, const u8 *suffix)
     }
     dest = sMpToastQueue[(sMpToastHead + sMpToastCount) % MP_TOAST_QUEUE_SIZE];
     // The event's name is EOS-terminated by contract; copy at most 7 characters anyway.
-    for (i = 0; i < MP_PLAYER_NAME_SIZE - 1 && name[i] != EOS; i++)
+    // name NULL (PS-054): a notice about ourselves, the suffix is the whole text.
+    for (i = 0; name != NULL && i < MP_PLAYER_NAME_SIZE - 1 && name[i] != EOS; i++)
         dest[i] = name[i];
     dest[i] = EOS;
-    if (i == 0)
+    if (i == 0 && name != NULL)
         StringCopy(dest, gText_MpSomeone);
     StringAppend(dest, suffix);
     sMpToastCount++;
@@ -235,6 +238,19 @@ void MpUi_Update(void)
             break;
         case MP_EVENT_PLAYER_LEFT:
             MpUi_QueueToast(event.name, gText_MpToastLeft);
+            break;
+        // PS-054 dropouts: short notices only; the game goes on meanwhile.
+        case MP_EVENT_RECONNECTING:
+            MpUi_QueueToast(NULL, gText_MpToastReconnecting);
+            break;
+        case MP_EVENT_RECONNECTED:
+            MpUi_QueueToast(NULL, gText_MpToastReconnected);
+            break;
+        case MP_EVENT_PLAYER_RECONNECTING:
+            MpUi_QueueToast(event.name, gText_MpToastPlayerLost);
+            break;
+        case MP_EVENT_PLAYER_RECONNECTED:
+            MpUi_QueueToast(event.name, gText_MpToastPlayerBack);
             break;
         case MP_EVENT_INTERACT_REQUEST:     // PS-041
         case MP_EVENT_INTERACT_RESULT:
@@ -445,6 +461,8 @@ static void MpUi_PrintPlayerList(void)
             AddTextPrinterParameterized(windowId, FONT_SMALL, gText_MpPlayersHost, PLAYER_LIST_COL_TAG, y, TEXT_SKIP_DRAW, NULL);
         else if (player->isLocal)
             AddTextPrinterParameterized(windowId, FONT_SMALL, gText_MpPlayersYou, PLAYER_LIST_COL_TAG, y, TEXT_SKIP_DRAW, NULL);
+        else if (player->connectionLost) // PS-054: reconnecting, slot held
+            AddTextPrinterParameterized(windowId, FONT_SMALL, gText_MpPlayersLost, PLAYER_LIST_COL_TAG, y, TEXT_SKIP_DRAW, NULL);
     }
     AddTextPrinterParameterized(windowId, FONT_NORMAL, gText_MpPlayersHelp, 0, PLAYER_LIST_ROW_HELP, TEXT_SKIP_DRAW, NULL);
     CopyWindowToVram(windowId, COPYWIN_GFX);

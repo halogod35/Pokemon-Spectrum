@@ -31,6 +31,8 @@
 #define MP_MSG_BYE              0x07
 #define MP_MSG_PING             0x08
 #define MP_MSG_PONG             0x09
+#define MP_MSG_RESUME           0x0A    // PS-054: C -> H, instead of HELLO when reconnecting (protocol.md 6.17)
+#define MP_MSG_PLAYER_STATUS    0x0B    // PS-054: H -> C, a player's connection was lost / is back (6.18)
 #define MP_MSG_PRESENCE         0x10
 // PS-041 player interaction (protocol.md 6.11), channel 0, reliable
 #define MP_MSG_INTERACT_REQUEST     0x40    // requester -> host -> target
@@ -69,7 +71,11 @@
 #define MP_HELLO_SIZE           32
 #define MP_HELLO_PREFIX_SIZE    12      // frozen prefix: magic, protocolVersion, reserved, buildHash
 #define MP_PLAYER_ENTRY_SIZE    20
-#define MP_WELCOME_SIZE(n)      (4 + MP_PLAYER_ENTRY_SIZE * (n))
+#define MP_SESSION_TOKEN_SIZE   8       // PS-054: random reconnect token (WELCOME, RESUME)
+#define MP_WELCOME_HEAD_SIZE    (4 + MP_SESSION_TOKEN_SIZE) // slot, epoch, count, flags, token
+#define MP_WELCOME_SIZE(n)      (MP_WELCOME_HEAD_SIZE + MP_PLAYER_ENTRY_SIZE * (n))
+#define MP_RESUME_SIZE          (32 + MP_SESSION_TOKEN_SIZE) // PS-054: the HELLO layout + token
+#define MP_PLAYER_STATUS_SIZE   4       // PS-054
 #define MP_REJECT_SIZE          8
 #define MP_PLAYER_LEFT_SIZE     4
 #define MP_BYE_SIZE             4
@@ -114,7 +120,13 @@
 #define MP_PRESENCE_COORD_MAX   1023
 
 #define MP_ENTRY_FLAG_HOST      (1 << 0)
+#define MP_ENTRY_FLAG_LOST      (1 << 1)    // PS-054, WELCOME only: the player's connection is lost, its slot is held
 #define MP_BUILD_FLAG_DIRTY     (1 << 0)
+#define MP_WELCOME_FLAG_RESUMED (1 << 0)    // PS-054: the answer to a RESUME (same slot and epoch)
+
+// PLAYER_STATUS values (PS-054, protocol.md 6.18)
+#define MP_PLAYER_STATUS_ONLINE 0
+#define MP_PLAYER_STATUS_LOST   1
 
 // BYE reasons (protocol.md 6.7)
 #define MP_BYE_LEAVING          0
@@ -161,7 +173,30 @@ struct MpMsgWelcome
     u8 yourSlot;
     u8 yourEpoch;
     u8 playerCount;
+    u8 flags;                               // PS-054: MP_WELCOME_FLAG_*
+    u8 token[MP_SESSION_TOKEN_SIZE];        // PS-054: the recipient's reconnect token, never all zero
     struct MpMsgPlayerEntry players[MP_MAX_PLAYERS];
+};
+
+// RESUME (PS-054, protocol.md 6.17): HELLO's layout (frozen prefix included) with the slot and
+// epoch the client held in bytes 13 and 14, and its reconnect token appended.
+struct MpMsgResume
+{
+    u16 protocolVersion;
+    u32 buildHash;
+    u8 buildFlags;
+    u8 slot;                                // 1..3
+    u8 epoch;                               // != 0
+    struct MpPlayerSummary summary;
+    u8 token[MP_SESSION_TOKEN_SIZE];        // never all zero
+};
+
+// PLAYER_STATUS (PS-054, protocol.md 6.18)
+struct MpMsgPlayerStatus
+{
+    u8 slot;                                // 1..3 (the host's own connection is never "lost")
+    u8 epoch;                               // != 0
+    u8 status;                              // MP_PLAYER_STATUS_*
 };
 
 struct MpMsgReject
@@ -305,8 +340,16 @@ bool8 MpProto_ParseHeader(const u8 *buf, u32 len, struct MpMsgHeader *out);
 u8 MpProto_ParseHelloPrefix(const u8 *payload, u32 len, u16 *protocolVersion, u32 *buildHash);
 // Full HELLO: exactly 32 bytes, magic, valid summary.
 u8 MpProto_ParseHello(const u8 *payload, u32 len, struct MpMsgHello *out);
-// WELCOME: internal consistency of protocol.md 6.2 (all but session state).
+// WELCOME: internal consistency of protocol.md 6.2 (all but session state). PS-054: the token
+// must not be all zero; flag bits other than RESUMED are ignored (parse as 0).
 u8 MpProto_ParseWelcome(const u8 *payload, u32 len, struct MpMsgWelcome *out);
+// RESUME (PS-054, protocol.md 6.17): exactly 40 bytes, magic (the frozen prefix is checked first
+// with MpProto_ParseHelloPrefix), slot 1..3, epoch != 0, valid summary, token not all zero.
+u8 MpProto_ParseResume(const u8 *payload, u32 len, struct MpMsgResume *out);
+// PLAYER_STATUS (PS-054, 6.18): exactly 4 bytes, slot 1..3, epoch != 0, status 0..1.
+u8 MpProto_ParsePlayerStatus(const u8 *payload, u32 len, struct MpMsgPlayerStatus *out);
+// TRUE if the MP_SESSION_TOKEN_SIZE bytes at `token` are all zero (never a valid token).
+bool8 MpProto_TokenIsZero(const u8 *token);
 // REJECT: frozen layout, len >= 8 (longer is allowed for future versions).
 u8 MpProto_ParseReject(const u8 *payload, u32 len, struct MpMsgReject *out);
 // PLAYER_JOINED and PLAYER_UPDATE: one PlayerEntry, exactly 20 bytes (protocol.md 5.2).
@@ -341,6 +384,8 @@ u8 MpProto_ParsePartyData(const u8 *payload, u32 len, struct MpMsgPartyData *out
 // advertised protocol version, so --mp-fake-protocol reaches the header too).
 u16 MpProto_WriteHello(u8 *buf, u16 cap, const struct MpMsgHello *msg);
 u16 MpProto_WriteWelcome(u8 *buf, u16 cap, const struct MpMsgWelcome *msg);
+u16 MpProto_WriteResume(u8 *buf, u16 cap, const struct MpMsgResume *msg);           // PS-054
+u16 MpProto_WritePlayerStatus(u8 *buf, u16 cap, const struct MpMsgPlayerStatus *msg); // PS-054
 u16 MpProto_WriteReject(u8 *buf, u16 cap, const struct MpMsgReject *msg);
 // type = MP_MSG_PLAYER_JOINED or MP_MSG_PLAYER_UPDATE
 u16 MpProto_WritePlayerEntry(u8 *buf, u16 cap, u8 type, const struct MpMsgPlayerEntry *msg);

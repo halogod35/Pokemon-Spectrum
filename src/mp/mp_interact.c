@@ -394,8 +394,8 @@ static u8 MpHostRouteRequest(u8 from, u8 to, u8 toEpoch, u8 kind, u8 requestId, 
     else
     {
         st->lastRequestMs[from] = now ? now : 1;            // every request past the limits counts
-        if (to == from || !MpSlotLive(to, toEpoch))
-            result = MP_INTERACT_RESULT_UNAVAILABLE;        // gone / stale / ourselves
+        if (to == from || !MpSlotLive(to, toEpoch) || gMpSession->players[to].connectionLost)
+            result = MP_INTERACT_RESULT_UNAVAILABLE;        // gone / stale / ourselves / reconnecting (PS-054)
         else if (!MpSameMap(from, to))
             result = MP_INTERACT_RESULT_UNAVAILABLE;        // not on the requester's map
         else if (!MpKindIsSilent(kind))                     // PS-042: a TRAINER_CARD request is never busy
@@ -721,11 +721,13 @@ bool8 MP_SendInteractRequest(u8 targetSlot, u8 kind)
     struct MpInteractRequest *out = &s->interact.outgoing;
     u32 now;
 
-    if (s->state != MP_STATE_IN_SESSION || s->localSlot >= MP_MAX_PLAYERS)
+    if (s->state != MP_STATE_IN_SESSION || s->localSlot >= MP_MAX_PLAYERS || s->client.reconnecting) // PS-054
         return FALSE;
     if (kind == MP_INTERACT_NONE || kind >= MP_INTERACT_KIND_COUNT)
         return FALSE;
     if (targetSlot >= MP_MAX_PLAYERS || targetSlot == s->localSlot || !s->slotUsed[targetSlot])
+        return FALSE;
+    if (s->players[targetSlot].connectionLost) // PS-054: that player is reconnecting
         return FALSE;
     if (out->active)
         return FALSE;

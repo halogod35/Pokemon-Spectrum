@@ -471,3 +471,39 @@ Goal: after any crash or disconnect during a direct trade, both saves end "trade
   - The battle heap pointers dangled after `ReloadSave`. `MP_BattleOnLinkErrorRecovery` sets them to NULL, as the GBA's EWRAM reset did.
   - `InitLinkBattleVsScreen` now guards against a freed `gBattleStruct`.
   - `WriteSaveBlock1Sector` (the link battle / blender / record mixing save) never reached the disk on PC. It now calls `Platform_StoreSaveFile`.
+
+## Dropouts and reconnect (PS-054)
+
+Contract: protocol.md 7.6 (rules), 6.17 `RESUME`, 6.18 `PLAYER_STATUS`, 7.3 (timers).
+
+- **State.** A client that loses the host stays `MP_STATE_IN_SESSION`; `MP_IsReconnecting()` says it
+  is retrying. So the game, the avatars (they stand idle: no presence arrives) and the menus carry
+  on unchanged, and nothing that checks `MP_IsActive()` sees a gap. While reconnecting, the session
+  sends nothing, and `MP_SendInteractRequest` / `MP_LinkJoin` return FALSE.
+- **Host.** A lost slot keeps its `struct MpPlayer` (name, epoch, presence) with
+  `connectionLost = TRUE` and `slotPeer = MP_PEER_NONE` (mp_server.c `MpServerLosePlayer`). Every
+  path that sends to a slot already tolerated `MP_PEER_NONE`. `MpServer_Update` frees it after
+  `gMpNetTiming.graceMs`.
+- **Client.** `mp_client.c`: `MpClientConnectionLost` → backoff loop in `MpClient_Update` →
+  `MpTransport_Reconnect` (same ENet host and socket, peer 0 reset and re-dialled) → `RESUME` on
+  CONNECT → `MpClientHandleResumed` merges the WELCOME table.
+- **Link activity.** A loss ends it as a leave does: host `MpLink_HostOnSlotLeft` (group END(LOST),
+  trade-commit abort, the decision ring kept), client `MpLink_OnSessionEnd` (cable lost → the game's
+  CB2_LinkError → PS-048 recovery; commit IN_DOUBT; PS-050 journal kept and resolved by
+  `MpTrade_JournalUpdate` once `MP_IsActive()` and the partner is back).
+- **Events / UI.** `MP_EVENT_RECONNECTING`, `_RECONNECTED`, `_PLAYER_RECONNECTING`,
+  `_PLAYER_RECONNECTED` → toasts "Reconnecting...", "Reconnected!", "NAME lost signal...",
+  "NAME reconnected." (mp_ui.c). The PLAYERS list tags a held slot "LOST". The F3 overlay shows
+  "NET RECONNECTING".
+- **Timers.** All in `gMpNetTiming` (mp_session_internal.h); `MpNetTiming_Set(divisor)` scales them
+  for the selftest (`MpNetTiming_Set(10)`: a "40 s" dropout takes 4 s).
+- **Token.** 8 random bytes per WELCOME (`MpSession_NewToken`: splitmix64 seeded from the clocks,
+  addresses and `/dev/urandom` where it exists). Single use: the answer to a RESUME carries a new
+  one. Not cryptographic; it binds a reconnect to the slot holder for friends-over-IP (AD-9), and
+  the host also checks the save's identity (trainer id, name, gender).
+- **Simulated network conditions (test tool).** `mp_transport.c` drops datagrams per instance in
+  both directions: received ones through ENet's `intercept` callback, sent ones through a
+  `sendFilter` hook. **The hook is a local patch to the vendored ENet** (`libs/enet`: a field in
+  `ENetHost`, its NULL init in `host.c`, and the check before `enet_socket_send` in `protocol.c`,
+  all marked "Pokemon Spectrum (PS-054)"); re-apply it if ENet is updated. Used by the selftest and
+  the dev flag `--mp-net-loss` and the selftest dropouts (dev-harness.md).

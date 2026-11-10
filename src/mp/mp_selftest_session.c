@@ -125,6 +125,9 @@ static void FixtureMsg(u8 which, union AnyMsg *msg)
         msg->welcome.yourSlot = 2;
         msg->welcome.yourEpoch = 5;
         msg->welcome.playerCount = 3;
+        msg->welcome.flags = MP_WELCOME_FLAG_RESUMED; // PS-054
+        memcpy(msg->welcome.token, "\x01\x23\x45\x67\x89\xAB\xCD\xEF", MP_SESSION_TOKEN_SIZE);
+        msg->welcome.players[1].entryFlags = MP_ENTRY_FLAG_LOST; // PS-054: slot 1 held for a reconnect
         msg->welcome.players[0].slot = 0;
         msg->welcome.players[0].epoch = 1;
         msg->welcome.players[0].entryFlags = MP_ENTRY_FLAG_HOST;
@@ -201,18 +204,30 @@ static void TestTargeted(const u8 *helloPayload, const u8 *welcomePayload, u32 w
     // WELCOME consistency (fixture: yourSlot 2, epoch 5, entries slot 0/1/2)
     T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, 2, 0) != MP_PARSE_OK, "WELCOME N = 0");
     T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, 2, 5) != MP_PARSE_OK, "WELCOME N = 5");
-    T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, 4 + 20 * 1, 2) == MP_PARSE_ERR_BAD_FIELD, "WELCOME duplicate slots");
+    T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, MP_WELCOME_HEAD_SIZE + 20 * 1, 2) == MP_PARSE_ERR_BAD_FIELD, "WELCOME duplicate slots");
     T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, 0, 3) == MP_PARSE_ERR_BAD_FIELD, "WELCOME yourSlot missing");
     T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, 0, 0) == MP_PARSE_ERR_BAD_FIELD, "WELCOME yourSlot 0");
     T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, 1, 6) == MP_PARSE_ERR_BAD_FIELD, "WELCOME yourEpoch mismatch");
     memcpy(buf, welcomePayload, welcomeLen);
-    buf[4] = 3;     // entry 0: slot 0 -> 3
-    buf[4 + 2] = 0; // and drop its host flag: now there is no slot 0
+    buf[MP_WELCOME_HEAD_SIZE] = 3;     // entry 0: slot 0 -> 3
+    buf[MP_WELCOME_HEAD_SIZE + 2] = 0; // and drop its host flag: now there is no slot 0
     {
         union AnyMsg out;
         T_CHECK(MpProto_ParseWelcome(buf, welcomeLen, &out.welcome) == MP_PARSE_ERR_BAD_FIELD, "WELCOME without slot 0");
     }
-    T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, 4 + 20 * 1 + 4, MP_EOS) == MP_PARSE_ERR_BAD_SUMMARY, "WELCOME entry with empty name");
+    T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, MP_WELCOME_HEAD_SIZE + 20 * 1 + 4, MP_EOS) == MP_PARSE_ERR_BAD_SUMMARY, "WELCOME entry with empty name");
+    // PS-054: token, flags, LOST entry flag
+    memcpy(buf, welcomePayload, welcomeLen);
+    memset(&buf[4], 0, MP_SESSION_TOKEN_SIZE);
+    {
+        union AnyMsg out;
+        T_CHECK(MpProto_ParseWelcome(buf, welcomeLen, &out.welcome) == MP_PARSE_ERR_BAD_FIELD, "WELCOME with a zero token");
+        T_CHECK(MpProto_ParseWelcome(welcomePayload, welcomeLen, &out.welcome) == MP_PARSE_OK
+             && (out.welcome.flags & MP_WELCOME_FLAG_RESUMED) && (out.welcome.players[1].entryFlags & MP_ENTRY_FLAG_LOST)
+             && !(out.welcome.players[2].entryFlags & MP_ENTRY_FLAG_LOST), "WELCOME RESUMED flag and LOST entry flag");
+    }
+    T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, 3, 0xFE) == MP_PARSE_OK, "WELCOME reserved flag bits ignored");
+    T_CHECK(ParseWithByte(P_WELCOME, welcomePayload, welcomeLen, MP_WELCOME_HEAD_SIZE + 2, MP_ENTRY_FLAG_HOST | MP_ENTRY_FLAG_LOST) == MP_PARSE_ERR_BAD_FIELD, "WELCOME host entry flagged LOST");
 
     // PlayerEntry / PLAYER_LEFT fields
     T_CHECK(ParseWithByte(P_ENTRY, entryPayload, MP_PLAYER_ENTRY_SIZE, 2, MP_ENTRY_FLAG_HOST) == MP_PARSE_ERR_BAD_FIELD, "ENTRY host flag on slot 1");
@@ -368,6 +383,8 @@ struct EventCounts
     u8 left;
     u8 updated;
     u8 disconnected;
+    u8 reconnecting;        // PS-054: MP_EVENT_RECONNECTING
+    u8 playerReconnecting;  // PS-054: MP_EVENT_PLAYER_RECONNECTING
     u8 lastFailReason;
     u8 lastLeftReason;
     u8 lastDisconnectReason;
@@ -438,6 +455,8 @@ static void DrainEvents(u8 instance)
         case MP_EVENT_PLAYER_LEFT:     c->left++; c->lastLeftReason = ev.reason; break;
         case MP_EVENT_PLAYER_UPDATED:  c->updated++; break;
         case MP_EVENT_DISCONNECTED:    c->disconnected++; c->lastDisconnectReason = ev.reason; break;
+        case MP_EVENT_RECONNECTING:    c->reconnecting++; break;
+        case MP_EVENT_PLAYER_RECONNECTING: c->playerReconnecting++; break;
         }
     }
 }
@@ -806,20 +825,26 @@ u32 MpSelftest_Session(void)
     T_CHECK(sEvents[I_HOST].updated == 1 && sEvents[I_C2].updated == 1 && sEvents[I_C1].updated == 0, "PLAYER_UPDATED on host and client 2 only");
     Report("PLAYER_UPDATE is relayed", failuresBefore);
 
-    // --- silent client death (kill -9): PLAYER_LEFT within 15 s ---
+    // --- silent client death (kill -9): slot held for a reconnect, then PLAYER_LEFT ---
+    // PS-054: the host holds a lost client's slot for MP_RECONNECT_GRACE_MS (35 s). This case
+    // runs with the grace scaled down 10x (3.5 s); detection itself is the game's (ENet 4-7 s).
     failuresBefore = sFail;
     memset(sEvents, 0, sizeof(sEvents));
+    MpNetTiming_Set(10);
     Sel(I_C2);
     MpTransport_Close();          // nothing is sent, like a killed process
     MpSession_ResetInstance(I_C2);
     start = MpTransport_GetTimeMs();
     T_CHECK(WaitFor(CondCount, I_HOST, 2, 16000), "host drops the dead client");
     elapsed = MpTransport_GetTimeMs() - start;
-    T_CHECK(elapsed <= 15000, "dead client dropped within 15 s");
+    T_CHECK(elapsed <= 15000, "dead client dropped within 15 s (with the grace scaled to 3.5 s)");
+    T_CHECK(sEvents[I_HOST].playerReconnecting == 1, "host held the slot before dropping it");
     T_CHECK(WaitFor(CondCount, I_C1, 2, 2000), "client 1 sees the dead client leave");
+    T_CHECK(sEvents[I_C1].playerReconnecting == 1, "client 1 saw the slot held first (PLAYER_STATUS)");
     T_CHECK(sEvents[I_C1].lastLeftReason == MP_REASON_CONNECTION_LOST, "client 1: PLAYER_LEFT(CONNECTION_LOST)");
-    MP_LOG("selftest: session: dead client dropped after %u ms\n", (unsigned)elapsed);
-    Report("silent client death gives PLAYER_LEFT(CONNECTION_LOST) within 15 s", failuresBefore);
+    MpNetTiming_Set(1);
+    MP_LOG("selftest: session: dead client dropped after %u ms (grace 3.5 s)\n", (unsigned)elapsed);
+    Report("silent client death: slot held, then PLAYER_LEFT(CONNECTION_LOST)", failuresBefore);
 
     // --- 100 KB random UDP at the host port (AD-9) ---
     failuresBefore = sFail;
@@ -855,20 +880,24 @@ u32 MpSelftest_Session(void)
     T_CHECK(JoinAs(I_C1, "Cli1"), "client 1 joins again");
     T_CHECK(WaitFor(CondInSession, I_C1, 0, 5000), "client 1 in session again");
     CheckSameTable(sOneClient, 1, 2);
+    // PS-054: the client first tries to reconnect for MP_RECONNECT_WINDOW_MS (scaled here to 3 s).
+    MpNetTiming_Set(10);
     Sel(I_HOST);
     MpTransport_Close();
     MpSession_ResetInstance(I_HOST);
     start = MpTransport_GetTimeMs();
     T_CHECK(WaitFor(CondNotInSession, I_C1, 0, 16000), "client 1 notices the dead host");
     elapsed = MpTransport_GetTimeMs() - start;
-    T_CHECK(elapsed <= 15000, "dead host noticed within 15 s");
+    T_CHECK(elapsed <= 15000, "dead host noticed within 15 s (with the reconnect window scaled to 3 s)");
     Sel(I_C1);
     T_CHECK(MP_GetState() == MP_STATE_ERROR && MP_GetErrorReason() == MP_REASON_CONNECTION_LOST, "client 1 ERROR(CONNECTION_LOST)");
     DrainEvents(I_C1);
+    T_CHECK(sEvents[I_C1].reconnecting == 1, "client 1 tried to reconnect first");
     T_CHECK(sEvents[I_C1].disconnected == 1, "client 1: DISCONNECTED");
     MP_Leave();
-    MP_LOG("selftest: session: dead host noticed after %u ms\n", (unsigned)elapsed);
-    Report("silent host death gives DISCONNECTED(CONNECTION_LOST) within 15 s", failuresBefore);
+    MpNetTiming_Set(1);
+    MP_LOG("selftest: session: dead host given up after %u ms (window 3 s)\n", (unsigned)elapsed);
+    Report("silent host death: reconnect tries, then DISCONNECTED(CONNECTION_LOST)", failuresBefore);
 
     // --- BUG-001: PING/PONG before WELCOME is ignored, not counted as malformed ---
     // The raw instance plays a host that sends channel-1 PINGs before its WELCOME.
@@ -901,6 +930,7 @@ u32 MpSelftest_Session(void)
         memset(&welcome, 0, sizeof(welcome));
         welcome.yourSlot = 1;
         welcome.yourEpoch = 2;
+        memset(welcome.token, 0x77, sizeof(welcome.token)); // PS-054: any non-zero token
         welcome.playerCount = 2;
         welcome.players[0].slot = 0;
         welcome.players[0].epoch = 1;

@@ -367,6 +367,12 @@ extern const u8 gText_MpLeftGame[];
 // MP: join/leave notices and the PLAYERS list (PS-033)
 extern const u8 gText_MpToastJoined[];
 extern const u8 gText_MpToastLeft[];
+// MP: dropouts (PS-054)
+extern const u8 gText_MpToastReconnecting[];
+extern const u8 gText_MpToastReconnected[];
+extern const u8 gText_MpToastPlayerLost[];
+extern const u8 gText_MpToastPlayerBack[];
+extern const u8 gText_MpPlayersLost[];
 extern const u8 gText_MpSomeone[];
 extern const u8 gText_MenuMpPlayers[];
 extern const u8 gText_MpPlayersTitle[];

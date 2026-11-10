@@ -11,18 +11,151 @@
 #include "mp/mp_transport.h"
 
 #define MP_ENET_MAX_WAITING_DATA    16384
-#define MP_ENET_TIMEOUT_MIN_MS      5000
-#define MP_ENET_TIMEOUT_MAX_MS      10000
 
 struct MpTransportContext
 {
     ENetHost *host;
     bool8 isServer;
+    // PS-054 simulated network conditions (kept across Close / Listen / Connect)
+    u16 simLossPermille;
+    bool8 simBlackout;
+    bool8 simBlackoutTimed;
+    u32 simBlackoutUntilMs;
+    u32 simRng;
+    u32 simDropped;         // datagrams dropped (both directions) since the instance was set up
 };
 
 static struct MpTransportContext sContexts[MP_TRANSPORT_INSTANCE_COUNT];
 static struct MpTransportContext *sCtx = &sContexts[0];
 static bool8 sEnetInitialized = FALSE;
+
+// PS-054: ENet peer timeouts (MpTransport_SetPeerTimeouts). A peer whose reliable data stays
+// unacknowledged for timeoutMin (after ENet's retries) or timeoutMax is dropped.
+static u32 sPeerTimeoutMinMs = MP_TRANSPORT_TIMEOUT_MIN_MS;
+static u32 sPeerTimeoutMaxMs = MP_TRANSPORT_TIMEOUT_MAX_MS;
+static u32 sPeerPingMs = MP_TRANSPORT_PING_MS;
+
+void MpTransport_SetPeerTimeouts(u32 minMs, u32 maxMs, u32 pingMs)
+{
+    sPeerTimeoutMinMs = minMs ? minMs : MP_TRANSPORT_TIMEOUT_MIN_MS;
+    sPeerTimeoutMaxMs = (maxMs >= sPeerTimeoutMinMs) ? maxMs : sPeerTimeoutMinMs;
+    sPeerPingMs = pingMs ? pingMs : MP_TRANSPORT_PING_MS;
+}
+
+static void MpApplyPeerTimeouts(ENetPeer *peer)
+{
+    enet_peer_timeout(peer, 0, sPeerTimeoutMinMs, sPeerTimeoutMaxMs);
+    enet_peer_ping_interval(peer, sPeerPingMs);
+}
+
+// ---------------------------------------------------------------------------
+// PS-054 simulated network conditions (ENet intercept + the sendFilter hook)
+// ---------------------------------------------------------------------------
+
+static struct MpTransportContext *MpContextOfHost(const ENetHost *host)
+{
+    u32 i;
+
+    for (i = 0; i < MP_TRANSPORT_INSTANCE_COUNT; i++)
+    {
+        if (sContexts[i].host == host)
+            return &sContexts[i];
+    }
+    return NULL;
+}
+
+static void MpSimExpire(struct MpTransportContext *ctx, u32 now)
+{
+    if (ctx->simBlackout && ctx->simBlackoutTimed && (s32)(now - ctx->simBlackoutUntilMs) >= 0)
+    {
+        ctx->simBlackout = FALSE;
+        MP_LOG("net sim: instance %u: simulated dropout over, network back\n", (unsigned)(ctx - sContexts));
+    }
+}
+
+// TRUE if this datagram is lost (blackout, or the random loss share).
+static bool8 MpSimDrops(struct MpTransportContext *ctx)
+{
+    if (ctx == NULL)
+        return FALSE;
+    MpSimExpire(ctx, (u32)enet_time_get());
+    if (ctx->simBlackout)
+    {
+        ctx->simDropped++;
+        return TRUE;
+    }
+    if (ctx->simLossPermille == 0)
+        return FALSE;
+    ctx->simRng ^= ctx->simRng << 13;
+    ctx->simRng ^= ctx->simRng >> 17;
+    ctx->simRng ^= ctx->simRng << 5;
+    if ((ctx->simRng % 1000) < ctx->simLossPermille)
+    {
+        ctx->simDropped++;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static int ENET_CALLBACK MpSimIntercept(ENetHost *host, ENetEvent *event)
+{
+    (void)event;
+    return MpSimDrops(MpContextOfHost(host)) ? 1 : 0;
+}
+
+static int ENET_CALLBACK MpSimSendFilter(ENetHost *host, const ENetAddress *address)
+{
+    (void)address;
+    return MpSimDrops(MpContextOfHost(host)) ? 1 : 0;
+}
+
+void MpTransport_SetSimLoss(u16 permille)
+{
+    sCtx->simLossPermille = (permille > 1000) ? 1000 : permille;
+    if (sCtx->simRng == 0)
+        sCtx->simRng = 0x9E3779B9u ^ (u32)(sCtx - sContexts);
+}
+
+u16 MpTransport_GetSimLoss(void)
+{
+    return sCtx->simLossPermille;
+}
+
+void MpTransport_SetSimBlackout(bool8 on, u32 durationMs)
+{
+    u32 now = (u32)enet_time_get();
+
+    if (on)
+    {
+        sCtx->simBlackout = TRUE;
+        sCtx->simBlackoutTimed = (durationMs != 0);
+        sCtx->simBlackoutUntilMs = now + durationMs;
+        if (durationMs != 0)
+            MP_LOG("net sim: instance %u: simulated dropout for %u ms (nothing sent or received)\n", (unsigned)(sCtx - sContexts), (unsigned)durationMs);
+        else
+            MP_LOG("net sim: instance %u: simulated dropout until it is switched off\n", (unsigned)(sCtx - sContexts));
+    }
+    else if (sCtx->simBlackout)
+    {
+        sCtx->simBlackout = FALSE;
+        MP_LOG("net sim: instance %u: simulated dropout switched off, network back\n", (unsigned)(sCtx - sContexts));
+    }
+}
+
+bool8 MpTransport_GetSimBlackout(u32 *leftMs)
+{
+    u32 now = (u32)enet_time_get();
+
+    MpSimExpire(sCtx, now);
+    if (leftMs != NULL)
+        *leftMs = (sCtx->simBlackout && sCtx->simBlackoutTimed) ? (u32)(sCtx->simBlackoutUntilMs - now) : 0;
+    return sCtx->simBlackout;
+}
+
+u32 MpTransport_GetSimDropped(void)
+{
+    return sCtx->simDropped;
+}
 
 bool8 MpTransport_Init(void)
 {
@@ -123,6 +256,10 @@ static void MpApplyHostLimits(ENetHost *host)
     // ENet's default maximumPacketSize is 32 MB: a memory DoS (protocol.md section 1).
     host->maximumPacketSize = MP_MAX_PACKET_SIZE;
     host->maximumWaitingData = MP_ENET_MAX_WAITING_DATA;
+    // PS-054: simulated network conditions. Both hooks do nothing unless a test or the
+    // --mp-net-loss or a selftest switched them on for this instance.
+    host->intercept = MpSimIntercept;
+    host->sendFilter = MpSimSendFilter;
 }
 
 bool8 MpTransport_Listen(u16 port, u8 maxPeers)
@@ -236,6 +373,35 @@ bool8 MpTransport_Connect(const char *ipv4, u16 port)
     return TRUE;
 }
 
+bool8 MpTransport_Reconnect(const char *ipv4, u16 port)
+{
+    ENetAddress address;
+    ENetPeer *peer;
+    size_t i;
+
+    if (sCtx->host == NULL || sCtx->isServer || port == 0 || !MpTransport_IsValidIPv4(ipv4))
+        return FALSE;
+    memset(&address, 0, sizeof(address));
+    if (enet_address_set_host_ip(&address, ipv4) != 0)
+        return FALSE;
+    address.port = port;
+    // Forget the old connection without a word (the host has dropped it, or will).
+    for (i = 0; i < sCtx->host->peerCount; i++)
+    {
+        if (sCtx->host->peers[i].state != ENET_PEER_STATE_DISCONNECTED)
+            enet_peer_reset(&sCtx->host->peers[i]);
+    }
+    peer = enet_host_connect(sCtx->host, &address, MP_CHANNEL_COUNT, MP_CONNECT_MAGIC);
+    if (peer == NULL)
+    {
+        MP_LOG("ERROR: enet_host_connect failed (reconnect)\n");
+        return FALSE;
+    }
+    MpApplyPeerTimeouts(peer);
+    MP_DLOG("transport: reconnecting to %s:%u\n", ipv4, (unsigned)port);
+    return TRUE;
+}
+
 // Returns the peer for `id`, or NULL if there is no host or `id` is out of range.
 static ENetPeer *MpGetPeer(u8 id)
 {
@@ -305,7 +471,7 @@ static void MpDispatchEvent(ENetEvent *ev, MpTransportCallback callback)
             enet_peer_reset(ev->peer);
             return;
         }
-        enet_peer_timeout(ev->peer, 0, MP_ENET_TIMEOUT_MIN_MS, MP_ENET_TIMEOUT_MAX_MS);
+        MpApplyPeerTimeouts(ev->peer);
         MP_DLOG("transport: peer %u connected\n", (unsigned)peerId);
         out.type = MP_TRANSPORT_EV_CONNECT;
         if (callback != NULL)

@@ -2,7 +2,10 @@
 // queue, timers and the dev-harness auto-start (design.md sections 3, 5, 6).
 // Host-role logic is in mp_server.c, client-role logic in mp_client.c.
 
+#include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "mp/mp.h"
 #include "mp/mp_internal.h"
 #include "mp/mp_protocol.h"
@@ -24,6 +27,89 @@ static u8 sAutoStartMode = MP_AUTOSTART_NONE;
 static char sAutoStartIp[MP_ADDRESS_MAX_LEN + 1];
 static u16 sAutoStartPort = 0;
 static bool8 sAutoStartArmed = FALSE;   // set by MP_OnContinueSavedGame
+
+// PS-054: dropout / reconnect timers (mp_session_internal.h). MpNetTiming_Set(1) at MP_Init.
+struct MpNetTiming gMpNetTiming =
+{
+    .enetTimeoutMinMs = MP_TRANSPORT_TIMEOUT_MIN_MS,
+    .enetTimeoutMaxMs = MP_TRANSPORT_TIMEOUT_MAX_MS,
+    .enetPingMs = MP_TRANSPORT_PING_MS,
+    .idleTimeoutMs = MP_IDLE_TIMEOUT_MS,
+    .graceMs = MP_RECONNECT_GRACE_MS,
+    .retryWindowMs = MP_RECONNECT_WINDOW_MS,
+    .retryFirstMs = 250,
+    .retryMaxMs = 2000,
+    .attemptMs = 3000,
+};
+
+void MpNetTiming_Set(u32 divisor)
+{
+    struct MpNetTiming *t = &gMpNetTiming;
+
+    if (divisor == 0)
+        divisor = 1;
+    t->enetTimeoutMinMs = MP_TRANSPORT_TIMEOUT_MIN_MS / divisor;
+    t->enetTimeoutMaxMs = MP_TRANSPORT_TIMEOUT_MAX_MS / divisor;
+    t->enetPingMs = MP_TRANSPORT_PING_MS / divisor;
+    t->idleTimeoutMs = MP_IDLE_TIMEOUT_MS / divisor;
+    if (t->idleTimeoutMs < 2500)
+        t->idleTimeoutMs = 2500; // above the 1 s PING / keep-alive, which are not scaled
+    t->graceMs = MP_RECONNECT_GRACE_MS / divisor;
+    t->retryWindowMs = MP_RECONNECT_WINDOW_MS / divisor;
+    t->retryFirstMs = 250 / divisor;
+    t->retryMaxMs = 2000 / divisor;
+    t->attemptMs = 3000 / divisor;
+    MpTransport_SetPeerTimeouts(t->enetTimeoutMinMs, t->enetTimeoutMaxMs, t->enetPingMs);
+}
+
+// splitmix64 (public domain, Vigna)
+static u64 MpSplitMix64(u64 *state)
+{
+    u64 z = (*state += 0x9E3779B97F4A7C15ull);
+
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    return z ^ (z >> 31);
+}
+
+void MpSession_NewToken(u8 *token)
+{
+    static u64 sState = 0;
+    static u32 sCount = 0;
+    u64 x;
+    u32 i;
+
+    if (sState == 0)
+    {
+        // Seed once: wall clock, CPU clock, the ENet clock, and addresses (ASLR). Where the OS has
+        // /dev/urandom, mix that in too. Not cryptographic: friends over direct IP (AD-9), and a
+        // token is only useful for the ~35 s a slot is held, from the client's own address range.
+        sState = (u64)time(NULL) ^ ((u64)clock() << 32) ^ ((u64)MpTransport_GetTimeMs() << 16)
+               ^ (u64)(uintptr_t)&x ^ ((u64)(uintptr_t)sSessions << 7);
+#ifndef _WIN32
+        {
+            FILE *f = fopen("/dev/urandom", "rb");
+            u64 r = 0;
+
+            if (f != NULL)
+            {
+                if (fread(&r, 1, sizeof(r), f) == sizeof(r))
+                    sState ^= r;
+                fclose(f);
+            }
+        }
+#endif
+        if (sState == 0)
+            sState = 0x5053504D5053504Dull;
+    }
+    sState ^= ((u64)MpTransport_GetTimeMs() << 20) ^ (u64)(++sCount);
+    do
+    {
+        x = MpSplitMix64(&sState);
+        for (i = 0; i < MP_SESSION_TOKEN_SIZE; i++)
+            token[i] = (u8)(x >> (8 * (i % 8)));
+    } while (MpProto_TokenIsZero(token));
+}
 
 
 // ---------------------------------------------------------------------------
@@ -166,6 +252,8 @@ void MpSession_ClearSlot(u8 slot)
     memset(&gMpSession->players[slot], 0, sizeof(gMpSession->players[slot]));
     gMpSession->slotUsed[slot] = FALSE;
     gMpSession->slotPeer[slot] = MP_PEER_NONE;
+    memset(gMpSession->slotToken[slot], 0, sizeof(gMpSession->slotToken[slot])); // PS-054
+    gMpSession->slotLostMs[slot] = 0;
     MpPresence_ResetSlot(slot);
 }
 
@@ -230,6 +318,9 @@ void MpSession_Fail(u8 event, u8 reason)
     s->state = MP_STATE_ERROR;
     s->errorReason = reason;
     s->localSlot = MP_SLOT_NONE;
+    s->client.reconnecting = FALSE; // PS-054: gave up (or never was)
+    s->client.attemptActive = FALSE;
+    memset(s->client.token, 0, sizeof(s->client.token));
     MpLink_OnSessionEnd(); // PS-046: before the table is cleared
     MpClearTable();
     MpSession_QueueEvent(event, MP_SLOT_NONE, reason);
@@ -297,6 +388,7 @@ void MP_Init(void)
     for (i = 0; i < MP_SESSION_INSTANCE_COUNT; i++)
         MpSession_ResetInstance((u8)i);
     gMpSession = &sSessions[0];
+    MpNetTiming_Set(1); // PS-054
     // No ENet call and no socket here: the transport initialises lazily on the
     // first Listen/Connect, so single-player never touches the network.
     MpBuild_Init();
@@ -362,7 +454,7 @@ void MP_Update(void)
         MpServer_Update(now);
     else
         MpClient_Update(now);
-    if (s->state == MP_STATE_IN_SESSION && MpTransport_IsOpen())
+    if (s->state == MP_STATE_IN_SESSION && MpTransport_IsOpen() && !s->client.reconnecting) // PS-054: not while reconnecting
     {
         MpPresence_Update(now);
         MpInteract_Update(now); // PS-041 request timeouts
@@ -491,6 +583,8 @@ bool8 MP_Join(const char *ip, u16 port)
         MpSetError(MP_REASON_TRANSPORT_FAILED);
         return FALSE;
     }
+    strncpy(s->hostIp, ip, sizeof(s->hostIp) - 1); // PS-054: for RESUME (validated above, <= 15 chars)
+    s->hostIp[sizeof(s->hostIp) - 1] = '\0';
     s->state = MP_STATE_CONNECTING;
     s->client.joinMs = MpTransport_GetTimeMs();
     s->client.lastRecvMs = s->client.joinMs;
@@ -573,6 +667,19 @@ bool8 MP_IsActive(void)
     return gMpSession->state == MP_STATE_IN_SESSION;
 }
 
+bool8 MP_IsReconnecting(void)
+{
+    return gMpSession->state == MP_STATE_IN_SESSION && !gMpSession->isHost && gMpSession->client.reconnecting;
+}
+
+// PS-054 dev tools (the game's instance; sdl2.c)
+void MP_SetNetSimLoss(u8 percent)
+{
+    MpTransport_SetSimLoss((u16)((percent > 100 ? 100 : percent) * 10));
+    if (percent != 0)
+        MP_LOG("net sim: dropping %u%% of all datagrams at random (--mp-net-loss)\n", (unsigned)(percent > 100 ? 100 : percent));
+}
+
 bool8 MP_IsHost(void)
 {
     return gMpSession->state == MP_STATE_IN_SESSION && gMpSession->isHost;
@@ -619,6 +726,8 @@ const char *MP_GetReasonName(u8 reason)
     case MP_REASON_BUILD:            return "BUILD";
     case MP_REASON_FULL:             return "FULL";
     case MP_REASON_BAD_DATA:         return "BAD_DATA";
+    case MP_REASON_RESUME_REFUSED:   return "RESUME_REFUSED";
+    case MP_REASON_RESUME_MISMATCH:  return "RESUME_MISMATCH";
     case MP_REASON_TIMEOUT:          return "TIMEOUT";
     case MP_REASON_CONNECTION_LOST:  return "CONNECTION_LOST";
     case MP_REASON_HOST_CLOSED:      return "HOST_CLOSED";

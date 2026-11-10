@@ -20,6 +20,8 @@ static void MpServerEntryForSlot(u8 slot, struct MpMsgPlayerEntry *entry)
     entry->slot = slot;
     entry->epoch = gMpSession->players[slot].epoch;
     entry->entryFlags = (slot == MP_HOST_SLOT) ? MP_ENTRY_FLAG_HOST : 0;
+    if (slot != MP_HOST_SLOT && gMpSession->players[slot].connectionLost)
+        entry->entryFlags |= MP_ENTRY_FLAG_LOST; // PS-054 (only WELCOME carries it to the client)
     entry->summary = gMpSession->players[slot].summary;
 }
 
@@ -56,18 +58,15 @@ static void MpServerResetPeer(u8 peer)
     memset(p, 0, sizeof(*p));
 }
 
-// Removes the peer's player from the table and tells everyone else.
-static void MpServerRemovePlayer(u8 peer, u8 reason)
+// Frees `slot` (a client's) and tells everyone else (not `exceptPeer`).
+static void MpServerRemoveSlot(u8 slot, u8 reason, u8 exceptPeer)
 {
-    struct MpHostPeer *p = MpServerPeer(peer);
     struct MpMsgPlayerLeft left;
     char name[MP_PLAYER_NAME_SIZE + 1];
     u16 len;
-    u8 slot;
 
-    if (p == NULL || p->state != MP_HOST_PEER_PLAYER || p->slot >= MP_MAX_PLAYERS)
+    if (slot == MP_HOST_SLOT || slot >= MP_MAX_PLAYERS || !gMpSession->slotUsed[slot])
         return;
-    slot = p->slot;
     MP_NameToAscii(gMpSession->players[slot].summary.name, name, sizeof(name));
     MP_SLOG("player %s (slot %u) left: %s\n", name, (unsigned)slot, MP_GetReasonName(reason));
 
@@ -77,13 +76,67 @@ static void MpServerRemovePlayer(u8 peer, u8 reason)
     MpInteract_OnSlotLeaving(slot); // PS-041: cancel / fail its requests while it is still in the table
     MpSession_QueueEvent(MP_EVENT_PLAYER_LEFT, slot, reason); // copies the name first
     MpSession_ClearSlot(slot);
-    p->slot = MP_SLOT_NONE;
-    p->state = MP_HOST_PEER_NONE;
     MpLink_HostOnSlotLeft(slot); // PS-046: its link group ends for the others
 
     len = MpProto_WritePlayerLeft(sServerBuf, sizeof(sServerBuf), &left);
-    MpServerBroadcast(sServerBuf, len, MP_CHANNEL_CONTROL, TRUE, peer);
+    MpServerBroadcast(sServerBuf, len, MP_CHANNEL_CONTROL, TRUE, exceptPeer);
     MpSession_LogTable();
+}
+
+// Removes the peer's player from the table and tells everyone else.
+static void MpServerRemovePlayer(u8 peer, u8 reason)
+{
+    struct MpHostPeer *p = MpServerPeer(peer);
+    u8 slot;
+
+    if (p == NULL || p->state != MP_HOST_PEER_PLAYER || p->slot >= MP_MAX_PLAYERS)
+        return;
+    slot = p->slot;
+    p->slot = MP_SLOT_NONE;
+    p->state = MP_HOST_PEER_NONE;
+    MpServerRemoveSlot(slot, reason, peer);
+}
+
+// PS-054: PLAYER_STATUS about `slot` to every player peer except `exceptPeer`.
+static void MpServerBroadcastStatus(u8 slot, u8 status, u8 exceptPeer)
+{
+    struct MpMsgPlayerStatus msg;
+    u16 len;
+
+    msg.slot = slot;
+    msg.epoch = gMpSession->players[slot].epoch;
+    msg.status = status;
+    len = MpProto_WritePlayerStatus(sServerBuf, sizeof(sServerBuf), &msg);
+    MpServerBroadcast(sServerBuf, len, MP_CHANNEL_CONTROL, TRUE, exceptPeer);
+}
+
+// PS-054: the peer's connection dropped without a BYE (ENet timeout, idle timeout). Instead of
+// freeing the slot, hold it (name, epoch, presence) for gMpNetTiming.graceMs so the client can
+// come back with RESUME. What the player was doing with others ends now, exactly as if it had
+// left: its interaction requests fail and its link group ends (the partners' PS-048 recovery,
+// the trade commit's ABORT and the PS-050 journal work as before).
+static void MpServerLosePlayer(u8 peer, u32 now)
+{
+    struct MpSession *s = gMpSession;
+    struct MpHostPeer *p = MpServerPeer(peer);
+    char name[MP_PLAYER_NAME_SIZE + 1];
+    u8 slot;
+
+    if (p == NULL || p->state != MP_HOST_PEER_PLAYER || p->slot >= MP_MAX_PLAYERS)
+        return;
+    slot = p->slot;
+    MP_NameToAscii(s->players[slot].summary.name, name, sizeof(name));
+    MP_SLOG("player %s (slot %u) lost its connection; holding the slot for %u ms\n", name, (unsigned)slot, (unsigned)gMpNetTiming.graceMs);
+    MpInteract_OnSlotLeaving(slot);
+    MpLink_HostOnSlotLeft(slot);
+    s->slotPeer[slot] = MP_PEER_NONE;
+    s->players[slot].connectionLost = TRUE;
+    s->players[slot].pingMs = 0;
+    s->slotLostMs[slot] = now;
+    p->slot = MP_SLOT_NONE;
+    p->state = MP_HOST_PEER_NONE;
+    MpServerBroadcastStatus(slot, MP_PLAYER_STATUS_LOST, peer);
+    MpSession_QueueEvent(MP_EVENT_PLAYER_RECONNECTING, slot, MP_REASON_CONNECTION_LOST);
 }
 
 static void MpServerReject(u8 peer, u8 reason)
@@ -146,45 +199,171 @@ static u8 MpServerNextEpoch(void)
     return epoch;
 }
 
+// PS-054: the same save (trainer id, name, gender). Badges may change while a player is away.
+static bool8 MpServerSameIdentity(const struct MpPlayerSummary *a, const struct MpPlayerSummary *b)
+{
+    return a->trainerId == b->trainerId && a->gender == b->gender && memcmp(a->name, b->name, sizeof(a->name)) == 0;
+}
+
+// WELCOME to `peer` for its `slot`, with a fresh reconnect token (PS-054): every WELCOME
+// replaces the token, so a RESUME can be used once only.
+static void MpServerSendWelcome(u8 peer, u8 slot, u8 flags)
+{
+    struct MpSession *s = gMpSession;
+    struct MpMsgWelcome welcome;
+    u16 outLen;
+    u32 i;
+
+    MpSession_NewToken(s->slotToken[slot]);
+    memset(&welcome, 0, sizeof(welcome));
+    welcome.yourSlot = slot;
+    welcome.yourEpoch = s->players[slot].epoch;
+    welcome.flags = flags;
+    memcpy(welcome.token, s->slotToken[slot], MP_SESSION_TOKEN_SIZE);
+    for (i = 0; i < MP_MAX_PLAYERS; i++)
+    {
+        if (s->slotUsed[i])
+            MpServerEntryForSlot((u8)i, &welcome.players[welcome.playerCount++]);
+    }
+    outLen = MpProto_WriteWelcome(sServerBuf, sizeof(sServerBuf), &welcome);
+    MpSession_SendTo(peer, sServerBuf, outLen, MP_CHANNEL_CONTROL, TRUE);
+}
+
+// The checks HELLO and RESUME share (protocol.md 6.1 steps 2-4): FALSE if the peer was rejected.
+static bool8 MpServerCheckPrefix(u8 peer, const struct MpMsgHeader *hdr, const u8 *payload, u32 len)
+{
+    struct MpSession *s = gMpSession;
+    u16 protocolVersion;
+    u32 buildHash;
+
+    if (MpProto_ParseHelloPrefix(payload, len, &protocolVersion, &buildHash) != MP_PARSE_OK)
+    {
+        MpServerReject(peer, MP_REASON_BAD_DATA);
+        return FALSE;
+    }
+    if (protocolVersion != s->protocolVersion || hdr->version != (u8)(s->protocolVersion & 0xFF))
+    {
+        MP_SLOG("peer %u: protocol %u, ours %u\n", (unsigned)peer, (unsigned)protocolVersion, (unsigned)s->protocolVersion);
+        MpServerReject(peer, MP_REASON_VERSION);
+        return FALSE;
+    }
+    if (buildHash != s->buildHash)
+    {
+        MP_SLOG("peer %u: build hash 0x%08X, ours 0x%08X\n", (unsigned)peer, (unsigned)buildHash, (unsigned)s->buildHash);
+        MpServerReject(peer, MP_REASON_BUILD);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+// PS-054 (protocol.md 6.17): a client that lost its connection comes back for its slot.
+static void MpServerHandleResume(u8 peer, const struct MpMsgHeader *hdr, const u8 *payload, u32 len, u32 now)
+{
+    struct MpSession *s = gMpSession;
+    struct MpHostPeer *p = MpServerPeer(peer);
+    struct MpMsgResume resume;
+    struct MpMsgPlayerEntry entry;
+    char name[MP_PLAYER_NAME_SIZE + 1];
+    const char *why = NULL;
+    bool8 wasLost, summaryChanged;
+    u8 slot, oldPeer;
+    u16 outLen;
+
+    if (!MpServerCheckPrefix(peer, hdr, payload, len))
+        return;
+    if (MpProto_ParseResume(payload, len, &resume) != MP_PARSE_OK)
+    {
+        MpServerReject(peer, MP_REASON_BAD_DATA);
+        return;
+    }
+    slot = resume.slot; // 1..3 (parser)
+    if (!s->slotUsed[slot])
+        why = "slot is free";
+    else if (s->players[slot].epoch != resume.epoch)
+        why = "old epoch";
+    else if (MpProto_TokenIsZero(s->slotToken[slot]) || memcmp(s->slotToken[slot], resume.token, MP_SESSION_TOKEN_SIZE) != 0)
+        why = "wrong or used token";
+    if (why != NULL)
+    {
+        MP_SLOG("peer %u: RESUME for slot %u epoch %u refused: %s\n", (unsigned)peer, (unsigned)slot, (unsigned)resume.epoch, why);
+        MpServerReject(peer, MP_REASON_RESUME_REFUSED);
+        return;
+    }
+    if (!MpServerSameIdentity(&s->players[slot].summary, &resume.summary))
+    {
+        MP_SLOG("peer %u: RESUME for slot %u refused: a different save\n", (unsigned)peer, (unsigned)slot);
+        MpServerReject(peer, MP_REASON_RESUME_MISMATCH);
+        return;
+    }
+
+    oldPeer = s->slotPeer[slot];
+    wasLost = s->players[slot].connectionLost;
+    if (oldPeer != MP_PEER_NONE && oldPeer != peer)
+    {
+        // The client noticed the dead link before we did: the new connection takes over. Its
+        // link activity ended on its side when it lost us, so end it here too.
+        MP_SLOG("slot %u: RESUME takes over from stale peer %u\n", (unsigned)slot, (unsigned)oldPeer);
+        MpInteract_OnSlotLeaving(slot);
+        MpLink_HostOnSlotLeft(slot);
+        MpServerResetPeer(oldPeer);
+    }
+    s->slotPeer[slot] = peer;
+    s->players[slot].connectionLost = FALSE;
+    s->slotLostMs[slot] = 0;
+    p->state = MP_HOST_PEER_PLAYER;
+    p->slot = slot;
+    p->malformed = 0;
+    p->lastPingSentMs = now;
+    summaryChanged = memcmp(&s->players[slot].summary, &resume.summary, sizeof(resume.summary)) != 0;
+    s->players[slot].summary = resume.summary; // same identity; badges may have changed
+
+    MpServerSendWelcome(peer, slot, MP_WELCOME_FLAG_RESUMED);
+    MpPresence_SendCachedTo(peer, slot);
+    if (wasLost)
+    {
+        MpServerBroadcastStatus(slot, MP_PLAYER_STATUS_ONLINE, peer);
+        MpSession_QueueEvent(MP_EVENT_PLAYER_RECONNECTED, slot, MP_REASON_NONE);
+    }
+    if (summaryChanged)
+    {
+        MpServerEntryForSlot(slot, &entry);
+        entry.entryFlags &= MP_ENTRY_FLAG_HOST;
+        outLen = MpProto_WritePlayerEntry(sServerBuf, sizeof(sServerBuf), MP_MSG_PLAYER_UPDATE, &entry);
+        MpServerBroadcast(sServerBuf, outLen, MP_CHANNEL_CONTROL, TRUE, peer);
+        MpSession_QueueEvent(MP_EVENT_PLAYER_UPDATED, slot, MP_REASON_NONE);
+    }
+    MP_NameToAscii(resume.summary.name, name, sizeof(name));
+    MP_SLOG("player %s reconnected: slot %u, epoch %u, peer %u\n", name, (unsigned)slot, (unsigned)resume.epoch, (unsigned)peer);
+    MpSession_LogTable();
+}
+
 static void MpServerHandleHello(u8 peer, const struct MpMsgHeader *hdr, const u8 *payload, u32 len)
 {
     struct MpSession *s = gMpSession;
     struct MpHostPeer *p = MpServerPeer(peer);
     struct MpMsgHello hello;
-    struct MpMsgWelcome welcome;
     struct MpMsgPlayerEntry entry;
     char name[MP_PLAYER_NAME_SIZE + 1];
-    u16 protocolVersion;
-    u32 buildHash;
     u16 outLen;
     u32 i;
     u8 slot;
 
-    // 2. frozen prefix
-    if (MpProto_ParseHelloPrefix(payload, len, &protocolVersion, &buildHash) != MP_PARSE_OK)
-    {
-        MpServerReject(peer, MP_REASON_BAD_DATA);
+    // 2.-4. frozen prefix, protocol version (field and header byte), build
+    if (!MpServerCheckPrefix(peer, hdr, payload, len))
         return;
-    }
-    // 3. protocol version (field and header byte)
-    if (protocolVersion != s->protocolVersion || hdr->version != (u8)(s->protocolVersion & 0xFF))
-    {
-        MP_SLOG("peer %u: protocol %u, ours %u\n", (unsigned)peer, (unsigned)protocolVersion, (unsigned)s->protocolVersion);
-        MpServerReject(peer, MP_REASON_VERSION);
-        return;
-    }
-    // 4. build
-    if (buildHash != s->buildHash)
-    {
-        MP_SLOG("peer %u: build hash 0x%08X, ours 0x%08X\n", (unsigned)peer, (unsigned)buildHash, (unsigned)s->buildHash);
-        MpServerReject(peer, MP_REASON_BUILD);
-        return;
-    }
     // 5./6. exact size and summary
     if (MpProto_ParseHello(payload, len, &hello) != MP_PARSE_OK)
     {
         MpServerReject(peer, MP_REASON_BAD_DATA);
         return;
+    }
+    // PS-054: the same player, back with a fresh HELLO (the game was restarted) while its old slot
+    // is still held for a reconnect: free the old slot first, so it neither shows twice nor fills
+    // the game.
+    for (i = 1; i < MP_MAX_PLAYERS; i++)
+    {
+        if (s->slotUsed[i] && s->players[i].connectionLost && MpServerSameIdentity(&s->players[i].summary, &hello.summary))
+            MpServerRemoveSlot((u8)i, MP_REASON_CONNECTION_LOST, MP_PEER_NONE);
     }
     // 7. free slot
     slot = MP_SLOT_NONE;
@@ -210,16 +389,7 @@ static void MpServerHandleHello(u8 peer, const struct MpMsgHeader *hdr, const u8
     p->malformed = 0;
     p->lastPingSentMs = MpTransport_GetTimeMs();
 
-    memset(&welcome, 0, sizeof(welcome));
-    welcome.yourSlot = slot;
-    welcome.yourEpoch = s->players[slot].epoch;
-    for (i = 0; i < MP_MAX_PLAYERS; i++)
-    {
-        if (s->slotUsed[i])
-            MpServerEntryForSlot((u8)i, &welcome.players[welcome.playerCount++]);
-    }
-    outLen = MpProto_WriteWelcome(sServerBuf, sizeof(sServerBuf), &welcome);
-    MpSession_SendTo(peer, sServerBuf, outLen, MP_CHANNEL_CONTROL, TRUE);
+    MpServerSendWelcome(peer, slot, 0);
 
     MpServerEntryForSlot(slot, &entry);
     outLen = MpProto_WritePlayerEntry(sServerBuf, sizeof(sServerBuf), MP_MSG_PLAYER_JOINED, &entry);
@@ -278,9 +448,9 @@ static void MpServerHandlePlayerMessage(u8 peer, u8 channel, const struct MpMsgH
     u32 rtt;
     u16 outLen;
 
-    if (hdr->type == MP_MSG_HELLO)
+    if (hdr->type == MP_MSG_HELLO || hdr->type == MP_MSG_RESUME)
     {
-        MpServerKick(peer, MP_REASON_PROTOCOL_ERROR); // second HELLO
+        MpServerKick(peer, MP_REASON_PROTOCOL_ERROR); // second HELLO / RESUME (PS-054)
         return;
     }
     if (hdr->version != MP_PROTOCOL_VERSION)
@@ -378,7 +548,7 @@ void MpServer_OnTransportEvent(const struct MpTransportEvent *ev)
         break;
     case MP_TRANSPORT_EV_DISCONNECT:
         if (p->state == MP_HOST_PEER_PLAYER)
-            MpServerRemovePlayer(ev->peer, MP_REASON_CONNECTION_LOST);
+            MpServerLosePlayer(ev->peer, now); // PS-054: hold the slot for a RESUME
         memset(p, 0, sizeof(*p));
         MP_SDLOG("peer %u disconnected\n", (unsigned)ev->peer);
         break;
@@ -393,15 +563,18 @@ void MpServer_OnTransportEvent(const struct MpTransportEvent *ev)
         }
         if (p->state == MP_HOST_PEER_PENDING)
         {
-            if (hdr.type != MP_MSG_HELLO || ev->channel != MP_CHANNEL_CONTROL)
+            if ((hdr.type != MP_MSG_HELLO && hdr.type != MP_MSG_RESUME) || ev->channel != MP_CHANNEL_CONTROL)
             {
-                if (hdr.type == MP_MSG_HELLO)
+                if (hdr.type == MP_MSG_HELLO || hdr.type == MP_MSG_RESUME)
                     MpServerReject(ev->peer, MP_REASON_BAD_DATA);
                 else
                     MpServerMalformed(ev->peer, "message");
                 break;
             }
-            MpServerHandleHello(ev->peer, &hdr, ev->data + MP_HEADER_SIZE, hdr.length);
+            if (hdr.type == MP_MSG_RESUME) // PS-054
+                MpServerHandleResume(ev->peer, &hdr, ev->data + MP_HEADER_SIZE, hdr.length, now);
+            else
+                MpServerHandleHello(ev->peer, &hdr, ev->data + MP_HEADER_SIZE, hdr.length);
         }
         else
         {
@@ -435,9 +608,9 @@ void MpServer_Update(u32 now)
                 MpServerResetPeer((u8)i);
             break;
         case MP_HOST_PEER_PLAYER:
-            if ((u32)(now - p->lastRecvMs) >= MP_IDLE_TIMEOUT_MS)
+            if ((u32)(now - p->lastRecvMs) >= gMpNetTiming.idleTimeoutMs)
             {
-                MpServerRemovePlayer((u8)i, MP_REASON_CONNECTION_LOST);
+                MpServerLosePlayer((u8)i, now); // PS-054: hold the slot for a RESUME
                 MpServerResetPeer((u8)i);
                 break;
             }
@@ -449,6 +622,16 @@ void MpServer_Update(u32 now)
                 MpSession_SendTo((u8)i, sServerBuf, len, MP_CHANNEL_PRESENCE, FALSE);
             }
             break;
+        }
+    }
+    // PS-054: a held slot whose player did not come back in time is freed as before.
+    for (i = 1; i < MP_MAX_PLAYERS; i++)
+    {
+        if (gMpSession->slotUsed[i] && gMpSession->players[i].connectionLost
+         && (u32)(now - gMpSession->slotLostMs[i]) >= gMpNetTiming.graceMs)
+        {
+            MP_SLOG("slot %u: no reconnect within %u ms\n", (unsigned)i, (unsigned)gMpNetTiming.graceMs);
+            MpServerRemoveSlot((u8)i, MP_REASON_CONNECTION_LOST, MP_PEER_NONE);
         }
     }
     MpSession_TrySendLocalUpdate(now);

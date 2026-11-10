@@ -16,7 +16,7 @@
 
 #define MP_SESSION_INSTANCE_COUNT   MP_TRANSPORT_INSTANCE_COUNT
 #define MP_MALFORMED_LIMIT          8
-#define MP_HOST_PEER_COUNT          MP_MAX_PLAYERS  // 3 clients + 1 spare for REJECT(FULL)
+#define MP_HOST_PEER_COUNT          (MP_MAX_PLAYERS + 2) // 3 clients + 1 spare for REJECT(FULL) + 2 for a reconnect that takes over a stale peer (PS-054)
 #define MP_SHUTDOWN_FLUSH_MS        250
 #define MP_CLOSING_PEER_MS          1000            // force-reset a peer we disconnected after this
 #define MP_PING_MIN_GAP_MS          250
@@ -155,7 +155,34 @@ struct MpClientState
     u32 lastRecvMs;
     u32 lastPingSentMs;
     u32 lastPingRecvMs;
+    // PS-054 reconnect
+    u8 token[MP_SESSION_TOKEN_SIZE];    // from the last WELCOME (all zero: none)
+    bool8 reconnecting;                 // lost the host, retrying with RESUME (state stays IN_SESSION)
+    bool8 attemptActive;                // a RESUME attempt is dialling / waiting for WELCOME
+    u8 attempts;
+    u32 lostMs;                         // when the connection was lost
+    u32 attemptStartMs;
+    u32 nextAttemptMs;
 };
+
+// PS-054: every timer of the dropout / reconnect logic. The game uses the defaults; the
+// selftest scales them down so a "40 s" dropout runs in 4 s (gMpNetTiming).
+struct MpNetTiming
+{
+    u32 enetTimeoutMinMs;   // ENet peer timeout minimum (after its retries) ...
+    u32 enetTimeoutMaxMs;   // ... and maximum: a dead link is noticed after about this long
+    u32 enetPingMs;         // ENet's keep-alive ping
+    u32 idleTimeoutMs;      // session: nothing received for this long = connection lost
+    u32 graceMs;            // host: a lost client's slot is held this long (MP_RECONNECT_GRACE_MS)
+    u32 retryWindowMs;      // client: retries for this long after the loss (MP_RECONNECT_WINDOW_MS)
+    u32 retryFirstMs;       // client: first wait before a RESUME attempt, doubled up to retryMaxMs
+    u32 retryMaxMs;
+    u32 attemptMs;          // client: one attempt (connect + RESUME + WELCOME) gives up after this
+};
+extern struct MpNetTiming gMpNetTiming;
+// Sets gMpNetTiming to the defaults divided by `divisor` (1 = the game's values) and applies the
+// ENet part to the transport (peers connecting from now on).
+void MpNetTiming_Set(u32 divisor);
 
 struct MpSession
 {
@@ -176,7 +203,10 @@ struct MpSession
     u8 nextEpoch;           // host only
 
     struct MpHostPeer peers[MP_HOST_PEER_COUNT];   // host only, indexed by transport peer id
-    u8 slotPeer[MP_MAX_PLAYERS];                    // host only: slot -> peer id
+    u8 slotPeer[MP_MAX_PLAYERS];                    // host only: slot -> peer id (MP_PEER_NONE while lost)
+    u8 slotToken[MP_MAX_PLAYERS][MP_SESSION_TOKEN_SIZE]; // host only (PS-054): each client's reconnect token
+    u32 slotLostMs[MP_MAX_PLAYERS];                 // host only (PS-054): when players[slot].connectionLost was set
+    char hostIp[MP_ADDRESS_MAX_LEN + 1];            // client (PS-054): the address MP_Join dialled
 
     struct MpClientState client;
 
@@ -210,6 +240,9 @@ void MpSession_Fail(u8 event, u8 reason);               // client: ERROR + event
 void MpSession_StartFlush(void);
 bool8 MpSession_SendTo(u8 peer, const u8 *data, u16 len, u8 channel, bool8 reliable);
 void MpSession_TrySendLocalUpdate(u32 now);             // pending PLAYER_UPDATE, 1/s limit
+
+// PS-054: fills `token` with MP_SESSION_TOKEN_SIZE random bytes, never all zero.
+void MpSession_NewToken(u8 *token);
 
 // mp_server.c (host role)
 void MpServer_OnTransportEvent(const struct MpTransportEvent *ev);
