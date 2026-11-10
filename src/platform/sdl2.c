@@ -412,12 +412,15 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --audio-stats        Log audio queue level, underruns, clipping and loop stalls every second\n"
         "                       (console and pokemon-spectrum_audio.txt)\n"
         "  --audio-dump <file.wav>  Write the exact audio stream sent to SDL (32-bit float WAV)\n"
+        "  --audio-queue-ms <n> Audio kept ready ahead of the sound card, %d-%d ms (default %d)\n"
+        "  --audio-legacy       Test only: v0.1.0 audio pacing without fades, to compare by ear\n"
         "  --debug-loop-hz <hz> Test only: run the main loop at this rate, e.g. 59.94 (simulated vsync)\n"
         "  -h, --help           Show this help and exit\n"
         "\n"
         "If a port is given more than once (--host <port>, --join ip:port, --port), the last one wins.\n",
         programName, PLATFORM_MP_DEFAULT_PORT, PLATFORM_MP_DEFAULT_PORT,
-        PLATFORM_ARG_NAME_SIZE - 1, SAVE_SLOW_DELAY_MS, PLATFORM_MAX_SCALE);
+        PLATFORM_ARG_NAME_SIZE - 1, SAVE_SLOW_DELAY_MS, PLATFORM_MAX_SCALE,
+        PLATFORM_AUDIO_MIN_QUEUE_MS, PLATFORM_AUDIO_MAX_QUEUE_MS, PLATFORM_AUDIO_DEFAULT_QUEUE_MS);
 }
 
 // Parses a decimal number in [minValue, maxValue]. The whole string must be digits.
@@ -537,6 +540,7 @@ static int ParsePlatformArgs(int argc, char **argv)
     gPlatformArgs.mpRole = PLATFORM_MP_ROLE_NONE;
     gPlatformArgs.port = PLATFORM_MP_DEFAULT_PORT;
     gPlatformArgs.scale = 1;
+    gPlatformArgs.audioQueueMs = PLATFORM_AUDIO_DEFAULT_QUEUE_MS;
 
     for (i = 1; i < argc; i++)
     {
@@ -682,6 +686,21 @@ static int ParsePlatformArgs(int argc, char **argv)
                 goto missing_value;
             if (!CopyArgString(gPlatformArgs.audioDump, sizeof(gPlatformArgs.audioDump), value))
                 goto bad_value;
+            i++;
+        }
+        else if (strcmp(arg, "--audio-legacy") == 0) // PS-058
+        {
+            gPlatformArgs.audioLegacy = TRUE;
+        }
+        else if (strcmp(arg, "--audio-queue-ms") == 0) // PS-058
+        {
+            unsigned long ms;
+
+            if (value == NULL)
+                goto missing_value;
+            if (!ParseUnsigned(value, PLATFORM_AUDIO_MIN_QUEUE_MS, PLATFORM_AUDIO_MAX_QUEUE_MS, &ms))
+                goto bad_value;
+            gPlatformArgs.audioQueueMs = (u32)ms;
             i++;
         }
         else if (strcmp(arg, "--debug-loop-hz") == 0) // PS-058
@@ -1270,21 +1289,10 @@ u16 GetXInputKeys()
 
         /* Speedup */
         // Note: 'speedup' variable is only (un)set on keyboard input
-        double oldTimeScale = timeScale;
+        // PS-058: the audio is no longer paused and flushed here. It keeps playing at normal speed,
+        // the same as with Space on the keyboard. (Pausing cut the sound with a click, and during a
+        // link the time lock reset timeScale every loop, which toggled the device on and off.)
         timeScale = (state.Gamepad.bRightTrigger > 0x80 || speedUp) ? 5.0 : 1.0;
-
-        if (oldTimeScale != timeScale)
-        {
-            if (timeScale > 1.0)
-            {
-                SDL_PauseAudio(1);
-            }
-            else
-            {
-                SDL_ClearQueuedAudio(1);
-                SDL_PauseAudio(0);
-            }
-        }
     }
 
     return xinputKeys;

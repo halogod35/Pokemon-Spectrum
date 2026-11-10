@@ -86,25 +86,51 @@ jobs:
           fi
           echo "boot smoke test: still running after 40 s, OK"
 
-      # PS-058: audio measurements. Boots the real game (fresh save: intro and title music) with the
-      # dummy SDL drivers and --audio-stats. The dummy audio driver consumes 1024 samples every
-      # 24 ms, a little faster than a real sound card. --debug-loop-hz holds the main loop to a
-      # monitor's refresh rate, like vsync does on a real PC.
+      # PS-058: audio check. Boots the real game (fresh save: intro and title music) with the
+      # dummy SDL drivers and --audio-stats, 20 s per run. The dummy audio driver consumes 1024
+      # samples every 24 ms, about 1.5% faster than a real 42048 Hz sound card, so this is a
+      # harder test than a real PC. --debug-loop-hz holds the main loop to a monitor's refresh
+      # rate, like vsync does on a real PC (v0.1.0 underran 4-5 times a second at 59.94 and 60).
+      # Fails if a normal run (free, 59.94, 60 Hz) has an underrun or a clipped sample, unless
+      # the runner itself stalled the game for more than 40 ms. The --audio-legacy and 30 Hz
+      # runs are reported only.
       - name: Audio check
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
         run: |
           set +e
-          for hz in free 59.94 60; do
+          fail=0
+          for run in free 59.94 60 30 legacy-59.94; do
             rm -f ci_audio.sav
             extra=""
-            if [ "$hz" != free ]; then extra="--debug-loop-hz $hz"; fi
-            echo "=== audio check, loop $hz ==="
-            timeout -s INT 30 ./pokemon-spectrum${{ matrix.bits }} --save ci_audio.sav --audio-stats $extra --audio-dump ci_audio_$hz.wav > audio_$hz.log 2>&1
-            grep "\[audio\]" audio_$hz.log
+            case "$run" in
+              free) ;;
+              legacy-*) extra="--audio-legacy --debug-loop-hz ${run#legacy-}" ;;
+              *) extra="--debug-loop-hz $run" ;;
+            esac
+            timeout -s INT 20 ./pokemon-spectrum${{ matrix.bits }} --save ci_audio.sav --audio-stats $extra --audio-dump ci_audio_$run.wav > audio_$run.log 2>&1
+            echo "=== audio check, loop $run: $(grep '\[audio\] summary' audio_$run.log)"
+            result=$(grep '\[audio\] result:' audio_$run.log)
+            echo "    $result"
+            case "$run" in
+              free|59.94|60)
+                underruns=$(echo "$result" | sed -n 's/.*underruns=\([0-9]*\).*/\1/p')
+                clipped=$(echo "$result" | sed -n 's/.*clipped=\([0-9]*\).*/\1/p')
+                stall=$(echo "$result" | sed -n 's/.*max_stall_ms=\([0-9]*\).*/\1/p')
+                if [ -z "$underruns" ]; then
+                  echo "::error::audio check ($run): no result line"; grep "\[audio\]" audio_$run.log; fail=1
+                elif [ "$clipped" != 0 ]; then
+                  echo "::error::audio check ($run): $clipped clipped samples"; fail=1
+                elif [ "$underruns" != 0 ] && [ "$stall" -le 40 ]; then
+                  echo "::error::audio check ($run): $underruns underruns without a runner stall"; grep "\[audio\]" audio_$run.log; fail=1
+                elif [ "$underruns" != 0 ]; then
+                  echo "::warning::audio check ($run): $underruns underruns, but the runner stalled ${stall} ms"
+                fi
+                ;;
+            esac
           done
-          exit 0
+          exit $fail
 
       - name: Upload audio dumps
         if: ${{ matrix.is64bit == 1 }}

@@ -2,8 +2,20 @@
 //
 // The sound engine (m4a mixer + cgb_audio PSG) runs inside AudioUpdate() on the main thread and
 // produces one GBA frame of audio per call: AUDIO_FRAME_SAMPLES stereo float samples at
-// AUDIO_RATE Hz. Platform_QueueAudio() receives each frame. This file decides when to produce
-// frames and hands them to SDL.
+// AUDIO_RATE Hz (sequencer included, so the music follows the audio clock, not game ticks).
+// Platform_QueueAudio() receives each frame and writes it into a ring buffer. SDL's audio
+// thread reads the ring in AudioCallback(); it touches nothing but the ring (AD-4: all game
+// state stays on the main thread).
+//
+// Pacing (Platform_AudioPump, once per main loop iteration): produce GBA frames until the ring
+// holds the target (--audio-queue-ms, default PLATFORM_AUDIO_DEFAULT_QUEUE_MS), at most
+// AUDIO_MAX_CATCHUP frames per iteration. v0.1.0 produced at most one frame per iteration, which
+// can't keep up with a 42048 Hz device unless the loop runs at 59.98 Hz or more: on a 59.94 Hz
+// monitor (vsync) the queue drained and ran dry over and over. --audio-legacy restores that.
+//
+// If the ring does run dry (window dragged on Windows, a long stall), the callback fades the
+// last sample out over AUDIO_FADE_FRAMES instead of dropping to silence, and fades the next
+// sound in, so a gap is a short dip and not a click.
 //
 // Measurements (always collected, cheap; logged once per second with --audio-stats):
 // queue level, underruns, clipped samples, large sample-to-sample jumps (also across buffer
@@ -27,6 +39,9 @@
 #define AUDIO_DEVICE_SAMPLES    1024    // SDL device buffer, in stereo samples (24 ms)
 #define AUDIO_FRAME_SAMPLES     701     // stereo samples per AudioUpdate() (one GBA frame)
 #define AUDIO_BYTES_PER_SAMPLE  (AUDIO_CHANNELS * sizeof(float))
+#define AUDIO_RING_FRAMES       16384   // power of two, 390 ms
+#define AUDIO_MAX_CATCHUP       8       // GBA frames produced per loop iteration at most
+#define AUDIO_FADE_FRAMES       64      // 1.5 ms fade out / in around a gap
 #define AUDIO_LEGACY_LOW_MARK   2000    // v0.1.0: one AudioUpdate() per loop while fewer are queued
 
 #define STATS_STALL_MS          20.0    // a main loop iteration longer than this is a stall
@@ -51,11 +66,16 @@ struct AudioStatsWindow
     u32 buffers;
 };
 
+// Main thread only.
 static bool8 sOpen;
-static bool8 sStarted;          // a frame has been queued since open (or since the last pause)
-static bool8 sWasPaused;
+static bool8 sLegacy;           // --audio-legacy
+static u32 sTargetFrames;       // --audio-queue-ms in stereo samples
+static bool8 sStarted;          // the sound engine has produced a frame
+static bool8 sEngineOn;         // the last AudioUpdate() produced a frame
+static u32 sProducedFrames;     // GBA frames queued, total
 static float sLast[AUDIO_CHANNELS];
 static bool8 sHaveLast;
+static u32 sUnderrunsSeen;
 static u64 sLastPumpTicks;
 static u64 sWindowStartTicks;
 static u64 sOpenTicks;
@@ -64,6 +84,17 @@ static struct AudioStatsWindow sTotal;
 static FILE *sStatsLog;
 static FILE *sDump;
 static u32 sDumpFrames;
+
+// Shared with AudioCallback (SDL's audio thread): only touched with the device locked.
+static SDL_AudioDeviceID sDevice;
+static float sRing[AUDIO_RING_FRAMES * AUDIO_CHANNELS];
+static u32 sRingRead;           // stereo samples read / written, total (wraps; only the difference counts)
+static u32 sRingWrite;
+static bool8 sCbProducing;      // the game is producing audio (not paused, the engine is running)
+static bool8 sCbSmooth;         // fade around gaps (off with --audio-legacy)
+static u32 sCbFadeIn;           // stereo samples of the fade-in done (AUDIO_FADE_FRAMES = none running)
+static float sCbLast[AUDIO_CHANNELS];
+static u32 sCbUnderruns;
 
 static void StatsReset(struct AudioStatsWindow *w)
 {
@@ -102,6 +133,17 @@ static double FramesToMs(u64 frames)
     return (double)frames * 1000.0 / AUDIO_RATE;
 }
 
+static void StatsLine(const char *line)
+{
+    puts(line);
+    fflush(stdout);
+    if (sStatsLog != NULL)
+    {
+        fprintf(sStatsLog, "%s\n", line);
+        fflush(sStatsLog);
+    }
+}
+
 static void StatsPrint(const char *prefix, const struct AudioStatsWindow *w, double seconds)
 {
     char line[400];
@@ -115,13 +157,7 @@ static void StatsPrint(const char *prefix, const struct AudioStatsWindow *w, dou
              prefix, seconds, minMs, avgMs, maxMs, (unsigned)w->underruns, (unsigned)w->clipped, w->peak,
              STATS_JUMP, (unsigned)w->jumps, (unsigned)w->edgeJumps, w->maxJump, STATS_STALL_MS,
              (unsigned)w->stalls, w->maxStallMs, (unsigned)w->loops, (unsigned)w->buffers);
-    puts(line);
-    fflush(stdout);
-    if (sStatsLog != NULL)
-    {
-        fprintf(sStatsLog, "%s\n", line);
-        fflush(sStatsLog);
-    }
+    StatsLine(line);
 }
 
 static double TicksToSeconds(u64 ticks)
@@ -207,6 +243,94 @@ static void DumpWrite(const float *samples, u32 frames)
 }
 
 // ---------------------------------------------------------------------------
+// SDL audio thread. Copies from the ring; on a gap, fades out from the last sample and fades
+// the next sound in (only the ring and the sCb* variables are touched; the device is locked).
+
+static void SDLCALL AudioCallback(void *userdata, Uint8 *stream, int len)
+{
+    float *out = (float *)stream;
+    u32 want = (len > 0) ? (u32)len / (u32)AUDIO_BYTES_PER_SAMPLE : 0;
+    u32 avail = sRingWrite - sRingRead;
+    u32 n = (avail < want) ? avail : want;
+    u32 i;
+
+    (void)userdata;
+    for (i = 0; i < n; i++)
+    {
+        u32 at = ((sRingRead + i) & (AUDIO_RING_FRAMES - 1)) * AUDIO_CHANNELS;
+        float l = sRing[at];
+        float r = sRing[at + 1];
+
+        if (sCbFadeIn < AUDIO_FADE_FRAMES)
+        {
+            float g = (float)(sCbFadeIn + 1) / AUDIO_FADE_FRAMES;
+
+            l *= g;
+            r *= g;
+            sCbFadeIn++;
+        }
+        out[i * AUDIO_CHANNELS] = l;
+        out[i * AUDIO_CHANNELS + 1] = r;
+    }
+    sRingRead += n;
+    if (n != 0)
+    {
+        sCbLast[0] = out[(n - 1) * AUDIO_CHANNELS];
+        sCbLast[1] = out[(n - 1) * AUDIO_CHANNELS + 1];
+    }
+
+    if (n < want)
+    {
+        u32 rest = want - n;
+        u32 tail = sCbSmooth ? (rest < AUDIO_FADE_FRAMES ? rest : AUDIO_FADE_FRAMES) : 0;
+
+        // Ran dry while the game was producing: an underrun. A pause or a silent engine is not.
+        if (sCbProducing)
+            sCbUnderruns++;
+        for (i = 0; i < rest; i++)
+        {
+            float g = (i < tail) ? 1.0f - (float)(i + 1) / (float)tail : 0.0f;
+
+            out[(n + i) * AUDIO_CHANNELS] = sCbLast[0] * g;
+            out[(n + i) * AUDIO_CHANNELS + 1] = sCbLast[1] * g;
+        }
+        sCbLast[0] = sCbLast[1] = 0.0f;
+        sCbFadeIn = sCbSmooth ? 0 : AUDIO_FADE_FRAMES;
+    }
+}
+
+static u32 RingLevel(void)
+{
+    u32 level;
+
+    if (!sOpen)
+        return 0;
+    SDL_LockAudioDevice(sDevice);
+    level = sRingWrite - sRingRead;
+    SDL_UnlockAudioDevice(sDevice);
+    return level;
+}
+
+static void RingWrite(const float *samples, u32 frames)
+{
+    u32 space, i;
+
+    SDL_LockAudioDevice(sDevice);
+    space = AUDIO_RING_FRAMES - (sRingWrite - sRingRead);
+    if (frames > space)
+        frames = space; // can't happen with the queue target; drop the excess rather than overwrite
+    for (i = 0; i < frames; i++)
+    {
+        u32 at = ((sRingWrite + i) & (AUDIO_RING_FRAMES - 1)) * AUDIO_CHANNELS;
+
+        sRing[at] = samples[i * AUDIO_CHANNELS];
+        sRing[at + 1] = samples[i * AUDIO_CHANNELS + 1];
+    }
+    sRingWrite += frames;
+    SDL_UnlockAudioDevice(sDevice);
+}
+
+// ---------------------------------------------------------------------------
 
 void Platform_AudioOpen(void)
 {
@@ -216,6 +340,8 @@ void Platform_AudioOpen(void)
     StatsReset(&sTotal);
     sOpenTicks = sWindowStartTicks = SDL_GetPerformanceCounter();
     sLastPumpTicks = 0;
+    sLegacy = gPlatformArgs.audioLegacy;
+    sTargetFrames = (u32)((u64)gPlatformArgs.audioQueueMs * AUDIO_RATE / 1000);
 
     if (gPlatformArgs.audioStats)
     {
@@ -226,45 +352,67 @@ void Platform_AudioOpen(void)
     if (gPlatformArgs.audioDump[0] != '\0')
         DumpOpen(gPlatformArgs.audioDump);
 
+    cgb_audio_init(AUDIO_RATE);
+
+    sRingRead = sRingWrite = 0;
+    sCbProducing = FALSE;
+    sCbSmooth = !sLegacy;
+    sCbFadeIn = AUDIO_FADE_FRAMES;
+    sCbLast[0] = sCbLast[1] = 0.0f;
+    sCbUnderruns = 0;
+
     SDL_memset(&want, 0, sizeof(want));
     want.freq = AUDIO_RATE;
     want.format = AUDIO_F32;
     want.channels = AUDIO_CHANNELS;
     want.samples = AUDIO_DEVICE_SAMPLES;
-    cgb_audio_init(want.freq);
-
-    if (SDL_OpenAudio(&want, 0) < 0)
+    want.callback = AudioCallback;
+    // No allowed changes: SDL converts our 42048 Hz float stereo to whatever the device uses.
+    sDevice = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
+    if (sDevice == 0)
     {
         SDL_Log("Failed to open audio: %s", SDL_GetError());
         return;
     }
     sOpen = TRUE;
-    SDL_PauseAudio(0);
+    SDL_PauseAudioDevice(sDevice, 0);
 
     if (gPlatformArgs.audioStats)
     {
-        char line[200];
+        char line[300];
 
-        snprintf(line, sizeof(line), "[audio] driver '%s', %u Hz float stereo, device buffer %u samples (%.1f ms), SDL %u.%u.%u",
+        snprintf(line, sizeof(line),
+                 "[audio] driver '%s', %u Hz float stereo, device buffer %u samples (%.1f ms), %s, SDL %u.%u.%u",
                  SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "?", (unsigned)AUDIO_RATE,
                  (unsigned)AUDIO_DEVICE_SAMPLES, FramesToMs(AUDIO_DEVICE_SAMPLES),
+                 sLegacy ? "--audio-legacy (v0.1.0 pacing, no fades)" : "queue target",
                  (unsigned)SDL_MAJOR_VERSION, (unsigned)SDL_MINOR_VERSION, (unsigned)SDL_PATCHLEVEL);
-        puts(line);
-        if (sStatsLog != NULL)
-            fprintf(sStatsLog, "%s\n", line);
+        StatsLine(line);
+        if (!sLegacy)
+        {
+            snprintf(line, sizeof(line), "[audio] queue target %u ms (%u samples): about %u ms from sound to speaker",
+                     (unsigned)gPlatformArgs.audioQueueMs, (unsigned)sTargetFrames,
+                     (unsigned)(gPlatformArgs.audioQueueMs + FramesToMs(AUDIO_FRAME_SAMPLES / 2 + AUDIO_DEVICE_SAMPLES) + 0.5));
+            StatsLine(line);
+        }
     }
 }
 
-static u32 QueuedFrames(void)
+// Runs the sound engine for one GBA frame. FALSE if it queued nothing (sound not initialised
+// yet, or the engine is switched off).
+static bool8 ProduceFrame(void)
 {
-    if (!sOpen)
-        return 0;
-    return SDL_GetQueuedAudioSize(1) / (u32)AUDIO_BYTES_PER_SAMPLE;
+    u32 before = sProducedFrames;
+
+    AudioUpdate();
+    sEngineOn = (sProducedFrames != before);
+    return sEngineOn;
 }
 
 void Platform_AudioPump(bool8 paused)
 {
     u64 now = SDL_GetPerformanceCounter();
+    bool8 producing = FALSE;
 
     if (sLastPumpTicks != 0)
     {
@@ -280,27 +428,50 @@ void Platform_AudioPump(bool8 paused)
     sLastPumpTicks = now;
     sWindow.loops++;
 
-    if (paused)
+    if (!paused)
     {
-        sWasPaused = TRUE;
-    }
-    else
-    {
-        u32 queued = QueuedFrames();
+        u32 level = RingLevel();
 
         if (sStarted)
         {
-            if (queued < sWindow.queueMinFrames)
-                sWindow.queueMinFrames = queued;
-            if (queued > sWindow.queueMaxFrames)
-                sWindow.queueMaxFrames = queued;
-            sWindow.queueSumFrames += queued;
+            if (level < sWindow.queueMinFrames)
+                sWindow.queueMinFrames = level;
+            if (level > sWindow.queueMaxFrames)
+                sWindow.queueMaxFrames = level;
+            sWindow.queueSumFrames += level;
             sWindow.queueSamples++;
         }
 
-        // v0.1.0 policy: one GBA frame per loop iteration while less than about 48 ms is queued.
-        if (queued < AUDIO_LEGACY_LOW_MARK)
-            AudioUpdate();
+        if (!sOpen || sLegacy)
+        {
+            // v0.1.0: one GBA frame per loop iteration while less than about 48 ms is queued.
+            if (level < AUDIO_LEGACY_LOW_MARK)
+                ProduceFrame();
+        }
+        else
+        {
+            u32 n;
+
+            for (n = 0; n < AUDIO_MAX_CATCHUP && level < sTargetFrames; n++)
+            {
+                if (!ProduceFrame())
+                    break;
+                level += AUDIO_FRAME_SAMPLES;
+            }
+        }
+        producing = sEngineOn;
+    }
+
+    if (sOpen)
+    {
+        u32 underruns;
+
+        SDL_LockAudioDevice(sDevice);
+        sCbProducing = producing;
+        underruns = sCbUnderruns;
+        SDL_UnlockAudioDevice(sDevice);
+        sWindow.underruns += underruns - sUnderrunsSeen;
+        sUnderrunsSeen = underruns;
     }
 
     if (TicksToSeconds(now - sWindowStartTicks) >= 1.0)
@@ -324,13 +495,8 @@ void Platform_QueueAudio(float *audioBuffer, s32 size)
     if (audioBuffer == NULL || size <= 0)
         return;
     frames = (u32)size / (u32)AUDIO_BYTES_PER_SAMPLE;
-
-    // An underrun: the device had nothing left to play when the next frame arrived. Not counted
-    // for the very first frame, or right after the Ctrl+P pause (the queue ran dry on purpose).
-    if (sOpen && sStarted && !sWasPaused && SDL_GetQueuedAudioSize(1) == 0)
-        sWindow.underruns++;
     sStarted = TRUE;
-    sWasPaused = FALSE;
+    sProducedFrames++;
 
     for (i = 0; i < frames; i++)
     {
@@ -373,7 +539,7 @@ void Platform_QueueAudio(float *audioBuffer, s32 size)
 
     DumpWrite(audioBuffer, frames);
     if (sOpen)
-        SDL_QueueAudio(1, audioBuffer, frames * (u32)AUDIO_BYTES_PER_SAMPLE);
+        RingWrite(audioBuffer, frames);
 }
 
 void Platform_AudioClose(void)
@@ -383,9 +549,17 @@ void Platform_AudioClose(void)
     StatsMerge(&sTotal, &sWindow);
     StatsReset(&sWindow);
     if (gPlatformArgs.audioStats)
+    {
+        char line[160];
+
         StatsPrint("summary", &sTotal, TicksToSeconds(now - sOpenTicks));
+        // One fixed-format line for scripts (CI audio check).
+        snprintf(line, sizeof(line), "[audio] result: underruns=%u clipped=%u max_stall_ms=%.0f mode=%s",
+                 (unsigned)sTotal.underruns, (unsigned)sTotal.clipped, sTotal.maxStallMs, sLegacy ? "legacy" : "new");
+        StatsLine(line);
+    }
     if (sOpen)
-        SDL_CloseAudio();
+        SDL_CloseAudioDevice(sDevice);
     sOpen = FALSE;
     if (sDump != NULL)
     {
@@ -403,7 +577,7 @@ void Platform_AudioClose(void)
 void Platform_GetAudioOverlay(struct PlatformAudioOverlay *out)
 {
     out->open = sOpen;
-    out->queueMs = (u32)(FramesToMs(QueuedFrames()) + 0.5);
+    out->queueMs = (u32)(FramesToMs(RingLevel()) + 0.5);
     out->underruns = sTotal.underruns + sWindow.underruns;
     out->clipped = sTotal.clipped + sWindow.clipped;
 }
