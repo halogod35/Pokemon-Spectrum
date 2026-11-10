@@ -31,7 +31,8 @@ void Platform_SetAlarm(u8 *alarmData);
 // Command-line options of the PC build (parsed in src/platform/sdl2.c main()).
 // See docs/multiplayer/dev-harness.md.
 
-#define PLATFORM_DEFAULT_SAVE_PATH  "pokeemerald.sav"
+#define PLATFORM_DEFAULT_SAVE_PATH  "pokemon-spectrum.sav"
+#define PLATFORM_LEGACY_SAVE_PATH   "pokeemerald.sav"   // before PS-056: migrated once at startup
 #define PLATFORM_MP_DEFAULT_PORT    27500
 #define PLATFORM_MAX_SCALE          10
 

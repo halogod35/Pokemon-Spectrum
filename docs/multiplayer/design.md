@@ -237,7 +237,7 @@ code is always part of the PC build.
 
 `Makefile` line 335 already collects `$(C_SUBDIR)/*/*.c`, so `src/mp/*.c` is compiled with the
 normal C pipeline (`cpp | preproc | cc1 | as`, the same as `src/platform/*.c`) and linked into
-`pokeemerald64(.exe)` / `pokeemerald32(.exe)`. `#include "mp/mp.h"` resolves through the existing
+`pokemon-spectrum64(.exe)` / `pokemon-spectrum32(.exe)`. `#include "mp/mp.h"` resolves through the existing
 `-iquote include`. `SUBDIRS` creates `build/pc64/src/mp/` automatically.
 
 ### 4.2 `libs/enet`: a separate plain-C rule (PS-011 adds this)

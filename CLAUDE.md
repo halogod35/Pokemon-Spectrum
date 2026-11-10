@@ -1,6 +1,6 @@
 # CLAUDE.md — Pokémon Spectrum
 
-Pokémon Spectrum is a native PC/Linux port of Pokémon Emerald: the pret `pokeemerald` decomp plus an SDL2
+Pokémon Spectrum is a native PC/Linux port of Pokémon Emerald: the pret `pokemon-spectrum` decomp plus an SDL2
 platform layer. We are adding Diablo 2-style multiplayer (each player runs the full game on their own save;
 only presence is shared over the network).
 
@@ -18,9 +18,9 @@ Status board and task cards live next to it (`BOARD.md`, `cards/PS-*.md`, `skill
 ## Build commands
 
 ```
-make linux -j$(nproc)              # Linux, -> ./pokeemerald64
+make linux -j$(nproc)              # Linux, -> ./pokemon-spectrum64
 make winwsl -j$(nproc)             # Windows .exe via mingw-w64 (WSL or Arch cross), needs ./SDL2
-make linux IS64BIT=0               # 32-bit variants (pokeemerald32[.exe])
+make linux IS64BIT=0               # 32-bit variants (pokemon-spectrum32[.exe])
 make tidyportable                  # remove PC build output
 ```
 

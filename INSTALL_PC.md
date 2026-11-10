@@ -1,21 +1,19 @@
 # Instructions
 
-These instructions explain how to build the PC (SDL2) port of **pokeemerald** for Windows and Linux.
+These instructions explain how to build **Pokémon Spectrum**, the PC (SDL2) port of the pokeemerald decomp, for Windows and Linux.
 For the original GBA ROM build, see [INSTALL.md](INSTALL.md).
-
-If you run into trouble, ask for help on Discord (see [README.md](README.md)).
 
 All PC builds produce an executable in the repository root:
 
 | Command | Output |
 |---|---|
-| `make linux` | `pokeemerald64` |
-| `make linux IS64BIT=0` | `pokeemerald32` |
-| `make winwsl` | `pokeemerald64.exe` |
-| `make winwsl IS64BIT=0` | `pokeemerald32.exe` |
+| `make linux` | `pokemon-spectrum64` |
+| `make linux IS64BIT=0` | `pokemon-spectrum32` |
+| `make winwsl` | `pokemon-spectrum64.exe` |
+| `make winwsl IS64BIT=0` | `pokemon-spectrum32.exe` |
 
-The game reads and writes its save file, `pokeemerald.sav`, in the **current working directory**.
-Run the executable from the folder where you want the save to be.
+The game reads and writes its save file, `pokemon-spectrum.sav`, in the **current working directory**.
+Run the executable from the folder where you want the save to be. An older `pokeemerald.sav` (and its `.mp.cfg` / `.trade` files) in that folder is renamed to the new name once, the first time the game starts without a `pokemon-spectrum.sav`.
 
 Use `-j$(nproc)` to build with all CPU threads, for example `make linux -j$(nproc)`.
 
@@ -32,7 +30,7 @@ games can only play together if they were built from the same commit. Override i
 Check the network layer without starting the game:
 
 ```
-./pokeemerald64 --mp-selftest     # prints "[MP] selftest OK" and exits 0 (FAILED / exit 1 otherwise)
+./pokemon-spectrum64 --mp-selftest     # prints "[MP] selftest OK" and exits 0 (FAILED / exit 1 otherwise)
 ```
 
 It uses UDP ports 27590–27599 on 127.0.0.1. Windows may ask once whether to allow network access.
@@ -51,7 +49,7 @@ Build and run:
 
 ```
 make linux -j$(nproc)
-./pokeemerald64
+./pokemon-spectrum64
 ```
 
 ### 32-bit (optional)
@@ -89,7 +87,7 @@ make linux -j$(nproc)
 
 To build the 32-bit version add `IS64BIT=0` (needs `gcc-multilib` and `libsdl2-dev:i386`; the 32-bit version does not build on Ubuntu 25 and above).
 
-You should get an executable named `pokeemerald64` (or `pokeemerald32`).
+You should get an executable named `pokemon-spectrum64` (or `pokemon-spectrum32`).
 
 ## Windows 10/11
 
@@ -142,8 +140,8 @@ You should now have `SDL2/x86_64-w64-mingw32/` and `SDL2/i686-w64-mingw32/`.
 Build:
 
 ```
-make winwsl -j$(nproc)            # 64-bit -> pokeemerald64.exe
-make winwsl IS64BIT=0 -j$(nproc)  # 32-bit -> pokeemerald32.exe
+make winwsl -j$(nproc)            # 64-bit -> pokemon-spectrum64.exe
+make winwsl IS64BIT=0 -j$(nproc)  # 32-bit -> pokemon-spectrum32.exe
 ```
 
 ### 3. SDL2.dll
@@ -152,8 +150,8 @@ The `.exe` needs `SDL2.dll` **in the same folder as the executable**. The matchi
 package you extracted:
 
 ```
-cp SDL2/x86_64-w64-mingw32/bin/SDL2.dll .   # for pokeemerald64.exe
-cp SDL2/i686-w64-mingw32/bin/SDL2.dll .     # for pokeemerald32.exe
+cp SDL2/x86_64-w64-mingw32/bin/SDL2.dll .   # for pokemon-spectrum64.exe
+cp SDL2/i686-w64-mingw32/bin/SDL2.dll .     # for pokemon-spectrum32.exe
 ```
 
 (Only one of them can sit next to the executables at a time, since both are called `SDL2.dll`. If you build both,
@@ -164,8 +162,8 @@ Standalone downloads also exist: [32-bit](https://archive.org/download/sdl-2-2.0
 
 ### 4. Run
 
-Double-click `pokeemerald64.exe` in Explorer (a console window opens next to the game for log output), or start
-it from WSL with `./pokeemerald64.exe`. The save `pokeemerald.sav` is created in the working directory.
+Double-click `pokemon-spectrum64.exe` in Explorer (a console window opens next to the game for log output), or start
+it from WSL with `./pokemon-spectrum64.exe`. The save `pokemon-spectrum.sav` is created in the working directory.
 
 ## GBA
 

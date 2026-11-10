@@ -27,7 +27,7 @@ void MpLog_Printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));  
 void MpLog_FilePrintf(const char *fmt, ...) __attribute__((format(printf, 1, 2))); // file only, not flushed
 void MpLog_FileFlush(void);
 uintptr_t MpLog_ExeBase(void);
-u32 MpLog_ExeOffset(const void *addr);  // a code address as exe+offset (pokeemerald.map / nm)
+u32 MpLog_ExeOffset(const void *addr);  // a code address as exe+offset (pokemon-spectrum.map / nm)
 
 #define MP_LOG(...) MpLog_Printf("[MP] " __VA_ARGS__)
 

@@ -84,7 +84,7 @@ static void UpdateInternalClock(void);
 #ifdef _WIN32
 // MP: crash reporter (BUG-003). On an unhandled exception, print the faulting address and a
 // stack of return addresses as offsets from the exe's base, to the console and to
-// pokeemerald_crash.txt next to the exe. Match the offsets against pokeemerald.map (shipped with
+// pokemon-spectrum_crash.txt next to the exe. Match the offsets against pokemon-spectrum.map (shipped with
 // the CI artifact): offset + 0x140000000 (64-bit) or + 0x400000 (32-bit) = the address in the map.
 static void MpCrashWrite(FILE *out, EXCEPTION_POINTERS *info, void **frames, USHORT count)
 {
@@ -116,7 +116,7 @@ static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
 {
     void *frames[48];
     USHORT count = CaptureStackBackTrace(0, 48, frames, NULL);
-    FILE *file = fopen("pokeemerald_crash.txt", "w");
+    FILE *file = fopen("pokemon-spectrum_crash.txt", "w");
 
     MpCrashWrite(stderr, info, frames, count);
     if (file != NULL)
@@ -124,11 +124,50 @@ static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
         MpCrashWrite(file, info, frames, count);
         fclose(file);
     }
-    MessageBoxA(NULL, "Pokemon Spectrum crashed.\n\nThe details were saved to pokeemerald_crash.txt next to the game.\nPlease send that file (and the console text) to the developers.",
+    MessageBoxA(NULL, "Pokemon Spectrum crashed.\n\nThe details were saved to pokemon-spectrum_crash.txt next to the game.\nPlease send that file (and the console text) to the developers.",
                 "Pokemon Spectrum crash", MB_OK | MB_ICONERROR);
     return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif
+
+// PS-056: the files were called "pokeemerald.*" before. With the default save path only, and only
+// when the new save does not exist yet: rename the old save and its companion files (the Join Game
+// address and a pending trade journal) to the new names, once. An explicit --save is left alone.
+static void MigrateLegacySaveFiles(void)
+{
+    static const char *const sSuffixes[] = { "", ".mp.cfg", ".trade" };
+    char oldPath[64];
+    char newPath[64];
+    FILE *file;
+    u32 i;
+
+    if (strcmp(gPlatformArgs.savePath, PLATFORM_DEFAULT_SAVE_PATH) != 0)
+        return;
+    file = fopen(PLATFORM_DEFAULT_SAVE_PATH, "rb");
+    if (file != NULL)
+    {
+        fclose(file);
+        return;
+    }
+    file = fopen(PLATFORM_LEGACY_SAVE_PATH, "rb");
+    if (file == NULL)
+        return;
+    fclose(file);
+
+    for (i = 0; i < sizeof(sSuffixes) / sizeof(sSuffixes[0]); i++)
+    {
+        snprintf(oldPath, sizeof(oldPath), "%s%s", PLATFORM_LEGACY_SAVE_PATH, sSuffixes[i]);
+        snprintf(newPath, sizeof(newPath), "%s%s", PLATFORM_DEFAULT_SAVE_PATH, sSuffixes[i]);
+        file = fopen(oldPath, "rb");
+        if (file == NULL)
+            continue;
+        fclose(file);
+        if (rename(oldPath, newPath) == 0)
+            printf("[save] renamed '%s' to '%s'\n", oldPath, newPath);
+        else
+            printf("[save] could not rename '%s' to '%s'; the game uses '%s'\n", oldPath, newPath, newPath);
+    }
+}
 
 int main(int argc, char **argv)
 {
@@ -144,6 +183,8 @@ int main(int argc, char **argv)
     int argsResult = ParsePlatformArgs(argc, argv);
     if (argsResult >= 0)
         return argsResult;
+    if (!gPlatformArgs.mpSelftest && !gPlatformArgs.saveSelftest)
+        MigrateLegacySaveFiles();
 
     if (gPlatformArgs.mpSelftest) // MP: --mp-selftest runs without a window or a save
     {
@@ -446,7 +487,7 @@ static bool ParseJoinAddress(const char *str)
 // Returns -1 to continue starting the game, otherwise the exit code main() should return.
 static int ParsePlatformArgs(int argc, char **argv)
 {
-    const char *programName = (argc > 0 && argv[0] != NULL) ? argv[0] : "pokeemerald";
+    const char *programName = (argc > 0 && argv[0] != NULL) ? argv[0] : "pokemon-spectrum";
     const char *title = NULL;
     int i;
 

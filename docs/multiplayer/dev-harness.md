@@ -13,7 +13,7 @@ its own save file and its own multiplayer role, without going through menus.
 
 | Flag | Meaning | Default |
 |---|---|---|
-| `--save <path>` | Save file to read and write. Created if it doesn't exist. | `pokeemerald.sav` (working directory) |
+| `--save <path>` | Save file to read and write. Created if it doesn't exist. | `pokemon-spectrum.sav` (working directory) |
 | `--host [port]` | Host a game. The port is optional and is only taken if the next argument starts with a digit. | port 27500 |
 | `--join <ip[:port]>` | Join the game at `ip`. **IPv4 dotted quad only** (`a.b.c.d`). A hostname is refused when connecting (`BAD_ADDRESS`), because a DNS lookup would block the game loop (AD-4). | port 27500 |
 | `--port <n>` | Port for `--host` / `--join` (1–65535). | 27500 |
@@ -38,8 +38,8 @@ Rules:
 - If a port is given more than once (`--host 27501`, `--join 1.2.3.4:27502`, `--port 27503`), the last one wins.
 - An unknown flag, a missing value or an invalid value prints an error plus the help text and exits with code 2.
   `--help` exits with code 0.
-- With no flags the game behaves as before: it uses `pokeemerald.sav` in the working directory. The only
-  difference is the window title (`Pokémon Spectrum` instead of `pokeemerald`).
+- With no flags the game behaves as before: it uses `pokemon-spectrum.sav` in the working directory. The only
+  difference is the window title (`Pokémon Spectrum` instead of `pokemon-spectrum`).
 
 On Windows the help and errors appear in the console window that opens next to the game. If you double-click
 the `.exe` with bad flags (for example from a shortcut), that window closes immediately, so run it from `cmd`
@@ -51,14 +51,14 @@ Build first (`make linux` or `make winwsl`, see `INSTALL_PC.md`), then from the 
 
 ```
 tools/mp/run_pair.sh            # Linux
-tools\mp\run_pair.bat           # Windows (SDL2.dll next to pokeemerald64.exe)
+tools\mp\run_pair.bat           # Windows (SDL2.dll next to pokemon-spectrum64.exe)
 ```
 
 Each script starts:
 
 ```
-pokeemerald64 --save host.sav   --host 27500           --mp-debug
-pokeemerald64 --save client.sav --join 127.0.0.1:27500 --mp-debug
+pokemon-spectrum64 --save host.sav   --host 27500           --mp-debug
+pokemon-spectrum64 --save client.sav --join 127.0.0.1:27500 --mp-debug
 ```
 
 Any extra arguments are passed to both instances, for example `tools/mp/run_pair.sh --scale 2`.
@@ -66,19 +66,19 @@ Any extra arguments are passed to both instances, for example `tools/mp/run_pair
 Overrides (environment variables): `EXE` (path to the executable), `SAVE_DIR` (where `host.sav` and
 `client.sav` live, default the repository root) and `PORT` (default 27500).
 
-If `host.sav` or `client.sav` don't exist yet and `pokeemerald.sav` exists in the repository root, the scripts
+If `host.sav` or `client.sav` don't exist yet and `pokemon-spectrum.sav` exists in the repository root, the scripts
 copy it to create them. Existing saves are never overwritten. Multiplayer requires an existing save (AD-11),
 so start each instance once and save in-game, or copy a save you already have.
 
 You can also run the instances by hand, for example a third player:
 
 ```
-./pokeemerald64 --save p3.sav --join 127.0.0.1 --title "P3"
+./pokemon-spectrum64 --save p3.sav --join 127.0.0.1 --title "P3"
 ```
 
 ## Checking that saves are independent
 
-1. `./pokeemerald64 --save a.sav` and, at the same time, `./pokeemerald64 --save b.sav`.
+1. `./pokemon-spectrum64 --save a.sav` and, at the same time, `./pokemon-spectrum64 --save b.sav`.
 2. In instance A, move somewhere and save. Close both.
 3. Start `--save b.sav` again: B continues from where B was saved, not from A's position.
    `a.sav` and `b.sav` have different contents (`cmp a.sav b.sav`).
@@ -96,17 +96,17 @@ game logs `[save] ...` on stderr and the previous save stays as it was.
 
 ### Manual kill-during-save test (repeat about 20 times; Windows and Linux)
 
-1. Make a known-good save: `./pokeemerald64 --save kill.sav`, play until you can save, save,
+1. Make a known-good save: `./pokemon-spectrum64 --save kill.sav`, play until you can save, save,
    and quit. Copy it: `cp kill.sav kill-good.sav`.
-2. Start `./pokeemerald64 --save kill.sav --debug-slow-save`, continue, and walk a few
+2. Start `./pokemon-spectrum64 --save kill.sav --debug-slow-save`, continue, and walk a few
    steps so the new save differs from the old one.
 3. Open START > SAVE and confirm. The console prints
    `[save] --debug-slow-save: writing 'kill.sav' over 1600 ms` (twice: the game writes the file
    twice per save, and each write is atomic on its own).
-4. Within those 3.2 s, kill the process: Linux `kill -9 $(pgrep pokeemerald64)`, Windows
-   Task Manager > End task (or `taskkill /F /IM pokeemerald64.exe`). Vary the moment:
+4. Within those 3.2 s, kill the process: Linux `kill -9 $(pgrep pokemon-spectrum64)`, Windows
+   Task Manager > End task (or `taskkill /F /IM pokemon-spectrum64.exe`). Vary the moment:
    immediately, about halfway, near the end.
-5. Start `./pokeemerald64 --save kill.sav` again. Expected: the main menu shows CONTINUE
+5. Start `./pokemon-spectrum64 --save kill.sav` again. Expected: the main menu shows CONTINUE
    with no "save file is corrupted" message, and CONTINUE loads either the old position or
    the new one (if the kill landed after the rename). `kill.sav` is exactly 131072 bytes.
 6. A `kill.sav.tmp` may exist after step 4. That is expected. It disappears after the next
@@ -126,8 +126,8 @@ extra player or NPC where the other player stood.
 ## Virtual link cable test (PS-046)
 
 ```
-pokeemerald64 --save host.sav   --host 27500           --mp-link-test --mp-debug
-pokeemerald64 --save client.sav --join 127.0.0.1:27500 --mp-link-test --mp-debug
+pokemon-spectrum64 --save host.sav   --host 27500           --mp-link-test --mp-debug
+pokemon-spectrum64 --save client.sav --join 127.0.0.1:27500 --mp-link-test --mp-debug
 ```
 
 Continue on both. Expected on both consoles, repeating: `grouped as link id N`, `2 players on the cable`
@@ -160,14 +160,14 @@ error screen), rejected link data, a cable hardware error, or a link error that
 2 s count as the same incident and get a one-line `same incident, also: ...`. A
 `link trace aftermath` block follows with the ticks after the dump. Columns: `gMain.callback2`
 and `callback1`, and `gLinkCallback` as `exe+offset`. To resolve an offset, look it up in the
-`pokeemerald.map` shipped with the build: offset + 0x140000000 (Win64) or + 0x400000 (Win32).
+`pokemon-spectrum.map` shipped with the build: offset + 0x140000000 (Win64) or + 0x400000 (Win32).
 On Linux, use `nm` on the same binary. Then come the link flags, the MP link state, the cable,
 the trade menu's `callbackId` (255 = no menu) and the first word of the command sent and the row
 received. The dump header lists the offsets of `CB2_LinkError`, `CB2_Overworld`,
 `CB2_ReturnToField` and `CB1_Overworld` as a cross-check.
 
 **Play-test bug reports:** send `mp_log*.txt` from **both** machines (and
-`pokeemerald_crash.txt` if there is one).
+`pokemon-spectrum_crash.txt` if there is one).
 
 ## Network statistics (PS-053)
 

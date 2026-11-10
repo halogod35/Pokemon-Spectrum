@@ -12,7 +12,7 @@ TARGET_OS       ?= NONE
 TILE_RENDERER   ?= RENDERER_EASY_DRAW
 
 # `File name`.gba ('_modern' will be appended to the modern builds)
-FILE_NAME := pokeemerald
+FILE_NAME := pokemon-spectrum
 BUILD_DIR := build
 
 # Builds the ROM using a modern compiler
@@ -125,7 +125,7 @@ ifeq ($(PORTABLE),1)
 
   ifeq ($(TARGET_OS),WINDOWS)
     OS_CFLAGS :=
-    OS_LFLAGS := -lwinmm -lxinput -Wl,-Map,pokeemerald.map # MP: map file for the crash reporter (BUG-003)
+    OS_LFLAGS := -lwinmm -lxinput -Wl,-Map,pokemon-spectrum.map # MP: map file for the crash reporter (BUG-003)
     BUILD_FEXTENSION := .exe
   else
     OS_CFLAGS :=

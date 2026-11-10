@@ -57,15 +57,15 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
-        run: timeout 360 ./pokeemerald${{ matrix.bits }} --mp-selftest # PS-053: +~70 s for the traffic benchmark
+        run: timeout 360 ./pokemon-spectrum${{ matrix.bits }} --mp-selftest # PS-053: +~70 s for the traffic benchmark
 
       # PS-014: crash-safe save I/O (write .tmp + fsync + rename, read back, leftover .tmp,
-      # slow-save path, in-memory ReadFlash). Uses pokeemerald.sav.selftest, never a real save.
+      # slow-save path, in-memory ReadFlash). Uses pokemon-spectrum.sav.selftest, never a real save.
       - name: Save self-test
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
-        run: timeout 60 ./pokeemerald${{ matrix.bits }} --save-selftest
+        run: timeout 60 ./pokemon-spectrum${{ matrix.bits }} --save-selftest
 
       # BUG-002: boot smoke test. Runs the real game (no flags, fresh save) for 40 s under gdb with
       # dummy SDL drivers: boot, copyright screen, intro, title. A crash prints a backtrace and
@@ -78,7 +78,7 @@ jobs:
           sudo apt-get install -y -qq gdb > /dev/null
           rm -f ci_boot.sav
           set +e
-          timeout -s INT 40 gdb -q -batch -ex "handle SIGINT stop" -ex run -ex bt -ex "info registers rip" --args ./pokeemerald${{ matrix.bits }} --save ci_boot.sav 2>&1 | tee boot.log
+          timeout -s INT 40 gdb -q -batch -ex "handle SIGINT stop" -ex run -ex bt -ex "info registers rip" --args ./pokemon-spectrum${{ matrix.bits }} --save ci_boot.sav 2>&1 | tee boot.log
           set -e
           if grep -qE "SIGSEGV|SIGABRT|SIGBUS|SIGFPE|SIGILL|exited with code [0-9]|exited normally" boot.log; then
             echo "::error::game crashed or quit during boot (see log above)"
@@ -89,8 +89,8 @@ jobs:
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: pokeemerald-linux${{ matrix.bits }}
-          path: pokeemerald${{ matrix.bits }}
+          name: pokemon-spectrum-linux${{ matrix.bits }}
+          path: pokemon-spectrum${{ matrix.bits }}
           if-no-files-found: error
 
   windows:
@@ -134,13 +134,13 @@ jobs:
       - name: Package executable with SDL2.dll
         run: |
           mkdir -p dist
-          cp pokeemerald${{ matrix.bits }}.exe dist/
+          cp pokemon-spectrum${{ matrix.bits }}.exe dist/
           cp SDL2/${{ matrix.triplet }}/bin/SDL2.dll dist/
-          cp pokeemerald.map dist/   # crash reporter: resolve exe offsets (BUG-003)
+          cp pokemon-spectrum.map dist/   # crash reporter: resolve exe offsets (BUG-003)
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: pokeemerald-windows${{ matrix.bits }}
+          name: pokemon-spectrum-windows${{ matrix.bits }}
           path: dist/
           if-no-files-found: error

@@ -38,7 +38,7 @@ double curGameTime = 0;
 double fixedTimestep = 1.0 / 60.0; // 16.666667ms
 double timeScale = 1.0;
 struct SiiRtcInfo internalClock;
-char const* savePath = "pokeemerald.sav";
+char const* savePath = "pokemon-spectrum.sav";
 int frameSkipSet = 1;
 int frameskipCounter = 0;
 bool bitBltEnabled = true;
@@ -62,7 +62,7 @@ static void UpdateInternalClock(void);
 
 HINSTANCE hInst;
 char const* szTitle = "win32 emerald";
-char const* szWindowClass = "pokeemerald";
+char const* szWindowClass = "pokemon-spectrum";
 HWND ghwnd;
 
 static u16 keys;

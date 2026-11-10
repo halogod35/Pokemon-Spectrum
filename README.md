@@ -1,12 +1,41 @@
-# Pokémon Emerald
+# Pokémon Spectrum
 
-This is a PC port of Pokémon Emerald based off [pret decompilation](https://github.com/pret/pokeemerald).
+## Controls
 
+**Game buttons**
 
-Supported operating systems: Windows and Linux
+| Key | GBA button |
+|---|---|
+| Arrow keys | D-pad |
+| Z | A |
+| X | B |
+| Enter | Start |
+| \ (backslash) | Select |
+| **A** | **L** |
+| **S** | **R** |
 
+**Extra PC keys**
 
-To set up the repository, see [INSTALL_PC.md](INSTALL_PC.md).
+| Key | What it does |
+|---|---|
+| **Space** (hold) | Fast-forward, 5× speed while held |
+| **Ctrl+P** | Pause / unpause |
+| **Ctrl+R** | Soft reset (restart the game) |
+| **F3** | Network overlay: upload/download, ping, packet loss |
+| Ctrl+V | Paste an IP address on the Join Game screen |
+| Backspace | Delete a character on the Join Game screen |
 
+You can resize the window and the picture scales with it. There's no fullscreen key.
 
-PokePorts Discord server: https://discord.gg/MSdkaXGT8e
+**Xbox-style controller, Windows only**
+
+| Controller | GBA button |
+|---|---|
+| A | A |
+| **X** | B (not the controller's B button) |
+| Start | Start |
+| Back | Select |
+| LB / RB | L / R |
+| D-pad or left stick | D-pad |
+
+Keys can't be remapped yet.

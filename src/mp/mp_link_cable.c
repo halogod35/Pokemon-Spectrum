@@ -602,7 +602,7 @@ bool8 MP_LinkActivityTryFinish(void)
 // ---------------------------------------------------------------------------
 //
 // Once per tick (HandleLinkConnection) while a link group exists or the cable is open, plus
-// MP_TRACE_TAIL_FRAMES after: the main / link callbacks (as exe offsets, so pokeemerald.map
+// MP_TRACE_TAIL_FRAMES after: the main / link callbacks (as exe offsets, so pokemon-spectrum.map
 // resolves them), the link flags, the MP link state and the cable, the trade menu's callbackId
 // and the first word of the command sent / row received. MP_LinkTraceDump writes the last
 // MP_TRACE_FRAMES ticks to the log file on an incident (CB2_LinkError, a rejection, a hardware

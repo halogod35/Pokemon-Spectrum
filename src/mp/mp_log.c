@@ -178,7 +178,7 @@ void MpLog_FileFlush(void)
         fflush(sLogFile);
 }
 
-// A code address as an offset from the exe's load address, so the shipped pokeemerald.map (or
+// A code address as an offset from the exe's load address, so the shipped pokemon-spectrum.map (or
 // nm on Linux) resolves it: Windows offset + 0x140000000 (64-bit) / + 0x400000 (32-bit) is the
 // map address, as for the crash reporter (BUG-003). 0 stays 0 (a NULL callback).
 #ifndef _WIN32
