@@ -463,16 +463,21 @@ s8 gBDPCMBlockBuffer[64];
 extern const s8 gDeltaEncodingTable[];
 
 static s8 sub_82DF758(struct MixerSource *chan, u32 current) {
-    u32 blockOffset = current >> 6; // current / 64
+    u32 blockOffset;
     u8 * blockPtr;
     int i;
-    //In route 102 lotad wild battle when it growls crashes the game because it decompresses out of bounds data
-    //I gave it its own printf error so it wouldn't get forgotten as this needs a more proper fix
-    if (chan->wav->size < blockOffset * 0x21) {
-            DBGPRINTF("Out of bounds decompress in %s wav->size = %u blockPtr = %u\n", __func__, chan->wav->size, blockOffset * 0x21);
-            return gBDPCMBlockBuffer[current & 63];
-    }
-    
+    // PS-059: the interpolation also reads the neighbouring sample, which is one past the end of a
+    // compressed wave (forward) or index -1 (reversed cries, e.g. Growl in a wild Lotad battle on
+    // Route 102). `current` is a sample index (wav->size is in samples, 33 bytes per 64-sample
+    // block): clamp it to the first / last real sample instead of decoding outside the wave.
+    if (chan->wav->size == 0)
+        return 0;
+    if ((s32)current < 0)
+        current = 0;
+    else if (current >= chan->wav->size)
+        current = chan->wav->size - 1;
+    blockOffset = current >> 6; // current / 64
+
     if(chan->blockCount != blockOffset) { // decode block if not decoded
         s32 s;
         chan->blockCount = blockOffset;
