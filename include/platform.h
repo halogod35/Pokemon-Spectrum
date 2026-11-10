@@ -35,6 +35,9 @@ void Platform_SetAlarm(u8 *alarmData);
 #define PLATFORM_LEGACY_SAVE_PATH   "pokeemerald.sav"   // before PS-056: migrated once at startup
 #define PLATFORM_MP_DEFAULT_PORT    27500
 #define PLATFORM_MAX_SCALE          10
+#define PLATFORM_AUDIO_DEFAULT_QUEUE_MS 50  // PS-058: audio kept queued ahead of the sound card
+#define PLATFORM_AUDIO_MIN_QUEUE_MS     20
+#define PLATFORM_AUDIO_MAX_QUEUE_MS     200
 
 // Buffer sizes, including the terminating NUL.
 #define PLATFORM_ARG_PATH_SIZE      512
@@ -71,6 +74,11 @@ struct PlatformArgs
     char name[PLATFORM_ARG_NAME_SIZE];           // --name (UTF-8, as typed), empty if not given
     char windowTitle[PLATFORM_ARG_TITLE_SIZE];   // --title, or the default for the role
     u32 scale;                                   // --scale, 1..PLATFORM_MAX_SCALE, default 1
+    bool8 audioStats;                            // --audio-stats (PS-058)
+    char audioDump[PLATFORM_ARG_PATH_SIZE];      // --audio-dump <file.wav> (PS-058), empty if not given
+    u32 debugLoopMilliHz;                        // --debug-loop-hz <hz> in thousandths (PS-058), 0 = off
+    bool8 audioLegacy;                           // --audio-legacy (PS-058): v0.1.0 audio pacing, for A/B tests
+    u32 audioQueueMs;                            // --audio-queue-ms (PS-058), default PLATFORM_AUDIO_DEFAULT_QUEUE_MS
 };
 
 extern struct PlatformArgs gPlatformArgs;

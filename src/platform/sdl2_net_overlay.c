@@ -15,11 +15,12 @@
 #include "global.h"
 #include "platform/net_overlay.h"
 #include "mp/mp.h"
+#include "platform/audio.h" // PS-058
 
 #define OVERLAY_X           2
 #define OVERLAY_Y           2
 #define OVERLAY_PAD         2
-#define OVERLAY_LINES       5
+#define OVERLAY_LINES       6   // PS-058: + one audio line
 #define OVERLAY_LINE_CHARS  20
 #define GLYPH_W             3
 #define GLYPH_H             5
@@ -130,6 +131,19 @@ void Platform_DrawNetOverlay(struct SDL_Renderer *renderer)
         FormatKbit(lines[lineCount++], sizeof(lines[0]), "DN", info.downBitsPerSec);
         snprintf(lines[lineCount++], sizeof(lines[0]), "RTT %u+-%u MS", (unsigned)info.rttMs, (unsigned)info.rttVarMs);
         snprintf(lines[lineCount++], sizeof(lines[0]), "LOSS %u.%u%%", (unsigned)(info.lossPermille / 10), (unsigned)(info.lossPermille % 10));
+    }
+    // PS-058: audio queued (ms) and underruns since start; "AUD OFF" if the device did not open.
+    {
+        struct PlatformAudioOverlay audio;
+
+        Platform_GetAudioOverlay(&audio);
+        if (!audio.open)
+            snprintf(lines[lineCount++], sizeof(lines[0]), "AUD OFF");
+        else
+            snprintf(lines[lineCount++], sizeof(lines[0]), "AUD %uMS U%u C%u",
+                     (unsigned)(audio.queueMs > 999 ? 999 : audio.queueMs),
+                     (unsigned)(audio.underruns > 999 ? 999 : audio.underruns),
+                     (unsigned)(audio.clipped > 999 ? 999 : audio.clipped));
     }
 
     for (i = 0; i < lineCount; i++)
