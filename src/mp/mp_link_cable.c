@@ -10,6 +10,8 @@
 //  - CONN_ESTABLISHED: a non-zero gSendCmd goes to the bus (and is cleared); one row per tick
 //    comes back into recvCmds (own command included, as on the cable), or zeros +
 //    LINK_STAT_RECEIVED_NOTHING. At most QUEUE_CAPACITY rows are reported as queued.
+//    PS-052: whole blocks queued ahead of that row are handed to link.c first; backlogged rows
+//    that carry only block data may be played several per tick (MP_LinkCatchUpRow).
 //  - The SIO id bits of REG_SIOCNT carry our link id, so GetMultiplayerId() works unchanged.
 //  - The group ending or a bus member closing while we are on the bus sets the hardware
 //    error bit: LinkMain2 then runs the game's own link-error path (CB2_LinkError).
@@ -44,23 +46,143 @@ typedef char MpLinkMaxBlockCheck[(sizeof(gDecompressionBuffer) == MP_LINK_MAX_BL
 static u16 sTraceSent;
 static u16 sTraceRecv0;
 static u16 sTraceRecv1;
-static u8 sTraceRecvKind;   // 0 nothing, 1 a row, 2 BUS_END
+static u8 sTraceRecvKind;   // 0 nothing, 1 a row, 2 BUS_END, 3 a whole block (PS-052)
 
 enum
 {
     TRACE_RECV_NONE,
     TRACE_RECV_ROW,
     TRACE_RECV_BUS_END,
+    TRACE_RECV_BLOCK,
 };
+
+#define MP_TRACE_SENT_WHOLE_BLOCK   0xFB0C  // PS-052: "tx" of a tick that sent a whole block
+
+// ---------------------------------------------------------------------------
+// PS-052: fast cable state, per session instance (the selftest runs several games in one process)
+// ---------------------------------------------------------------------------
+//
+// Whole blocks (LINK_BLOCK) replace a SendBlock's INIT_BLOCK + CONT_BLOCK rows. MP_LinkMain1 hands
+// the blocks queued ahead of the next row to link.c (MP_LinkDeliverWholeBlock) before that row,
+// so the game sees blocks and rows in bus order. Pacing, so a game written for the GBA cable is
+// never given a block sooner than it could have arrived there unless it is ready for it:
+//  - at most one block per link id per tick (the cable completes at most one per tick);
+//  - while the game has not taken the previous block from that link id (its received flag is still
+//    set), the next one waits, at most as long as the GBA cable needed to carry it.
+// Row pacing (catch-up): rows that pile up are played several per tick (MP_LinkCatchUpRow), but
+// only rows that carry block data (INIT_BLOCK / CONT_BLOCK / nothing) and only until one block
+// completes in the tick. Every other command still reaches the game once per tick, then its link
+// callback runs, as on the GBA (READY_EXIT_STANDBY / READY_CLOSE_LINK handshakes depend on it).
+
+#define MP_CATCHUP_MAX_EXTRA_ROWS   7       // at most 8 rows per tick
+
+struct MpCableState
+{
+    u32 tick;                               // MP_LinkMain1 calls on this instance
+    u32 lastBlockTick[MAX_LINK_PLAYERS];    // when the last block from each link id completed
+    u32 sendTick;                           // our last SendBlock
+    bool8 sendPending;                      // our last block is not back from the bus yet
+    bool8 onBus;                            // in CONN_ESTABLISHED (for the end-of-activity log)
+    u32 lastLogTick;
+    struct MpLinkCableStats stats;          // this link activity (reset when the cable connects)
+};
+
+static struct MpCableState sCable[MP_TRANSPORT_INSTANCE_COUNT];
+static bool8 sFastBlocks = TRUE;
+static bool8 sRowCatchUp = TRUE;
+static bool8 sLinkStatsLog = FALSE;
+static MpLinkSelftestObserver sObserver;
+// This tick only (one HandleLinkConnection of one instance).
+static bool8 sTickBlockDone;                // a block completed for the game this tick
+static bool8 sTickPlayedRow;                // MP_LinkMain1 handed the game a row this tick
+static u8 sTickExtraRows;
+
+static struct MpCableState *MpCableState(void)
+{
+    u8 inst = MpLink_InstanceId();
+
+    return &sCable[inst < MP_TRANSPORT_INSTANCE_COUNT ? inst : 0];
+}
+
+// Ticks the GBA cable needs for a block of `size` bytes: the INIT_BLOCK row, LinkCB_BlockSendBegin's
+// 3 ticks, one CONT_BLOCK row per 14 bytes, and LinkCB_BlockSendEnd.
+static u32 MpGbaBlockTicks(u16 size)
+{
+    return 1 + 3 + (size + (CMD_LENGTH - 1) * 2 - 1) / ((CMD_LENGTH - 1) * 2) + 1;
+}
+
+static void MpCableLogStats(const char *when)
+{
+    const struct MpLinkCableStats *s = &MpCableState()->stats;
+    u32 ownAvg10 = (s->ownBlocks != 0) ? (s->ownBlockTicks * 10 / s->ownBlocks) : 0;
+
+    MP_LOG("link stats (%s): %u ticks on the cable; rows %u (%u by catch-up); blocks sent %u whole + %u as rows, "
+           "received %u whole + %u as rows; our block back after %u.%u ticks on average (%u blocks); "
+           "nothing received %u ticks (%u waiting for the bus); a block waited for the game %u ticks\n",
+           when, (unsigned)s->busTicks, (unsigned)s->rowsPlayed, (unsigned)s->catchUpRows,
+           (unsigned)s->blocksSentFast, (unsigned)s->blocksSentRows, (unsigned)s->blocksRecvFast, (unsigned)s->blocksRecvRows,
+           (unsigned)(ownAvg10 / 10), (unsigned)(ownAvg10 % 10), (unsigned)s->ownBlocks,
+           (unsigned)s->idleTicks, (unsigned)s->waitTicks, (unsigned)s->holdTicks);
+}
+
+static void MpCableObserveRow(const u16 (*row)[MP_LINK_CMD_WORDS])
+{
+    if (sObserver != NULL)
+        sObserver(FALSE, 0, row, 0);
+}
+
+// The whole blocks queued ahead of the next row, to link.c (see above). Stops at a block that
+// waits. Returns how many were handed over. Runs in MP_LinkMain1, so gLinkStatus is still the
+// previous tick's word here: the same connection and player count (blocks only flow once connected).
+static u8 MpCableDeliverBlocks(struct MpCableState *st)
+{
+    const u8 *data;
+    u8 doneMask = 0;
+    u8 delivered = 0;
+    u8 who;
+    u16 size;
+
+    while ((data = MpLink_CableHeadBlock(&who, &size)) != NULL)
+    {
+        if (who >= MAX_LINK_PLAYERS || size == 0)
+        {
+            MpLink_CablePop(NULL); // cannot happen (the member checks the link id): drop it
+            continue;
+        }
+        if (doneMask & (1 << who))
+            break; // one block per link id per tick
+        if (gBlockReceivedStatus[who] && !gRemoteLinkPlayersNotReceived[who]
+         && st->tick - st->lastBlockTick[who] < MpGbaBlockTicks(size))
+        {
+            st->stats.holdTicks++;
+            break; // the game has not taken the previous block yet
+        }
+        doneMask |= (u8)(1 << who);
+        MP_LinkDeliverWholeBlock(who, data, size); // data stays valid until the pop
+        MpLink_CablePop(NULL);
+        sTraceRecvKind = TRACE_RECV_BLOCK;
+        sTraceRecv0 = who;
+        sTraceRecv1 = size;
+        delivered++;
+    }
+    return delivered;
+}
 
 u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_LENGTH])
 {
+    struct MpCableState *st = MpCableState();
     struct MpLinkCableInfo info;
     u16 row[MP_LINK_MAX_MEMBERS][MP_LINK_CMD_WORDS];
     u16 any;
     u32 status;
     u32 i, j;
+    u8 delivered = 0;
+    u8 head = MP_LINK_POP_NONE;
 
+    st->tick++;
+    sTickBlockDone = FALSE;
+    sTickPlayedRow = FALSE;
+    sTickExtraRows = 0;
     MpLink_CableGetInfo(&info);
 
     // PS-051: recvCmds is gRecvCmds, which nothing clears between links. Only the
@@ -118,9 +240,15 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
         for (i = 0; i < CMD_LENGTH; i++)
             sendCmd[i] = 0;
 
-        switch (MpLink_CablePop(row))
+        // PS-052: whole blocks queued ahead of the next row go to the game first (bus order).
+        delivered = MpCableDeliverBlocks(st);
+        st->stats.busTicks++;
+        head = MpLink_CableHeadType();
+
+        switch (head)
         {
         case MP_LINK_POP_ROW:
+            MpLink_CablePop(row);
             for (i = 0; i < MAX_LINK_PLAYERS; i++)
             {
                 for (j = 0; j < CMD_LENGTH; j++)
@@ -130,8 +258,12 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
             sTraceRecvKind = TRACE_RECV_ROW;
             sTraceRecv0 = row[0][0];
             sTraceRecv1 = row[1][0];
+            sTickPlayedRow = TRUE;
+            st->stats.rowsPlayed++;
+            MpCableObserveRow((const u16 (*)[MP_LINK_CMD_WORDS])recvCmds);
             break;
         case MP_LINK_POP_BUS_END:
+            MpLink_CablePop(NULL);
             sTraceRecvKind = TRACE_RECV_BUS_END;
             if (MpLink_MemberIsFinishing())
             {
@@ -149,6 +281,7 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
             }
             // fallthrough
         default:
+            // Nothing (or a whole block that waits for the game: MP_LINK_POP_BLOCK).
             // Clear every player row, not only gLink.playerCount: ProcessRecvCmds reads 4.
             for (i = 0; i < MAX_LINK_PLAYERS; i++)
             {
@@ -156,11 +289,38 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
                     recvCmds[i][j] = 0;
             }
             gLink.receivedNothing = TRUE;
+            if (delivered == 0 && head != MP_LINK_POP_BLOCK)
+            {
+                st->stats.idleTicks++;
+                MpLink_CableGetInfo(&info);
+                if (info.outstanding > 0)
+                    st->stats.waitTicks++;
+            }
             break;
         }
         break;
     }
     *shouldAdvanceLinkState = 0;
+
+    // PS-052: the measurements of one link activity (one connected cable).
+    if (gLink.state == LINK_STATE_CONN_ESTABLISHED && !st->onBus)
+    {
+        memset(&st->stats, 0, sizeof(st->stats));
+        st->onBus = TRUE;
+        st->sendPending = FALSE;
+        st->lastLogTick = st->tick;
+    }
+    else if (gLink.state != LINK_STATE_CONN_ESTABLISHED && st->onBus)
+    {
+        st->onBus = FALSE;
+        if (sLinkStatsLog)
+            MpCableLogStats("the cable closed");
+    }
+    else if (st->onBus && sLinkStatsLog && st->tick - st->lastLogTick >= 600)
+    {
+        st->lastLogTick = st->tick;
+        MpCableLogStats("last 10 s and before, this link");
+    }
 
     MpLink_CableGetInfo(&info);
     // MP: BUG-004. Only once the rows already received are played: the last ones may carry the
@@ -210,6 +370,128 @@ u32 MP_LinkMain1(u8 *shouldAdvanceLinkState, u16 *sendCmd, u16 (*recvCmds)[CMD_L
     status |= (u32)gLink.hardwareError << LINK_STAT_ERROR_HARDWARE_SHIFT;
     status |= (u32)gLink.queueFull << LINK_STAT_ERROR_QUEUE_FULL_SHIFT;
     return status;
+}
+
+// ---------------------------------------------------------------------------
+// PS-052: the fast cable's hooks in link.c
+// ---------------------------------------------------------------------------
+
+bool8 MP_LinkOnSendBlock(const void *src, u16 size)
+{
+    struct MpCableState *st = MpCableState();
+
+    st->sendTick = st->tick;
+    st->sendPending = TRUE;
+    if (sFastBlocks && src != NULL && size != 0 && size <= MP_LINK_BLOCK_MAX
+     && gLink.state == LINK_STATE_CONN_ESTABLISHED && MpLink_CableSendBlock((const u8 *)src, size))
+    {
+        st->stats.blocksSentFast++;
+        sTraceSent = MP_TRACE_SENT_WHOLE_BLOCK;
+        return TRUE;
+    }
+    st->stats.blocksSentRows++;
+    return FALSE;
+}
+
+void MP_LinkOnBlockReceived(u8 who, u16 size, bool8 whole)
+{
+    struct MpCableState *st = MpCableState();
+
+    sTickBlockDone = TRUE;
+    if (who < MAX_LINK_PLAYERS)
+        st->lastBlockTick[who] = st->tick;
+    if (whole)
+        st->stats.blocksRecvFast++;
+    else
+        st->stats.blocksRecvRows++;
+    if (who == GetMultiplayerId() && st->sendPending)
+    {
+        st->sendPending = FALSE;
+        st->stats.ownBlocks++;
+        st->stats.ownBlockTicks += st->tick - st->sendTick;
+    }
+    if (sObserver != NULL)
+        sObserver(TRUE, who, NULL, size);
+}
+
+// A command that only moves block data (or nothing): safe to play in a catch-up row.
+static bool8 MpCatchUpCmdOk(u16 cmd)
+{
+    return cmd == 0 || cmd == LINKCMD_INIT_BLOCK || cmd == LINKCMD_CONT_BLOCK;
+}
+
+bool8 MP_LinkCatchUpRow(u16 (*recvCmds)[CMD_LENGTH])
+{
+    struct MpCableState *st;
+    struct MpLinkCableInfo info;
+    u16 row[MP_LINK_MAX_MEMBERS][MP_LINK_CMD_WORDS];
+    u32 i, j;
+
+    if (!sRowCatchUp || !sTickPlayedRow || sTickBlockDone || sTickExtraRows >= MP_CATCHUP_MAX_EXTRA_ROWS)
+        return FALSE;
+    if (gLink.state != LINK_STATE_CONN_ESTABLISHED || gLink.hardwareError || gMain.callback2 == CB2_LinkError)
+        return FALSE;
+    if (!MpLink_CableHeadRow(row))
+        return FALSE; // nothing backlogged, or a whole block / BUS_END comes next
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+    {
+        if (!MpCatchUpCmdOk(row[i][0]))
+            return FALSE; // the game sees this command on its own tick, after its link callback
+    }
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+    {
+        if (!MpCatchUpCmdOk(recvCmds[i][0]))
+            return FALSE; // nor right after one: the link callback runs first
+    }
+    MpLink_CablePop(row);
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+    {
+        for (j = 0; j < CMD_LENGTH; j++)
+            recvCmds[i][j] = row[i][j];
+    }
+    sTickExtraRows++;
+    st = MpCableState();
+    st->stats.rowsPlayed++;
+    st->stats.catchUpRows++;
+    MpCableObserveRow((const u16 (*)[MP_LINK_CMD_WORDS])recvCmds);
+    // What the game reads about the queue (LinkCB_ReadyCloseLink, LinkCB_Standby, ...).
+    MpLink_CableGetInfo(&info);
+    gLink.recvQueue.count = (info.queued > QUEUE_CAPACITY) ? QUEUE_CAPACITY : (u8)info.queued;
+    gLastRecvQueueCount = gLink.recvQueue.count;
+    return TRUE;
+}
+
+void MP_LinkSetFastBlocks(bool8 enabled)
+{
+    sFastBlocks = enabled ? TRUE : FALSE;
+}
+
+bool8 MP_LinkFastBlocksEnabled(void)
+{
+    return sFastBlocks;
+}
+
+void MP_LinkSetRowCatchUp(bool8 enabled)
+{
+    sRowCatchUp = enabled ? TRUE : FALSE;
+}
+
+void MP_SetLinkStats(bool8 enabled)
+{
+    sLinkStatsLog = enabled ? TRUE : FALSE;
+    if (sLinkStatsLog)
+        MP_LOG("link stats: on (one line per link activity, and every 10 s while linked)%s\n",
+               sFastBlocks ? "" : "; whole blocks are off (--mp-link-rows)");
+}
+
+void MpLink_GetCableStats(struct MpLinkCableStats *out)
+{
+    *out = MpCableState()->stats;
+}
+
+void MpLink_SetSelftestObserver(MpLinkSelftestObserver observer)
+{
+    sObserver = observer;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,7 +666,7 @@ static bool8 MpTraceSame(const struct MpTraceEntry *a, const struct MpTraceEntry
 
 static void MpTraceLine(bool8 toFile, const struct MpTraceEntry *e)
 {
-    static const char sRecv[] = { '-', 'R', 'E' };
+    static const char sRecv[] = { '-', 'R', 'E', 'B' };
     char line[256];
 
     snprintf(line, sizeof(line),
@@ -393,7 +675,7 @@ static void MpTraceLine(bool8 toFile, const struct MpTraceEntry *e)
              (unsigned)e->remotePlayers, (unsigned)e->suppress, (unsigned)e->errorOccurred, (unsigned)e->linkState, (unsigned)e->hwError,
              (unsigned)e->mpState, (unsigned)e->endReason, (unsigned)e->open, (unsigned)e->openCount, (unsigned)e->queued,
              (unsigned)e->lost, (unsigned)e->busUp, (unsigned)e->agreed, (unsigned)e->peerDone, (unsigned)e->tradeCb,
-             (unsigned)e->sent, sRecv[e->recvKind < 3 ? e->recvKind : 0], (unsigned)e->recv0, (unsigned)e->recv1);
+             (unsigned)e->sent, sRecv[e->recvKind < sizeof(sRecv) ? e->recvKind : 0], (unsigned)e->recv0, (unsigned)e->recv1);
     if (toFile)
         MpLog_FilePrintf("%s", line);
     else
@@ -425,7 +707,7 @@ static void MpTraceWrite(const char *title, const char *reason, u32 first)
                          (unsigned)MpLog_ExeOffset((const void *)CB2_ReturnToField), (unsigned)MpLog_ExeOffset((const void *)CB1_Overworld));
         MpLog_FilePrintf("[MP] columns: tick, gMain.callback2/1, gLinkCallback, gLinkStatus, gReceivedRemoteLinkPlayers, gSuppressLinkErrorMessage,"
                          " gLinkErrorOccurred, gLink.state, gLink.hardwareError | MP link state, end reason, cable open, open count, queued rows,"
-                         " lost, bus up, agreed, peers done | trade menu callbackId (255 none) | cmd sent, row received (R row, E bus end): word 0 of link id 0,1\n");
+                         " lost, bus up, agreed, peers done | trade menu callbackId (255 none) | cmd sent, row received (R row: word 0 of link id 0,1; E bus end; B whole block: link id, size; tx FB0C = a whole block sent)\n");
     }
     else
     {

@@ -13,9 +13,16 @@
 //     both sides), SendBlock both ways, a stalled member catching up (the 50-row report cap),
 //     close + re-open on the same group (new bus), disconnect -> CB2_LinkError on the
 //     survivor, a member leaving the link while open, and the single-player (no group) cable.
+//  3. PS-051: the agreed exit of a direct trade.
+//  4. PS-052: the fast cable. Whole blocks of every size (1..0x4000; up to MP_LINK_BLOCK_MAX
+//     as one LINK_BLOCK, above that as rows) interleaved with plain command rows from both
+//     members, under lag and jitter and with a slow consumer: everything arrives intact and in
+//     order on both sides. Then the measurements: a battle-like block exchange timed on the
+//     GBA row path (the baseline), with row pacing, and with whole blocks.
 
 #include "global.h"
 #include "battle.h" // gBattleTypeFlags (PS-048 recovery test)
+#include "decompress.h" // gDecompressionBuffer (PS-052: blocks above 0x100 bytes land there)
 #include "link.h"
 #include "main.h"
 #include "string_util.h"
@@ -573,12 +580,15 @@ static void DoClose(void)
     }
 }
 
-// A streams 4 blocks while B is frozen (no game ticks); B then catches up.
+// A streams 4 blocks while B is frozen (no game ticks); B then catches up. The row path (PS-052:
+// whole blocks off), so the rows pile up past the 50-row report cap.
 static void DoStall(void)
 {
     struct MpLinkCableInfo info;
+    struct MpLinkCableStats stats;
     u8 round;
 
+    MP_LinkSetFastBlocks(FALSE);
     for (round = 10; round < 14; round++)
     {
         L_CHECK(RunUntil(CondTaskFinished, 0x1, 0x1), "A idle before the next block");
@@ -603,6 +613,48 @@ static void DoStall(void)
     Enter(G_B);
     L_CHECK(PatternMatches(gBlockRecvBuffer[0], sGames[G_A].trainerId, 13), "after catching up, the last block from A is intact");
     L_CHECK(!(gLinkStatus & LINK_STAT_ERRORS) && gMain.callback2 != CB2_LinkError, "catch-up without a link error");
+    MpLink_GetCableStats(&stats);
+    L_CHECK(stats.catchUpRows > 0, "PS-052: the stalled member played backlogged block rows several per tick");
+    ResetBlockReceivedFlags();
+    Leave();
+    Enter(G_A);
+    ResetBlockReceivedFlags();
+    Leave();
+    MP_LinkSetFastBlocks(TRUE);
+}
+
+// PS-052: the same with whole blocks. B is frozen while A sends 4 blocks, then B ticks again. B's
+// game never takes the blocks (its received flags stay set), so each one waits as long as the GBA
+// cable would have needed for it, then overwrites the previous one, like the cable; nothing is lost
+// and nothing errors.
+static void DoStallFast(void)
+{
+    struct MpLinkCableInfo info;
+    struct MpLinkCableStats stats;
+    u8 round;
+
+    for (round = 20; round < 24; round++)
+    {
+        L_CHECK(RunUntil(CondTaskFinished, 0x1, 0x1), "PS-052: A idle before the next whole block");
+        Enter(G_A);
+        FillPattern(gBlockSendBuffer, sGames[G_A].trainerId, round);
+        L_CHECK(SendBlock(0, gBlockSendBuffer, LINK_BLOCK_SIZE), "PS-052: SendBlock accepted");
+        L_CHECK(IsLinkTaskFinished(), "PS-052: a whole block leaves at once (the link task is finished)");
+        Leave();
+        RunFrames(3, 0x1); // only A ticks
+    }
+    RunFrames(10, 0x0);
+    Enter(G_B);
+    MpLink_CableGetInfo(&info);
+    L_CHECK(info.queued >= 4, "PS-052: the 4 whole blocks wait for the stalled member");
+    Leave();
+    L_CHECK(RunUntil(CondQueueEmpty, 0x2, 0x3), "PS-052: the stalled member takes its whole blocks");
+    RunFrames(3, 0x3);
+    Enter(G_B);
+    L_CHECK(PatternMatches(gBlockRecvBuffer[0], sGames[G_A].trainerId, 23), "PS-052: the last whole block from A is intact");
+    L_CHECK(!(gLinkStatus & LINK_STAT_ERRORS) && gMain.callback2 != CB2_LinkError, "PS-052: no link error");
+    MpLink_GetCableStats(&stats);
+    L_CHECK(stats.holdTicks > 0, "PS-052: a block waited while the game had not taken the previous one");
     ResetBlockReceivedFlags();
     Leave();
     Enter(G_A);
@@ -713,6 +765,10 @@ static void ScenarioHostNotMember(void)
     failuresBefore = sFail;
     DoStall();
     Report("A: a stalled member catches up (stall, not desync; 50-row cap)", failuresBefore);
+
+    failuresBefore = sFail;
+    DoStallFast();
+    Report("A: PS-052 a stalled member catches up on whole blocks", failuresBefore);
 
     failuresBefore = sFail;
     DoClose();
@@ -1213,6 +1269,681 @@ static void ScenarioAgreedExit(bool8 hostIsMember)
     LeaveAll();
 }
 
+// ===========================================================================
+// 4. PS-052: the fast cable on the real link stack
+// ===========================================================================
+
+enum
+{
+    NET_CLEAN,
+    NET_JITTER,     // the laggy session's network pump is withheld 40 % of the frames
+    NET_LAG,        // the laggy session's network pump runs every 6th frame (about 100 ms at 60 fps)
+};
+
+static const char *const sNetNames[] = { "clean", "jitter", "lag" };
+
+// One frame: the network (one session's pump maybe withheld), then both games tick.
+static void NetFrame(u8 net, u8 laggySession, u32 frame)
+{
+    u8 i, g;
+
+    for (i = 0; i < S_COUNT; i++)
+    {
+        if (i == laggySession && ((net == NET_JITTER && (Rand() % 100) < 40) || (net == NET_LAG && (frame % 6) != 0)))
+            continue;
+        Sel(i);
+        MP_Update();
+        DrainEvents();
+    }
+    for (g = 0; g < G_COUNT; g++)
+        TickGame(g);
+}
+
+static bool8 SetUpPair(bool8 hostIsMember, u8 *mask, u8 *laggySession)
+{
+    bool8 ok = TRUE;
+
+    if (hostIsMember)
+    {
+        InitGame(G_A, S_HOST, "HOST", 0x00C0FFEEu);
+        InitGame(G_B, S_C1, "CARL", 0x00012345u);
+        *mask = 0x03;
+        *laggySession = S_C1;
+    }
+    else
+    {
+        InitGame(G_A, S_C1, "ALICE", 0x0001A11Cu);
+        InitGame(G_B, S_C2, "BOB", 0x000B0B0Bu);
+        *mask = 0x06;
+        *laggySession = S_C2;
+    }
+    ok = ok && HostOn(S_HOST, "Host");
+    ok = ok && JoinOn(S_C1, "Carl") && WaitSession(S_C1);
+    if (!hostIsMember)
+        ok = ok && JoinOn(S_C2, "Bob") && WaitSession(S_C2);
+    PumpNet();
+    return ok;
+}
+
+// Join the group, open the cable and run the player-data exchange; the link task is then idle.
+static bool8 LinkUp(u8 mask, const char *what)
+{
+    u32 failuresBefore = sFail;
+    u8 g;
+
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        gMain.callback2 = NULL;
+        gLinkErrorOccurred = FALSE;
+        SetSuppressLinkErrorMessage(FALSE);
+        L_CHECK(MP_LinkJoin(mask), "PS-052: join");
+        Leave();
+    }
+    L_CHECK(RunUntil(CondGrouped, 0x3, 0x3), "PS-052: grouped");
+    DoExchange(what);
+    L_CHECK(RunUntil(CondTaskFinished, 0x3, 0x3), "PS-052: link task idle after the exchange");
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        ResetBlockReceivedFlags();
+        Leave();
+    }
+    return sFail == failuresBefore;
+}
+
+// Close both cables and leave the group, whatever happened; a failed case restarts link.c.
+static void LinkDown(u32 failuresBefore)
+{
+    u8 g;
+
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        CloseLink();
+        MP_LinkLeave();
+        gMain.callback2 = NULL;
+        gLinkErrorOccurred = FALSE;
+        SetSuppressLinkErrorMessage(FALSE);
+        Leave();
+    }
+    RunFrames(5, 0x3);
+    if (sFail != failuresBefore)
+    {
+        for (g = 0; g < G_COUNT; g++)
+        {
+            memcpy(sGames[g].link, sNeutralLink, sizeof(sGames[g].link));
+            sGames[g].callback2 = NULL;
+            sGames[g].advanceIn = 0;
+        }
+    }
+    MpLink_TraceSelftestEndIncident();
+}
+
+// --- 4a. Blocks of every size interleaved with rows: intact and in order ---------------------
+
+#define STREAM_MARKER           0x3A00  // + sender link id: not a LINKCMD, link.c ignores it
+#define STREAM_MAX_EVENTS       48
+#define STREAM_TIME_LIMIT_MS    20000
+
+// A sends every size, the big ones included (they arrive in gDecompressionBuffer, which the two
+// game instances of this process share; only A sends them, so both sides see A's data there).
+static const u16 sStreamSizesA[] =
+{
+    1, 2, 13, 14, 15, 27, 28, 29, 100, 200, 254, 255, BLOCK_BUFFER_SIZE, BLOCK_BUFFER_SIZE + 1, 300, 499,
+    MP_LINK_BLOCK_MAX, MP_LINK_BLOCK_MAX + 1, 0x800, MP_LINK_MAX_BLOCK_SIZE,
+};
+static const u16 sStreamSizesB[] = { 1, 14, 15, 28, 64, 128, 255, BLOCK_BUFFER_SIZE, 7, 3 };
+
+struct StreamSide
+{
+    u16 events[STREAM_MAX_EVENTS];  // block size, 0 = a marker command row
+    u8 count;
+    u8 sent;
+    u8 recvIdx[G_COUNT];            // [receiving game] the next event expected from this sender
+};
+
+static struct StreamSide sStream[G_COUNT];
+static u32 sStreamBad;
+static u8 sBigSrc[MP_LINK_MAX_BLOCK_SIZE + 16]; // SendBlock above 0x100 bytes sends from the caller's buffer (LinkCB_BlockSend reads up to 13 bytes past it)
+static u8 sSavedDecompression[MP_LINK_MAX_BLOCK_SIZE];
+
+static u8 StreamByte(u8 sender, u8 seq, u32 i)
+{
+    return (u8)(sender * 0x5Bu + seq * 0x1Du + i * 7u + (i >> 7));
+}
+
+static u16 StreamWord(u8 sender, u8 seq, u32 j)
+{
+    return (u16)(0x1000u * sender + seq * 0x31u + j);
+}
+
+static void StreamBad(const char *what, u8 receiver, u8 sender, u32 idx)
+{
+    if (sStreamBad < 10)
+        MP_LOG("selftest: FAIL: link: PS-052 stream: %s (game %u from link id %u, event %u)\n", what, (unsigned)receiver, (unsigned)sender, (unsigned)idx);
+    sStreamBad++;
+}
+
+static void StreamObserver(bool8 isBlock, u8 who, const u16 (*row)[MP_LINK_CMD_WORDS], u16 size)
+{
+    u8 r, s;
+    u32 i, idx;
+
+    if (sEntered < 0 || sEntered >= G_COUNT)
+        return;
+    r = (u8)sEntered;
+    if (isBlock)
+    {
+        const u8 *data;
+
+        if (who >= G_COUNT)
+        {
+            StreamBad("a block from a link id not in the group", r, who, 0);
+            return;
+        }
+        idx = sStream[who].recvIdx[r];
+        if (idx >= sStream[who].count || sStream[who].events[idx] != size)
+        {
+            StreamBad("a block out of order or of the wrong size", r, who, idx);
+            return;
+        }
+        data = (size > BLOCK_BUFFER_SIZE) ? (const u8 *)gDecompressionBuffer : (const u8 *)gBlockRecvBuffer[who];
+        for (i = 0; i < size; i++)
+        {
+            if (data[i] != StreamByte(who, (u8)idx, i))
+            {
+                StreamBad("a block's data is not intact", r, who, idx);
+                break;
+            }
+        }
+        sStream[who].recvIdx[r]++;
+        return;
+    }
+    for (s = 0; s < G_COUNT; s++)
+    {
+        u16 w0 = row[s][0];
+
+        if (w0 == 0 || w0 == LINKCMD_INIT_BLOCK || w0 == LINKCMD_CONT_BLOCK)
+            continue;
+        idx = sStream[s].recvIdx[r];
+        if (w0 != STREAM_MARKER + s)
+        {
+            StreamBad("an unexpected command in a row", r, s, idx);
+            continue;
+        }
+        if (idx >= sStream[s].count || sStream[s].events[idx] != 0 || row[s][1] != idx)
+        {
+            StreamBad("a command row out of order", r, s, idx);
+            continue;
+        }
+        for (i = 2; i < MP_LINK_CMD_WORDS; i++)
+        {
+            if (row[s][i] != StreamWord(s, (u8)idx, i))
+            {
+                StreamBad("a command row's words are not intact", r, s, idx);
+                break;
+            }
+        }
+        sStream[s].recvIdx[r]++;
+    }
+}
+
+static void StreamScript(u8 g, const u16 *sizes, u32 count)
+{
+    struct StreamSide *x = &sStream[g];
+    u32 i;
+
+    memset(x, 0, sizeof(*x));
+    for (i = 0; i < count && x->count + 2 < STREAM_MAX_EVENTS; i++)
+    {
+        x->events[x->count++] = 0;          // a command row
+        x->events[x->count++] = sizes[i];   // then a block
+    }
+    x->events[x->count++] = 0;
+}
+
+// TRUE once every game has received the sender's events before `upTo`.
+static bool8 StreamAllReceived(u8 sender, u32 upTo)
+{
+    u8 r;
+
+    for (r = 0; r < G_COUNT; r++)
+    {
+        if (sStream[sender].recvIdx[r] < upTo)
+            return FALSE;
+    }
+    return TRUE;
+}
+
+// The game side of one sender, after its tick: the next event once the link task is idle.
+static void StreamSend(u8 g)
+{
+    struct StreamSide *x = &sStream[g];
+    u16 size;
+    u32 i;
+
+    // A test artefact, not a game rule: the two game instances share gDecompressionBuffer, so a
+    // block above 0x100 bytes waits until both have taken the previous one (else one side's next
+    // block would overwrite the other side's buffer before it is checked).
+    if (x->sent < x->count && x->events[x->sent] > BLOCK_BUFFER_SIZE && !StreamAllReceived(g, x->sent))
+        return;
+    Enter(g);
+    if (x->sent < x->count && IsLinkTaskFinished())
+    {
+        size = x->events[x->sent];
+        if (size == 0)
+        {
+            gSendCmd[0] = STREAM_MARKER + g;
+            gSendCmd[1] = x->sent;
+            for (i = 2; i < CMD_LENGTH; i++)
+                gSendCmd[i] = StreamWord(g, x->sent, i);
+            x->sent++;
+        }
+        else
+        {
+            u8 *src = (size > BLOCK_BUFFER_SIZE) ? sBigSrc : gBlockSendBuffer;
+
+            for (i = 0; i < size; i++)
+                src[i] = StreamByte(g, x->sent, i);
+            if (SendBlock(0, src, size))
+                x->sent++;
+            else
+                StreamBad("SendBlock refused while the link task was idle", g, g, x->sent);
+        }
+    }
+    Leave();
+}
+
+static bool8 StreamDone(void)
+{
+    u8 s, r;
+
+    for (s = 0; s < G_COUNT; s++)
+    {
+        for (r = 0; r < G_COUNT; r++)
+        {
+            if (sStream[s].recvIdx[r] < sStream[s].count)
+                return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static void RunStreamCase(bool8 hostIsMember, bool8 fast, u8 net, bool8 slowConsumer)
+{
+    struct MpLinkCableStats before, after;
+    u32 failuresBefore = sFail;
+    u32 rejectsBefore = MP_LinkGetRejectCount();
+    u32 start, frame = 0;
+    u32 fastA = 0, rowsA = 0, i;
+    u8 mask, laggy, g;
+    char what[160];
+
+    snprintf(what, sizeof(what), "PS-052 blocks 1..0x4000 + rows, in order and intact: %s, %s, %s%s",
+             hostIsMember ? "host is a member" : "host only sequences", fast ? "whole blocks" : "rows only (fallback)",
+             sNetNames[net], slowConsumer ? ", slow consumer" : "");
+    L_CHECK(SetUpPair(hostIsMember, &mask, &laggy), "PS-052: session set-up");
+    MP_LinkSetFastBlocks(fast);
+    LinkUp(mask, "PS-052: player-data exchange before the stream");
+    StreamScript(G_A, sStreamSizesA, ARRAY_COUNT(sStreamSizesA));
+    StreamScript(G_B, sStreamSizesB, ARRAY_COUNT(sStreamSizesB));
+    for (i = 0; i < ARRAY_COUNT(sStreamSizesA); i++)
+    {
+        if (fast && sStreamSizesA[i] <= MP_LINK_BLOCK_MAX)
+            fastA++;
+        else
+            rowsA++;
+    }
+    sStreamBad = 0;
+    memcpy(sSavedDecompression, gDecompressionBuffer, sizeof(sSavedDecompression));
+    Enter(G_A);
+    MpLink_GetCableStats(&before);
+    Leave();
+    MpLink_SetSelftestObserver(StreamObserver);
+
+    start = MpTransport_GetTimeMs();
+    while (!StreamDone() && (u32)(MpTransport_GetTimeMs() - start) < STREAM_TIME_LIMIT_MS && sStreamBad == 0)
+    {
+        bool8 linkError = FALSE;
+
+        NetFrame(net, laggy, frame);
+        for (g = 0; g < G_COUNT; g++)
+        {
+            Enter(g);
+            if (gMain.callback2 == CB2_LinkError || (gLinkStatus & LINK_STAT_ERRORS))
+                linkError = TRUE;
+            // The consumer: like the battle's VBlank copy every frame, or a slow menu every 7th.
+            if (!slowConsumer || (frame % 7) == 0)
+                ResetBlockReceivedFlags();
+            Leave();
+        }
+        if (linkError)
+            break;
+        StreamSend(G_A);
+        StreamSend(G_B);
+        frame++;
+    }
+    MpLink_SetSelftestObserver(NULL);
+
+    L_CHECK(sStreamBad == 0, "PS-052: every block and command row arrived intact and in order");
+    L_CHECK(StreamDone(), "PS-052: both sides received every event of both senders (their own included)");
+    for (g = 0; g < G_COUNT; g++)
+    {
+        Enter(g);
+        L_CHECK(gMain.callback2 != CB2_LinkError && !gLinkErrorOccurred && !(gLinkStatus & LINK_STAT_ERRORS), "PS-052: no link error during the stream");
+        Leave();
+    }
+    L_CHECK(MP_LinkGetRejectCount() == rejectsBefore, "PS-052: nothing was rejected");
+    Enter(G_A);
+    MpLink_GetCableStats(&after);
+    Leave();
+    L_CHECK(after.blocksSentFast - before.blocksSentFast == fastA, "PS-052: A sent the blocks up to MP_LINK_BLOCK_MAX whole (when on)");
+    L_CHECK(after.blocksSentRows - before.blocksSentRows == rowsA, "PS-052: A sent the bigger blocks (or all, when off) as rows");
+    if (sFail != failuresBefore)
+        MP_LOG("selftest: link: PS-052 stream: frames %u; A received A %u/%u B %u/%u; B received A %u/%u B %u/%u\n", (unsigned)frame,
+               (unsigned)sStream[G_A].recvIdx[G_A], (unsigned)sStream[G_A].count, (unsigned)sStream[G_B].recvIdx[G_A], (unsigned)sStream[G_B].count,
+               (unsigned)sStream[G_A].recvIdx[G_B], (unsigned)sStream[G_A].count, (unsigned)sStream[G_B].recvIdx[G_B], (unsigned)sStream[G_B].count);
+    else
+        MP_LOG("selftest: link: PS-052 stream (%s): %u frames; A: rows %u (catch-up %u), held %u ticks\n", what, (unsigned)frame,
+               (unsigned)(after.rowsPlayed - before.rowsPlayed), (unsigned)(after.catchUpRows - before.catchUpRows),
+               (unsigned)(after.holdTicks - before.holdTicks));
+    memcpy(gDecompressionBuffer, sSavedDecompression, sizeof(sSavedDecompression));
+    LinkDown(failuresBefore);
+    MP_LinkSetFastBlocks(TRUE);
+    LeaveAll();
+    Report(what, failuresBefore);
+}
+
+// LINK_BLOCK parser cases (protocol.md 8.3).
+static void TestBlockParser(void)
+{
+    static struct MpMsgLinkBlock sIn, sOut;
+    static u8 sBuf[MP_MAX_PACKET_SIZE + 8];
+    u32 failuresBefore = sFail;
+    struct MpMsgHeader hdr;
+    u16 len, size;
+    u32 i, k;
+
+    memset(&sIn, 0, sizeof(sIn));
+    sIn.groupId = 3;
+    sIn.busEpoch = 9;
+    sIn.linkId = 1;
+    for (size = 1; size <= MP_LINK_BLOCK_MAX; size = (size < 20) ? size + 1 : size + 37)
+    {
+        sIn.size = size;
+        for (i = 0; i < size; i++)
+            sIn.data[i] = (u8)(i * 11 + size);
+        len = MpProto_WriteLinkBlock(sBuf, MP_MAX_PACKET_SIZE, &sIn);
+        L_CHECK(len == MP_HEADER_SIZE + MP_LINK_BLOCK_SIZE(size) && len <= MP_MAX_PACKET_SIZE, "LINK_BLOCK: written length");
+        L_CHECK(MpProto_ParseHeader(sBuf, len, &hdr) && hdr.type == MP_MSG_LINK_BLOCK, "LINK_BLOCK: header");
+        L_CHECK(MpProto_ParseLinkBlock(sBuf + MP_HEADER_SIZE, len - MP_HEADER_SIZE, &sOut) == MP_PARSE_OK
+             && sOut.size == size && sOut.groupId == 3 && sOut.busEpoch == 9 && sOut.linkId == 1
+             && memcmp(sOut.data, sIn.data, size) == 0, "LINK_BLOCK: round trip");
+        L_CHECK(MpProto_ParseLinkBlock(sBuf + MP_HEADER_SIZE, len - MP_HEADER_SIZE - 1, &sOut) == MP_PARSE_ERR_TRUNCATED, "LINK_BLOCK: one byte short");
+        sBuf[len] = 0;
+        L_CHECK(MpProto_ParseLinkBlock(sBuf + MP_HEADER_SIZE, len - MP_HEADER_SIZE + 1, &sOut) == MP_PARSE_ERR_OVERSIZED, "LINK_BLOCK: one byte long");
+    }
+    sIn.size = MP_LINK_BLOCK_MAX;
+    len = MpProto_WriteLinkBlock(sBuf, MP_MAX_PACKET_SIZE, &sIn);
+    L_CHECK(len == MP_MAX_PACKET_SIZE, "LINK_BLOCK: the biggest whole block fills a packet exactly");
+    sIn.size = 0;
+    L_CHECK(MpProto_WriteLinkBlock(sBuf, MP_MAX_PACKET_SIZE, &sIn) == 0, "LINK_BLOCK: size 0 is not written");
+    sIn.size = MP_LINK_BLOCK_MAX + 1;
+    L_CHECK(MpProto_WriteLinkBlock(sBuf, sizeof(sBuf), &sIn) == 0, "LINK_BLOCK: a block above MP_LINK_BLOCK_MAX is not written");
+    // Targeted bad fields on a valid 10-byte block.
+    sIn.size = 10;
+    len = MpProto_WriteLinkBlock(sBuf, MP_MAX_PACKET_SIZE, &sIn);
+    {
+        u8 *p = sBuf + MP_HEADER_SIZE;
+        u32 n = len - MP_HEADER_SIZE;
+
+        p[0] = 0;  L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_ERR_BAD_FIELD, "LINK_BLOCK: groupId 0"); p[0] = 3;
+        p[1] = 0;  L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_ERR_BAD_FIELD, "LINK_BLOCK: busEpoch 0"); p[1] = 9;
+        p[2] = 4;  L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_ERR_BAD_FIELD, "LINK_BLOCK: link id 4"); p[2] = 1;
+        p[4] = 0; p[5] = 0; L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_ERR_BAD_FIELD, "LINK_BLOCK: size 0");
+        p[4] = (u8)(MP_LINK_BLOCK_MAX + 1); p[5] = (u8)((MP_LINK_BLOCK_MAX + 1) >> 8);
+        L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_ERR_BAD_FIELD, "LINK_BLOCK: size above MP_LINK_BLOCK_MAX");
+        p[4] = 0xFF; p[5] = 0xFF; L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_ERR_BAD_FIELD, "LINK_BLOCK: size 0xFFFF");
+        p[4] = 11; p[5] = 0; L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_ERR_TRUNCATED, "LINK_BLOCK: size larger than the payload");
+        p[4] = 9;  L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_ERR_OVERSIZED, "LINK_BLOCK: size smaller than the payload");
+        p[4] = 10; L_CHECK(MpProto_ParseLinkBlock(p, n, &sOut) == MP_PARSE_OK, "LINK_BLOCK: restored");
+        for (i = 0; i < MP_LINK_BLOCK_HEADER; i++)
+            L_CHECK(MpProto_ParseLinkBlock(p, i, &sOut) == MP_PARSE_ERR_TRUNCATED, "LINK_BLOCK: shorter than the header");
+        L_CHECK(MpProto_ParseLinkBlock(NULL, 0, &sOut) == MP_PARSE_ERR_TRUNCATED, "LINK_BLOCK: NULL");
+    }
+    // Garbage: whatever parses must be self-consistent.
+    for (k = 0; k < 30000; k++)
+    {
+        u32 n = Rand() % (MP_MAX_PAYLOAD_SIZE + 4);
+
+        for (i = 0; i < n; i++)
+            sBuf[i] = (u8)Rand();
+        if ((k & 1) && n >= MP_LINK_BLOCK_HEADER)
+        {
+            sBuf[4] = (u8)(n - MP_LINK_BLOCK_HEADER); // often a matching size
+            sBuf[5] = (u8)((n - MP_LINK_BLOCK_HEADER) >> 8);
+        }
+        if (MpProto_ParseLinkBlock(sBuf, n, &sOut) == MP_PARSE_OK)
+            L_CHECK(sOut.size >= 1 && sOut.size <= MP_LINK_BLOCK_MAX && n == (u32)MP_LINK_BLOCK_SIZE(sOut.size)
+                 && sOut.groupId != 0 && sOut.busEpoch != 0 && sOut.linkId < MP_LINK_MAX_MEMBERS, "LINK_BLOCK: garbage that parses is consistent");
+    }
+    Report("PS-052 LINK_BLOCK parser (round trip, sizes, bad fields, garbage)", failuresBefore);
+}
+
+// A whole block for a link id or of a size the game must not take never reaches link.c's buffers:
+// the member drops it (wrong link id), the host never relays it (size), link.c rejects a size above
+// gDecompressionBuffer.
+static void TestDeliverBounds(void)
+{
+    static u8 sData[MP_LINK_BLOCK_MAX];
+    u32 failuresBefore = sFail;
+    u32 rejects = MP_LinkGetRejectCount();
+    u16 canary;
+
+    memset(sData, 0x5A, sizeof(sData));
+    InitGame(G_A, S_HOST, "SOLO", 1);
+    Enter(G_A);
+    gLink.state = LINK_STATE_CONN_ESTABLISHED;
+    canary = gBlockRecvBuffer[1][0];
+    MP_LinkDeliverWholeBlock(MAX_LINK_PLAYERS, sData, 10);
+    MP_LinkDeliverWholeBlock(0xFF, sData, 10);
+    MP_LinkDeliverWholeBlock(1, NULL, 10);
+    L_CHECK(gBlockRecvBuffer[1][0] == canary && !gBlockReceivedStatus[1], "PS-052: a whole block for a bad link id or with no data is ignored");
+    MP_LinkDeliverWholeBlock(1, sData, 0);
+    L_CHECK(!gBlockReceivedStatus[1] && MP_LinkGetRejectCount() == rejects + 1, "PS-052: a whole block of size 0 is rejected");
+    gRemoteLinkPlayersNotReceived[1] = FALSE;
+    MP_LinkDeliverWholeBlock(1, sData, 6);
+    L_CHECK(gBlockReceivedStatus[1] && ((u8 *)gBlockRecvBuffer[1])[5] == 0x5A, "PS-052: a valid whole block sets the received flag");
+    CloseLink();
+    Leave();
+    memcpy(sGames[G_A].link, sNeutralLink, sizeof(sGames[G_A].link));
+    MpLink_TraceSelftestEndIncident(); // the rejection above dumped the trace once
+    Report("PS-052 whole-block delivery bounds", failuresBefore);
+}
+
+// --- 4b. Measurements: a battle-like exchange ------------------------------------------------
+//
+// The link master sends a battle controller command (a 0x38-byte block: 8-byte header + 0x30), the
+// slave waits for it and answers with a 12-byte block (header + one return value), the master
+// waits for the answer: one exchange, as in a battle turn (CHOOSEACTION -> reply, MOVEANIMATION
+// -> controller done, ...). MEASURE_EXCHANGES of them, timed in game frames.
+
+#define MEASURE_EXCHANGES   30
+#define MEASURE_CMD_SIZE    0x38
+#define MEASURE_REPLY_SIZE  12
+
+struct MeasureResult
+{
+    u32 frames;
+    u32 exchanges;
+    struct MpLinkCableStats a;
+    struct MpLinkCableStats b;
+};
+
+static void MeasureFill(u8 *dst, u16 size, u8 seq, u8 who)
+{
+    u32 i;
+
+    for (i = 0; i < size; i++)
+        dst[i] = (u8)(seq * 3u + who * 101u + i);
+}
+
+static bool8 MeasureCheck(const u16 *recv, u16 size, u8 seq, u8 who)
+{
+    const u8 *p = (const u8 *)recv;
+    u32 i;
+
+    for (i = 0; i < size; i++)
+    {
+        if (p[i] != (u8)(seq * 3u + who * 101u + i))
+            return FALSE;
+    }
+    return TRUE;
+}
+
+static void RunMeasure(bool8 hostIsMember, bool8 fast, bool8 catchUp, u8 net, const char *name, struct MeasureResult *res)
+{
+    struct MpLinkCableStats a0, b0;
+    u32 failuresBefore = sFail;
+    u32 start;
+    u8 mask, laggy, phase = 0, seq = 0;
+    bool8 dataOk = TRUE, linkError = FALSE;
+    char what[160];
+
+    memset(res, 0, sizeof(*res));
+    L_CHECK(SetUpPair(hostIsMember, &mask, &laggy), "PS-052 measure: session set-up");
+    MP_LinkSetFastBlocks(fast);
+    MP_LinkSetRowCatchUp(catchUp);
+    LinkUp(mask, "PS-052 measure: player-data exchange");
+    Enter(G_A); MpLink_GetCableStats(&a0); Leave();
+    Enter(G_B); MpLink_GetCableStats(&b0); Leave();
+
+    start = MpTransport_GetTimeMs();
+    while (res->exchanges < MEASURE_EXCHANGES && (u32)(MpTransport_GetTimeMs() - start) < LINK_TIME_LIMIT_MS && !linkError)
+    {
+        u8 g;
+
+        NetFrame(net, laggy, res->frames);
+        res->frames++;
+        for (g = 0; g < G_COUNT; g++)
+        {
+            Enter(g);
+            if (gMain.callback2 == CB2_LinkError || (gLinkStatus & LINK_STAT_ERRORS))
+                linkError = TRUE;
+            Leave();
+        }
+        // The games, after their tick (their callbacks).
+        Enter(G_A);
+        if (GetBlockReceivedStatus() & 1)
+            ResetBlockReceivedFlag(0); // our own command's echo
+        if (phase == 2 && (GetBlockReceivedStatus() & 2))
+        {
+            dataOk = dataOk && MeasureCheck(gBlockRecvBuffer[1], MEASURE_REPLY_SIZE, seq, 1);
+            ResetBlockReceivedFlag(1);
+            res->exchanges++;
+            seq++;
+            phase = 0;
+        }
+        if (phase == 0 && res->exchanges < MEASURE_EXCHANGES && IsLinkTaskFinished())
+        {
+            MeasureFill(gBlockSendBuffer, MEASURE_CMD_SIZE, seq, 0);
+            if (SendBlock(0, gBlockSendBuffer, MEASURE_CMD_SIZE))
+                phase = 1;
+        }
+        Leave();
+        Enter(G_B);
+        if (GetBlockReceivedStatus() & 2)
+            ResetBlockReceivedFlag(1); // our own reply's echo
+        if (phase == 1 && (GetBlockReceivedStatus() & 1) && IsLinkTaskFinished())
+        {
+            dataOk = dataOk && MeasureCheck(gBlockRecvBuffer[0], MEASURE_CMD_SIZE, seq, 0);
+            ResetBlockReceivedFlag(0);
+            MeasureFill(gBlockSendBuffer, MEASURE_REPLY_SIZE, seq, 1);
+            if (SendBlock(0, gBlockSendBuffer, MEASURE_REPLY_SIZE))
+                phase = 2;
+        }
+        Leave();
+    }
+    Enter(G_A); MpLink_GetCableStats(&res->a); Leave();
+    Enter(G_B); MpLink_GetCableStats(&res->b); Leave();
+    // Only this exchange (the player-data exchange ran on the same bus).
+    res->a.blocksSentFast -= a0.blocksSentFast;  res->a.blocksSentRows -= a0.blocksSentRows;
+    res->a.ownBlocks -= a0.ownBlocks;            res->a.ownBlockTicks -= a0.ownBlockTicks;
+    res->a.rowsPlayed -= a0.rowsPlayed;          res->a.catchUpRows -= a0.catchUpRows;
+    res->a.idleTicks -= a0.idleTicks;            res->a.waitTicks -= a0.waitTicks;
+    res->b.rowsPlayed -= b0.rowsPlayed;          res->b.catchUpRows -= b0.catchUpRows;
+    res->b.ownBlocks -= b0.ownBlocks;            res->b.ownBlockTicks -= b0.ownBlockTicks;
+    res->b.idleTicks -= b0.idleTicks;            res->b.waitTicks -= b0.waitTicks;
+
+    snprintf(what, sizeof(what), "PS-052 measure: %s", name);
+    L_CHECK(res->exchanges == MEASURE_EXCHANGES, "PS-052 measure: every exchange completed in time");
+    L_CHECK(dataOk, "PS-052 measure: every command and answer intact");
+    L_CHECK(!linkError, "PS-052 measure: no link error");
+    {
+        u32 per10 = (res->exchanges != 0) ? res->frames * 10 / res->exchanges : 0;
+        u32 ownA10 = (res->a.ownBlocks != 0) ? res->a.ownBlockTicks * 10 / res->a.ownBlocks : 0;
+        u32 ownB10 = (res->b.ownBlocks != 0) ? res->b.ownBlockTicks * 10 / res->b.ownBlocks : 0;
+
+        MP_LOG("selftest: link: PS-052 measure [%s]: %u exchanges in %u frames = %u.%u frames each; "
+               "master: rows %u (catch-up %u), blocks %u whole + %u as rows, own block back after %u.%u ticks, nothing received %u ticks (%u waiting); "
+               "slave: rows %u (catch-up %u), own block back after %u.%u ticks, nothing received %u ticks (%u waiting)\n",
+               name, (unsigned)res->exchanges, (unsigned)res->frames, (unsigned)(per10 / 10), (unsigned)(per10 % 10),
+               (unsigned)res->a.rowsPlayed, (unsigned)res->a.catchUpRows, (unsigned)res->a.blocksSentFast, (unsigned)res->a.blocksSentRows,
+               (unsigned)(ownA10 / 10), (unsigned)(ownA10 % 10), (unsigned)res->a.idleTicks, (unsigned)res->a.waitTicks,
+               (unsigned)res->b.rowsPlayed, (unsigned)res->b.catchUpRows, (unsigned)(ownB10 / 10), (unsigned)(ownB10 % 10),
+               (unsigned)res->b.idleTicks, (unsigned)res->b.waitTicks);
+    }
+    LinkDown(failuresBefore);
+    MP_LinkSetFastBlocks(TRUE);
+    MP_LinkSetRowCatchUp(TRUE);
+    LeaveAll();
+    Report(what, failuresBefore);
+}
+
+static void ScenarioFastCable(void)
+{
+    struct MeasureResult rows, catchUp, fast;
+    u32 failuresBefore;
+    u8 net;
+    char name[96];
+
+    TestBlockParser();
+    TestDeliverBounds();
+
+    // 4a. Acceptance: blocks of 1..max size interleaved with rows, with lag and jitter.
+    RunStreamCase(TRUE, TRUE, NET_CLEAN, FALSE);
+    RunStreamCase(TRUE, TRUE, NET_JITTER, FALSE);
+    RunStreamCase(TRUE, TRUE, NET_LAG, TRUE);
+    RunStreamCase(FALSE, TRUE, NET_LAG, FALSE);
+    RunStreamCase(FALSE, TRUE, NET_JITTER, TRUE);
+    RunStreamCase(TRUE, FALSE, NET_JITTER, FALSE);   // the fallback: the GBA row path, with row pacing
+    MP_LinkSetRowCatchUp(FALSE);
+    RunStreamCase(TRUE, FALSE, NET_CLEAN, FALSE);    // the baseline: exactly the master branch's cable
+    MP_LinkSetRowCatchUp(TRUE);
+
+    // 4b. Measurements (host is the link master, as in the play-test set-up).
+    for (net = NET_CLEAN; net <= NET_LAG; net++)
+    {
+        failuresBefore = sFail;
+        snprintf(name, sizeof(name), "%s, GBA row path (baseline = master)", sNetNames[net]);
+        RunMeasure(TRUE, FALSE, FALSE, net, name, &rows);
+        snprintf(name, sizeof(name), "%s, row path + row pacing", sNetNames[net]);
+        RunMeasure(TRUE, FALSE, TRUE, net, name, &catchUp);
+        snprintf(name, sizeof(name), "%s, whole blocks + row pacing (PS-052 default)", sNetNames[net]);
+        RunMeasure(TRUE, TRUE, TRUE, net, name, &fast);
+        L_CHECK(fast.frames < rows.frames, "PS-052 measure: whole blocks are faster than the GBA row path");
+        if (net != NET_JITTER) // random withholding differs from run to run: logged only
+            L_CHECK(catchUp.frames <= rows.frames + rows.frames / 10, "PS-052 measure: row pacing is not slower than the row path");
+        if (rows.frames != 0 && fast.frames != 0)
+            MP_LOG("selftest: link: PS-052 measure [%s]: speed-up x%u.%u (%u -> %u frames for %u exchanges)\n", sNetNames[net],
+                   (unsigned)(rows.frames * 10 / fast.frames / 10), (unsigned)(rows.frames * 10 / fast.frames % 10),
+                   (unsigned)rows.frames, (unsigned)fast.frames, (unsigned)MEASURE_EXCHANGES);
+        snprintf(name, sizeof(name), "PS-052 measure: %s: whole blocks beat the row path", sNetNames[net]);
+        Report(name, failuresBefore);
+    }
+}
+
 // No group: the cable is unplugged, exactly like single-player with the old stub.
 static void ScenarioNoGroup(void)
 {
@@ -1270,8 +2001,12 @@ u32 MpSelftest_Link(void)
     ScenarioHostMember();
     ScenarioAgreedExit(TRUE);   // PS-051: the host is the leader (the usual play-test set-up)
     ScenarioAgreedExit(FALSE);  // PS-051: two clients, the host only sequences
+    ScenarioFastCable();        // PS-052: whole blocks, row pacing, measurements
 
-    // Leave the process as it was: the boot state of link.c, no sessions.
+    // Leave the process as it was: the boot state of link.c, no sessions, PS-052 defaults.
+    MP_LinkSetFastBlocks(TRUE);
+    MP_LinkSetRowCatchUp(TRUE);
+    MpLink_SetSelftestObserver(NULL);
     MP_LinkSelftestState(sNeutralLink, sizeof(sNeutralLink), TRUE);
     gSaveBlock1Ptr = sSavedPtr1;
     gSaveBlock2Ptr = sSavedPtr2;

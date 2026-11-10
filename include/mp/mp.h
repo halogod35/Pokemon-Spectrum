@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      9       // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045), 9 = LINK_DONE + END reason DONE (PS-051).
+#define MP_PROTOCOL_VERSION      10      // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045), 9 = LINK_DONE + END reason DONE (PS-051), 10 = LINK_BLOCK fast cable (PS-052).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -625,6 +625,25 @@ u32 MP_LinkTraceGetDumpCount(void); // since boot (selftest)
 // SendBlock rounds, close, and repeat, logging each step. Ticked from HandleLinkConnection().
 void MP_SetLinkTest(bool8 enabled);
 void MP_LinkTestTick(void);
+// PS-052 fast cable (mp_link_cable.c, protocol.md 6.12 "Whole blocks").
+//   MP_LinkOnSendBlock: link.c's InitBlockSend, after the block is set up. TRUE = the cable sent
+//     the whole block as one LINK_BLOCK (1..MP_LINK_BLOCK_MAX bytes, on the bus, fast blocks on):
+//     link.c then skips the INIT_BLOCK / CONT_BLOCK rows. FALSE = the GBA row path.
+//   MP_LinkOnBlockReceived: link.c, a block from link id `who` is complete for the game (row path
+//     or whole); stats, pacing and the selftest observer.
+//   MP_LinkCatchUpRow: link.c's LinkMain2, after ProcessRecvCmds. Hands the game one more queued
+//     row this tick (TRUE) while rows are backlogged and the row carries only block data (row pacing).
+//   MP_LinkSetFastBlocks(FALSE) (--mp-link-rows) sends every block as rows like the GBA cable;
+//   MP_LinkSetRowCatchUp(FALSE) plays exactly one row per tick. Both default to TRUE. Receiving
+//   works the same either way, so members may differ.
+//   MP_SetLinkStats (--mp-link-stats): log the measurements of each link activity.
+bool8 MP_LinkOnSendBlock(const void *src, u16 size);
+void MP_LinkOnBlockReceived(u8 who, u16 size, bool8 whole);
+bool8 MP_LinkCatchUpRow(u16 (*recvCmds)[8]);
+void MP_LinkSetFastBlocks(bool8 enabled);
+bool8 MP_LinkFastBlocksEnabled(void);
+void MP_LinkSetRowCatchUp(bool8 enabled);
+void MP_SetLinkStats(bool8 enabled);
 
 // ---------------------------------------------------------------------------
 // Direct trade over the cable (PS-044, protocol.md 6.15, src/mp/mp_trade.c + mp_trade_commit.c)

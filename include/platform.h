@@ -57,6 +57,8 @@ struct PlatformArgs
     bool8 mpNetStats;                            // --mp-net-stats (MP: PS-053 traffic log)
     bool8 mpSelftest;                            // --mp-selftest (MP: PS-011)
     bool8 mpLinkTest;                            // --mp-link-test (MP: PS-046 virtual link cable harness)
+    bool8 mpLinkStats;                           // --mp-link-stats (MP: PS-052 link measurements in the log)
+    bool8 mpLinkRows;                            // --mp-link-rows (MP: PS-052 send blocks as rows, like the GBA cable)
     bool8 debugSlowSave;                         // --debug-slow-save (MP: PS-014, kill-during-save test)
     bool8 saveSelftest;                          // --save-selftest (MP: PS-014)
     bool8 hasFakeProtocol;                       // --mp-fake-protocol given (MP: PS-012)

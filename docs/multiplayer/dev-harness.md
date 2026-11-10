@@ -22,6 +22,8 @@ its own save file and its own multiplayer role, without going through menus.
 | `--mp-net-stats` | Network traffic log (PS-053): a summary every 10 s and a per-message-type table when the session ends. See "Network statistics" below. **F3** toggles the in-game overlay with or without this flag. | off |
 | `--mp-selftest` | Run the multiplayer self-test (loopback on 127.0.0.1, UDP 27590–27599) without a window or a save, print `[MP] selftest OK` / `FAILED`, and exit 0 / 1. Added by PS-011. | off |
 | `--mp-link-test` | **Test only** (PS-046). With `--host` / `--join`: once slots 0 and 1 are in the session and in the overworld, both form a link group, `OpenLink()`, run the player-data exchange and 3 × 200-byte `SendBlock` rounds, close, and repeat every second. Each step is logged as `[MP] link test: ...`. Kill one instance and the other logs `link-error path reached` and shows the game's link error screen (recovery is PS-048; close the window). | off |
+| `--mp-link-stats` | PS-052: log link cable measurements (rows, blocks, waits) for each link activity. See "Fast cable measurements" below. | off |
+| `--mp-link-rows` | **Test only** (PS-052). Send link blocks row by row like the GBA cable (no `LINK_BLOCK`), to compare. | off |
 | `--mp-fake-protocol <n>` | **Test only.** Advertise protocol version `n` (0–65535) in HELLO, so a normal host answers `REJECT(VERSION)`. | off |
 | `--mp-fake-build <id>` | **Test only.** Hash `<id>` (1–15 printable ASCII) instead of the real build id, so a normal host answers `REJECT(BUILD)`. | off |
 | `--debug-slow-save` | **Test only.** Pause 50 ms after each 4 KB sector while the save file is written (1.6 s per file write; one in-game save writes the file twice, so about 3.2 s), so the process can be killed mid-save. Added by PS-014. | off |
@@ -196,3 +198,19 @@ Terms: **msg** = our packets (4-byte header + payload); **ENet** = UDP payload (
 command headers, acknowledgements and its own pings); **IP** = ENet + 28 bytes per datagram.
 ENet's RTT and loss come from the peer (`roundTripTime`, `roundTripTimeVariance`, `packetLoss`;
 loss is measured on reliable packets over 10 s windows).
+
+## Fast cable measurements (PS-052)
+
+Since PS-052 a `SendBlock` of up to 500 bytes crosses the virtual cable as one message
+(`LINK_BLOCK`, protocol.md 6.12 "Whole blocks") instead of one 14-byte row per tick. Two flags
+help to compare and to measure on real machines:
+
+| Flag | Effect | Default |
+|---|---|---|
+| `--mp-link-stats` | Logs one `[MP] link stats (...)` line when each link activity ends (the cable closes) and every 10 s while linked: ticks on the cable, rows played (and how many by the catch-up), blocks sent and received (whole / as rows), the average ticks until our own block came back from the bus, ticks with nothing received (and how many of those were waiting for our own data to come back), and ticks a block waited for the game to take the previous one. | off |
+| `--mp-link-rows` | **Test only.** Send every block row by row like the GBA cable (the pre-PS-052 behaviour), to compare. Receiving works the same, so only one side needs it. | off |
+
+To compare a battle: play the same battle once with `--mp-link-stats` on both, once with
+`--mp-link-stats --mp-link-rows` on both, and compare the `link stats` lines (and the feel).
+The flight recorder shows a tick that delivered a whole block as `rxB=<link id>,<size>`, and a tick
+that sent one as `tx=FB0C`.
