@@ -392,8 +392,13 @@ static const struct WindowTemplate sWindowTemplates_MainMenu[] =
         .baseBlock = 0x16D
     },
     // MP: window 8, the 6th item of HAS_MYSTERY_EVENTS (OPTION) now that MULTIPLAYER
-    // was added. Appended after the error window so window 7 keeps its index. Its tiles
-    // start after the 9 frame tiles loaded at MAIN_MENU_BORDER_TILE (0x1D5..0x1DD).
+    // was added. Appended after the error window so window 7 keeps its index.
+    // PS-064: its 52 tiles share the error window's (0x16D..0x1D4). BG0 uses char base 2, which
+    // holds 512 tiles; the old 0x1DE..0x211 ran 18 tiles into char base 3, and clearing this
+    // window on every A press filled them with color 1. The Birch speech uses char base 3 for
+    // BG0, so its tile 0 was solid color 1: a yellow screen with leftover boxes over the
+    // background. The error window is never shown while the menu items are: it appears before
+    // the menu is drawn (save / battery errors) or after the items are cleared (invalid action).
     {
         .bg = 0,
         .tilemapLeft = MENU_LEFT,
@@ -401,7 +406,7 @@ static const struct WindowTemplate sWindowTemplates_MainMenu[] =
         .width = MENU_WIDTH,
         .height = MENU_HEIGHT_WIN8,
         .paletteNum = 15,
-        .baseBlock = 0x1DE
+        .baseBlock = 0x16D
     },
     DUMMY_WIN_TEMPLATE
 };
