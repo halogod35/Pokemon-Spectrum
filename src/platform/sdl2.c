@@ -1186,15 +1186,31 @@ static bool IsFullscreen(void)
     return sdlWindow != NULL && (SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_FULLSCREEN) != 0;
 }
 
+// The pointer's desktop position before a switch. SDL keeps the window-relative position, so
+// without this the pointer jumps (e.g. 18,40 in the window becomes 18,40 on the whole screen).
+// Restored right after the switch and again on the first resize event (Windows can resize late).
+static bool sRestorePointer;
+static int sRestorePointerX, sRestorePointerY;
+
+static void RestorePointer(void)
+{
+    if (sRestorePointer)
+        SDL_WarpMouseGlobal(sRestorePointerX, sRestorePointerY);
+}
+
 static void ToggleFullscreen(void)
 {
     bool fullscreen = !IsFullscreen();
 
+    SDL_GetGlobalMouseState(&sRestorePointerX, &sRestorePointerY);
+    sRestorePointer = true;
     if (SDL_SetWindowFullscreen(sdlWindow, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0)
     {
         printf("Fullscreen switch failed: %s\n", SDL_GetError());
+        sRestorePointer = false;
         return;
     }
+    RestorePointer();
 }
 
 // PS-063: the mouse pointer shows while the mouse moves over the game and hides after it has
@@ -1309,6 +1325,11 @@ void ProcessEvents(void)
             }
             break;
         case SDL_WINDOWEVENT:
+            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && sRestorePointer) // PS-063
+            {
+                RestorePointer();
+                sRestorePointer = false;
+            }
             // PS-063: no snapping to a multiple of 240x160 while fullscreen; the screen size is fixed.
             if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && !IsFullscreen())
             {
