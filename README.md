@@ -26,7 +26,7 @@
 | Ctrl+V | Paste an IP address on the Join Game screen |
 | Backspace | Delete a character on the Join Game screen |
 
-You can resize the window and the picture scales with it. In fullscreen the picture keeps its shape, with black bars at the sides.
+You can resize the window and the picture scales with it. In fullscreen the picture keeps its shape, with black bars at the sides. The mouse pointer hides when the mouse is still over the game for a few seconds.
 
 **Xbox-style controller, Windows only**
 

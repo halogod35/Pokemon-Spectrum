@@ -1195,7 +1195,22 @@ static void ToggleFullscreen(void)
         printf("Fullscreen switch failed: %s\n", SDL_GetError());
         return;
     }
-    SDL_ShowCursor(fullscreen ? SDL_DISABLE : SDL_ENABLE);
+}
+
+// PS-063: the mouse pointer shows while the mouse moves over the game and hides after it has
+// been still for CURSOR_HIDE_MS (window and fullscreen). SDL only hides it over our window.
+#define CURSOR_HIDE_MS 2500
+
+static u32 sCursorLastMoveMs;
+static bool sCursorShown = true;
+
+static void UpdateCursor(void)
+{
+    if (sCursorShown && SDL_GetTicks() - sCursorLastMoveMs >= CURSOR_HIDE_MS)
+    {
+        SDL_ShowCursor(SDL_DISABLE);
+        sCursorShown = false;
+    }
 }
 
 void ProcessEvents(void)
@@ -1207,6 +1222,14 @@ void ProcessEvents(void)
         Platform_HandleTextInputEvent(&event); // MP: typed digits / Ctrl+V for the Join Game screen (PS-021)
         switch (event.type)
         {
+        case SDL_MOUSEMOTION: // PS-063
+            sCursorLastMoveMs = SDL_GetTicks();
+            if (!sCursorShown)
+            {
+                SDL_ShowCursor(SDL_ENABLE);
+                sCursorShown = true;
+            }
+            break;
         case SDL_QUIT:
             isRunning = false;
             break;
@@ -1301,6 +1324,7 @@ void ProcessEvents(void)
             break;
         }
     }
+    UpdateCursor(); // PS-063
 }
 
 #ifdef _WIN32
