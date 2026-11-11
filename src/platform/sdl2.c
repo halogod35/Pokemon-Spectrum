@@ -36,6 +36,7 @@
 extern void (*const gIntrTable[])(void);
 
 SDL_Thread *mainLoopThread;
+static char **sArgv; // PS-060: the command line, so a soft reset can restart with it (Linux)
 SDL_Window *sdlWindow;
 SDL_Renderer *sdlRenderer;
 SDL_Texture *sdlTexture;
@@ -182,6 +183,7 @@ int main(int argc, char **argv)
     freopen( "CON", "w", stderr ) ; // MP: so argument errors are visible on Windows
 #endif
 
+    sArgv = argv; // PS-060
     int argsResult = ParsePlatformArgs(argc, argv);
     if (argsResult >= 0)
         return argsResult;
@@ -1433,10 +1435,72 @@ void Platform_SetAlarm(u8 *alarmData)
     // TODO
 }
 
+// PS-060: a soft reset (Ctrl+R, A+B+Start+Select, or the game itself) restarts the program with the
+// same command line. On PC the game's EWRAM/IWRAM variables are ordinary C globals mixed with the
+// platform and network state, so they can't be cleared in place; a fresh process starts from
+// exactly the state a GBA reset gives (title screen, unsaved progress lost).
+// A process that was itself started by a reset and resets again within 3 s exits instead, so a
+// reset during boot can't loop forever.
+#define SOFT_RESET_ENV        "POKEMON_SPECTRUM_SOFT_RESET"
+#define SOFT_RESET_LOOP_MS    3000
+
+static void SoftResetRelaunch(void)
+{
+#ifdef _WIN32
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    wchar_t *cmdLine = _wcsdup(GetCommandLineW()); // CreateProcessW may write to the buffer
+
+    if (cmdLine == NULL)
+        return;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    memset(&pi, 0, sizeof(pi));
+    if (CreateProcessW(NULL, cmdLine, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+    {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    }
+    else
+    {
+        printf("Soft reset: could not restart (error %lu)\n", (unsigned long)GetLastError());
+    }
+    free(cmdLine);
+#else
+    if (sArgv != NULL && sArgv[0] != NULL)
+    {
+        execv("/proc/self/exe", sArgv);
+        execvp(sArgv[0], sArgv); // only reached if /proc is unavailable
+        printf("Soft reset: could not restart\n");
+    }
+#endif
+}
+
 void SoftReset(u32 resetFlags)
 {
-    puts("Soft Reset called. Exiting.");
-    MP_Shutdown(); // MP: leave the session before exiting
+    bool8 relaunch = TRUE;
+
+    if (getenv(SOFT_RESET_ENV) != NULL && SDL_GetTicks() < SOFT_RESET_LOOP_MS)
+    {
+        puts("Soft Reset called again right after a reset. Exiting.");
+        relaunch = FALSE;
+    }
+    else
+    {
+        puts("Soft Reset called. Restarting.");
+    }
+    MP_Shutdown(); // MP: leave the session before restarting
+    Platform_AudioClose(); // PS-058
+    if (sdlWindow != NULL)
+        SDL_DestroyWindow(sdlWindow);
+    SDL_Quit();
+    fflush(stdout);
+    fflush(stderr);
+    if (relaunch)
+    {
+        SDL_setenv(SOFT_RESET_ENV, "1", 1);
+        SoftResetRelaunch();
+    }
     exit(0);
 }
 
