@@ -22,10 +22,11 @@
 | **Ctrl+P** | Pause / unpause |
 | **Ctrl+R** | Soft reset (restart the game) |
 | **F3** | Network overlay: upload/download, ping, packet loss |
+| **Alt+Enter** | Borderless fullscreen on / off |
 | Ctrl+V | Paste an IP address on the Join Game screen |
 | Backspace | Delete a character on the Join Game screen |
 
-You can resize the window and the picture scales with it. There's no fullscreen key.
+You can resize the window and the picture scales with it. In fullscreen the picture keeps its shape, with black bars at the sides.
 
 **Xbox-style controller, Windows only**
 

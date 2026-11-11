@@ -1179,6 +1179,25 @@ case KEY_##key:  keys |= key; break;
 
 static u16 keys;
 
+// PS-063: Alt+Enter switches between the window and borderless fullscreen (desktop resolution).
+// SDL_RenderSetLogicalSize keeps the 240x160 picture centred with black bars, as in the window.
+static bool IsFullscreen(void)
+{
+    return sdlWindow != NULL && (SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
+static void ToggleFullscreen(void)
+{
+    bool fullscreen = !IsFullscreen();
+
+    if (SDL_SetWindowFullscreen(sdlWindow, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0)
+    {
+        printf("Fullscreen switch failed: %s\n", SDL_GetError());
+        return;
+    }
+    SDL_ShowCursor(fullscreen ? SDL_DISABLE : SDL_ENABLE);
+}
+
 void ProcessEvents(void)
 {
     SDL_Event event;
@@ -1216,6 +1235,14 @@ void ProcessEvents(void)
             }
             break;
         case SDL_KEYDOWN:
+            // PS-063: Alt+Enter is fullscreen, not Start.
+            if ((event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)
+             && (event.key.keysym.mod & KMOD_ALT))
+            {
+                if (!event.key.repeat)
+                    ToggleFullscreen();
+                break;
+            }
             switch (event.key.keysym.sym)
             {
             HANDLE_KEYDOWN(A_BUTTON)
@@ -1255,7 +1282,8 @@ void ProcessEvents(void)
             }
             break;
         case SDL_WINDOWEVENT:
-            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+            // PS-063: no snapping to a multiple of 240x160 while fullscreen; the screen size is fixed.
+            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && !IsFullscreen())
             {
                 unsigned int w = event.window.data1;
                 unsigned int h = event.window.data2;
