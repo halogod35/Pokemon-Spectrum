@@ -282,6 +282,8 @@ int main(int argc, char **argv)
         printf("[clock] RTC error 0x%04X: the game uses a frozen clock\n", (unsigned)RtcGetErrorStatus());
     else
         printf("[clock] RTC ok: the game uses the PC's local time\n");
+    if (gPlatformArgs.clockOffsetMin != 0) // PS-062 TEST
+        printf("[clock] TEST --clock-offset: game clock moved by %ld minutes\n", (long)gPlatformArgs.clockOffsetMin);
 
     double accumulator = 0.0;
 
@@ -413,6 +415,7 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --mp-link-test       Test only: with --host / --join, slots 0 and 1 loop the virtual link cable test\n"
         "  --mp-link-stats      Log link cable measurements (rows, blocks, waits) for each link activity\n"
         "  --mp-link-rows       Test only: send link blocks row by row like the GBA cable (no fast blocks)\n"
+        "  --clock-offset <min> Test only: move the game clock by min minutes (may be negative, e.g. 1440 = +1 day)\n"
         "  --mp-net-loss <pct>  Test only: drop pct %% (0-100) of network packets at random, both directions\n"
         "  --mp-fake-protocol <n>  Test only: advertise protocol version n (host rejects with VERSION)\n"
         "  --mp-fake-build <id>    Test only: hash this build id instead of the real one (BUILD reject)\n"
@@ -642,6 +645,18 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--mp-link-rows") == 0) // MP: PS-052
         {
             gPlatformArgs.mpLinkRows = TRUE;
+        }
+        else if (strcmp(arg, "--clock-offset") == 0) // PS-062 TEST: shift the game clock
+        {
+            unsigned long minutes;
+            bool negative = (value != NULL && value[0] == '-');
+
+            if (value == NULL)
+                goto missing_value;
+            if (!ParseUnsigned(negative ? value + 1 : value, 0, 5256000, &minutes)) // up to 10 years
+                goto bad_value;
+            gPlatformArgs.clockOffsetMin = negative ? -(s32)minutes : (s32)minutes;
+            i++;
         }
         else if (strcmp(arg, "--mp-net-loss") == 0) // MP: PS-054 simulated packet loss
         {
@@ -1377,7 +1392,7 @@ void Platform_SetStatus(struct SiiRtcInfo *rtc)
 
 static void UpdateInternalClock(void)
 {
-    time_t rawTime = time(NULL);
+    time_t rawTime = time(NULL) + (time_t)gPlatformArgs.clockOffsetMin * 60; // PS-062 TEST: --clock-offset
     struct tm *time = localtime(&rawTime);
 
     internalClock.year = BinToBcd(time->tm_year - 100);
