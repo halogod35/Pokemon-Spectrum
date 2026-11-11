@@ -1179,6 +1179,56 @@ case KEY_##key:  keys |= key; break;
 
 static u16 keys;
 
+// PS-063: Alt+Enter switches between the window and borderless fullscreen (desktop resolution).
+// SDL_RenderSetLogicalSize keeps the 240x160 picture centred with black bars, as in the window.
+static bool IsFullscreen(void)
+{
+    return sdlWindow != NULL && (SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
+// The pointer's desktop position before a switch. SDL keeps the window-relative position, so
+// without this the pointer jumps (e.g. 18,40 in the window becomes 18,40 on the whole screen).
+// Restored right after the switch and again on the first resize event (Windows can resize late).
+static bool sRestorePointer;
+static int sRestorePointerX, sRestorePointerY;
+
+static void RestorePointer(void)
+{
+    if (sRestorePointer)
+        SDL_WarpMouseGlobal(sRestorePointerX, sRestorePointerY);
+}
+
+static void ToggleFullscreen(void)
+{
+    bool fullscreen = !IsFullscreen();
+
+    SDL_GetGlobalMouseState(&sRestorePointerX, &sRestorePointerY);
+    sRestorePointer = true;
+    if (SDL_SetWindowFullscreen(sdlWindow, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0)
+    {
+        printf("Fullscreen switch failed: %s\n", SDL_GetError());
+        sRestorePointer = false;
+        return;
+    }
+    RestorePointer();
+}
+
+// PS-063: the mouse pointer shows while the mouse moves over the game and hides after it has
+// been still for CURSOR_HIDE_MS (window and fullscreen). SDL only hides it over our window.
+#define CURSOR_HIDE_MS 2000
+
+static u32 sCursorLastMoveMs;
+static bool sCursorShown = true;
+
+static void UpdateCursor(void)
+{
+    if (sCursorShown && SDL_GetTicks() - sCursorLastMoveMs >= CURSOR_HIDE_MS)
+    {
+        SDL_ShowCursor(SDL_DISABLE);
+        sCursorShown = false;
+    }
+}
+
 void ProcessEvents(void)
 {
     SDL_Event event;
@@ -1188,6 +1238,18 @@ void ProcessEvents(void)
         Platform_HandleTextInputEvent(&event); // MP: typed digits / Ctrl+V for the Join Game screen (PS-021)
         switch (event.type)
         {
+        case SDL_MOUSEMOTION: // PS-063
+            sCursorLastMoveMs = SDL_GetTicks();
+            if (!sCursorShown)
+            {
+                SDL_ShowCursor(SDL_ENABLE);
+                sCursorShown = true;
+            }
+            break;
+        case SDL_MOUSEBUTTONDOWN: // PS-063: double-click the game = fullscreen on / off, like Alt+Enter
+            if (event.button.button == SDL_BUTTON_LEFT && event.button.clicks == 2)
+                ToggleFullscreen();
+            break;
         case SDL_QUIT:
             isRunning = false;
             break;
@@ -1216,6 +1278,14 @@ void ProcessEvents(void)
             }
             break;
         case SDL_KEYDOWN:
+            // PS-063: Alt+Enter is fullscreen, not Start.
+            if ((event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)
+             && (event.key.keysym.mod & KMOD_ALT))
+            {
+                if (!event.key.repeat)
+                    ToggleFullscreen();
+                break;
+            }
             switch (event.key.keysym.sym)
             {
             HANDLE_KEYDOWN(A_BUTTON)
@@ -1255,7 +1325,13 @@ void ProcessEvents(void)
             }
             break;
         case SDL_WINDOWEVENT:
-            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && sRestorePointer) // PS-063
+            {
+                RestorePointer();
+                sRestorePointer = false;
+            }
+            // PS-063: no snapping to a multiple of 240x160 while fullscreen; the screen size is fixed.
+            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && !IsFullscreen())
             {
                 unsigned int w = event.window.data1;
                 unsigned int h = event.window.data2;
@@ -1273,6 +1349,7 @@ void ProcessEvents(void)
             break;
         }
     }
+    UpdateCursor(); // PS-063
 }
 
 #ifdef _WIN32
