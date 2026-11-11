@@ -1199,7 +1199,7 @@ static void ToggleFullscreen(void)
 
 // PS-063: the mouse pointer shows while the mouse moves over the game and hides after it has
 // been still for CURSOR_HIDE_MS (window and fullscreen). SDL only hides it over our window.
-#define CURSOR_HIDE_MS 2500
+#define CURSOR_HIDE_MS 2000
 
 static u32 sCursorLastMoveMs;
 static bool sCursorShown = true;
@@ -1229,6 +1229,10 @@ void ProcessEvents(void)
                 SDL_ShowCursor(SDL_ENABLE);
                 sCursorShown = true;
             }
+            break;
+        case SDL_MOUSEBUTTONDOWN: // PS-063: double-click the game = fullscreen on / off, like Alt+Enter
+            if (event.button.button == SDL_BUTTON_LEFT && event.button.clicks == 2)
+                ToggleFullscreen();
             break;
         case SDL_QUIT:
             isRunning = false;

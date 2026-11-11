@@ -22,7 +22,7 @@
 | **Ctrl+P** | Pause / unpause |
 | **Ctrl+R** | Soft reset (restart the game) |
 | **F3** | Network overlay: upload/download, ping, packet loss |
-| **Alt+Enter** | Borderless fullscreen on / off |
+| **Alt+Enter** or double-click | Borderless fullscreen on / off |
 | Ctrl+V | Paste an IP address on the Join Game screen |
 | Backspace | Delete a character on the Join Game screen |
 
