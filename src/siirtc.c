@@ -166,7 +166,9 @@ bool8 SiiRtcReset(void)
     sLocked = TRUE;
 
 #ifdef PORTABLE
-    // TODO
+    // PS-062: the PC clock has nothing to reset (it is the system time); unlock as the GBA path
+    // does, or every later RTC access fails and the game uses a frozen clock.
+    sLocked = FALSE;
 #else
     GPIO_PORT_DATA = SCK_HI;
     GPIO_PORT_DATA = SCK_HI | CS_HI;

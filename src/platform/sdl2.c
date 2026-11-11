@@ -270,13 +270,20 @@ int main(int argc, char **argv)
     else if (gPlatformArgs.mpRole == PLATFORM_MP_ROLE_CLIENT)
         MP_SetAutoStart(MP_AUTOSTART_JOIN, gPlatformArgs.joinAddress, gPlatformArgs.port);
 
-    AgbMain();
-
-    double accumulator = 0.0;
-
+    // PS-062: the clock must be ready before AgbMain(): its RtcInit() probes the status. With the
+    // status still 0 (12-hour mode) the probe "reset" the RTC, which left it locked on PC, so the
+    // game fell back to a frozen 2000-01-01 00:00 (no berry growth, no day/night, no daily events).
     memset(&internalClock, 0, sizeof(internalClock));
     internalClock.status = SIIRTCINFO_24HOUR;
     UpdateInternalClock();
+
+    AgbMain();
+    if (RtcGetErrorStatus() & RTC_ERR_FLAG_MASK) // PS-062
+        printf("[clock] RTC error 0x%04X: the game uses a frozen clock\n", (unsigned)RtcGetErrorStatus());
+    else
+        printf("[clock] RTC ok: the game uses the PC's local time\n");
+
+    double accumulator = 0.0;
 
     bool isGameStepDrawn = false;
     while (isRunning)
