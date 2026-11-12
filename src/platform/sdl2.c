@@ -32,6 +32,7 @@
 #include "mp_menu.h" // MP: MpUi_Update, the single MP event consumer (PS-022)
 #include "platform/net_overlay.h" // MP: PS-053 F3 network overlay
 #include "platform/audio.h" // PS-058 audio output, --audio-stats, --audio-dump
+#include "platform/input.h" // PS-066 key / controller remapping
 
 extern void (*const gIntrTable[])(void);
 
@@ -216,6 +217,7 @@ int main(int argc, char **argv)
         DBGPRINTF("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
         return 1;
     }
+    Platform_InputLoadConfig(); // PS-066: pokemon-spectrum.ini next to the executable
 
     sdlWindow = SDL_CreateWindow(gPlatformArgs.windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISPLAY_WIDTH * videoScale, DISPLAY_HEIGHT * videoScale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (sdlWindow == NULL)
@@ -1159,24 +1161,8 @@ static int RunSaveSelftest(void)
 // PS-058: Platform_QueueAudio is in sdl2_audio.c.
 
 
-// Key mappings
-#define KEY_A_BUTTON      SDLK_z
-#define KEY_B_BUTTON      SDLK_x
-#define KEY_START_BUTTON  SDLK_RETURN
-#define KEY_SELECT_BUTTON SDLK_BACKSLASH
-#define KEY_L_BUTTON      SDLK_a
-#define KEY_R_BUTTON      SDLK_s
-#define KEY_DPAD_UP       SDLK_UP
-#define KEY_DPAD_DOWN     SDLK_DOWN
-#define KEY_DPAD_LEFT     SDLK_LEFT
-#define KEY_DPAD_RIGHT    SDLK_RIGHT
-
-#define HANDLE_KEYUP(key) \
-case KEY_##key:  keys &= ~key; break;
-
-#define HANDLE_KEYDOWN(key) \
-case KEY_##key:  keys |= key; break;
-
+// PS-066: the game buttons and fast-forward come from pokemon-spectrum.ini (sdl2_input.c);
+// ProcessEvents() reads the held keys once per frame into `keys`.
 static u16 keys;
 
 // PS-063: Alt+Enter switches between the window and borderless fullscreen (desktop resolution).
@@ -1253,31 +1239,7 @@ void ProcessEvents(void)
         case SDL_QUIT:
             isRunning = false;
             break;
-        case SDL_KEYUP:
-            switch (event.key.keysym.sym)
-            {
-            HANDLE_KEYUP(A_BUTTON)
-            HANDLE_KEYUP(B_BUTTON)
-            HANDLE_KEYUP(START_BUTTON)
-            HANDLE_KEYUP(SELECT_BUTTON)
-            HANDLE_KEYUP(L_BUTTON)
-            HANDLE_KEYUP(R_BUTTON)
-            HANDLE_KEYUP(DPAD_UP)
-            HANDLE_KEYUP(DPAD_DOWN)
-            HANDLE_KEYUP(DPAD_LEFT)
-            HANDLE_KEYUP(DPAD_RIGHT)
-            case SDLK_SPACE:
-                if (speedUp)
-                {
-                    speedUp = false;
-                    timeScale = 1.0;
-                    //SDL_ClearQueuedAudio(1);
-                    //SDL_PauseAudio(0);
-                }
-                break;
-            }
-            break;
-        case SDL_KEYDOWN:
+        case SDL_KEYDOWN: // PS-066: hotkeys only; the game buttons are polled below
             // PS-063: Alt+Enter is fullscreen, not Start.
             if ((event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)
              && (event.key.keysym.mod & KMOD_ALT))
@@ -1288,16 +1250,6 @@ void ProcessEvents(void)
             }
             switch (event.key.keysym.sym)
             {
-            HANDLE_KEYDOWN(A_BUTTON)
-            HANDLE_KEYDOWN(B_BUTTON)
-            HANDLE_KEYDOWN(START_BUTTON)
-            HANDLE_KEYDOWN(SELECT_BUTTON)
-            HANDLE_KEYDOWN(L_BUTTON)
-            HANDLE_KEYDOWN(R_BUTTON)
-            HANDLE_KEYDOWN(DPAD_UP)
-            HANDLE_KEYDOWN(DPAD_DOWN)
-            HANDLE_KEYDOWN(DPAD_LEFT)
-            HANDLE_KEYDOWN(DPAD_RIGHT)
             case SDLK_r:
                 if (event.key.keysym.mod & (KMOD_LCTRL | KMOD_RCTRL))
                 {
@@ -1313,14 +1265,6 @@ void ProcessEvents(void)
             case SDLK_F3: // MP: PS-053 network overlay
                 if (!event.key.repeat)
                     Platform_ToggleNetOverlay();
-                break;
-            case SDLK_SPACE:
-                if (!speedUp)
-                {
-                    speedUp = true;
-                    timeScale = 5.0;
-                    //SDL_PauseAudio(1);
-                }
                 break;
             }
             break;
@@ -1350,6 +1294,18 @@ void ProcessEvents(void)
         }
     }
     UpdateCursor(); // PS-063
+
+    // PS-066: the game buttons and fast-forward held on the keyboard, per pokemon-spectrum.ini.
+    {
+        bool8 fastForward;
+
+        keys = Platform_InputPollKeyboard(&fastForward);
+        if (fastForward != speedUp)
+        {
+            speedUp = fastForward;
+            timeScale = speedUp ? 5.0 : 1.0;
+        }
+    }
 }
 
 #ifdef _WIN32
@@ -1364,34 +1320,25 @@ u16 GetXInputKeys()
 
     if (dwResult == ERROR_SUCCESS)
     {
-        /* A */      xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_A) >> 12;
-        /* B */      xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_X) >> 13;
-        /* Start */  xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_START) >> 1;
-        /* Select */ xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_BACK) >> 3;
-        /* L */      xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) << 1;
-        /* R */      xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) >> 1;
-        /* Up */     xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) << 6;
-        /* Down */   xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) << 6;
-        /* Left */   xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) << 3;
-        /* Right */  xinputKeys |= (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) << 1;
-
-
-        /* Control Stick */
+        // PS-066: collect every controller input, then map them with pokemon-spectrum.ini.
+        u32 padInputs = state.Gamepad.wButtons; // the PAD_* low bits are the XInput bits
         float xAxis = (float)state.Gamepad.sThumbLX / (float)SHRT_MAX;
         float yAxis = (float)state.Gamepad.sThumbLY / (float)SHRT_MAX;
+        bool8 padFastForward;
 
-        if (xAxis < -STICK_THRESHOLD) xinputKeys |= DPAD_LEFT;
-        if (xAxis >  STICK_THRESHOLD) xinputKeys |= DPAD_RIGHT;
-        if (yAxis < -STICK_THRESHOLD) xinputKeys |= DPAD_DOWN;
-        if (yAxis >  STICK_THRESHOLD) xinputKeys |= DPAD_UP;
+        if (state.Gamepad.bLeftTrigger > 0x80)  padInputs |= PAD_LT;
+        if (state.Gamepad.bRightTrigger > 0x80) padInputs |= PAD_RT;
+        if (xAxis < -STICK_THRESHOLD) padInputs |= PAD_STICK_LEFT;
+        if (xAxis >  STICK_THRESHOLD) padInputs |= PAD_STICK_RIGHT;
+        if (yAxis < -STICK_THRESHOLD) padInputs |= PAD_STICK_DOWN;
+        if (yAxis >  STICK_THRESHOLD) padInputs |= PAD_STICK_UP;
+        xinputKeys = Platform_InputMapPad(padInputs, &padFastForward);
 
-
-        /* Speedup */
-        // Note: 'speedup' variable is only (un)set on keyboard input
+        // Speedup. 'speedUp' is the keyboard's fast-forward (ProcessEvents).
         // PS-058: the audio is no longer paused and flushed here. It keeps playing at normal speed,
         // the same as with Space on the keyboard. (Pausing cut the sound with a click, and during a
         // link the time lock reset timeScale every loop, which toggled the device on and off.)
-        timeScale = (state.Gamepad.bRightTrigger > 0x80 || speedUp) ? 5.0 : 1.0;
+        timeScale = (padFastForward || speedUp) ? 5.0 : 1.0;
     }
 
     return xinputKeys;
