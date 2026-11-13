@@ -27,6 +27,7 @@
 #include "constants/abilities.h"
 #include "daycare.h"
 #include "overworld.h"
+#include "region.h" // PS-071
 #include "scanline_effect.h"
 #include "field_weather.h"
 #include "international_string_util.h"

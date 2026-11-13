@@ -30,6 +30,7 @@
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
 #include "pokemon_summary_screen.h"
+#include "region.h" // PS-071
 #include "region_map.h"
 #include "scanline_effect.h"
 #include "sound.h"

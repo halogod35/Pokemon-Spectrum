@@ -28,6 +28,7 @@
 #include "script_menu.h"
 #include "naming_screen.h"
 #include "malloc.h"
+#include "region.h" // PS-071
 #include "region_map.h"
 #include "decoration.h"
 #include "secret_base.h"

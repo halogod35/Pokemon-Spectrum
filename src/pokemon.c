@@ -17,6 +17,7 @@
 #include "link.h"
 #include "main.h"
 #include "overworld.h"
+#include "region.h" // PS-071
 #include "m4a.h"
 #include "party_menu.h"
 #include "pokedex.h"
