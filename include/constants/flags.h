@@ -1640,6 +1640,30 @@
 
 #define FLAGS_COUNT (DAILY_FLAGS_END + 1)
 
+// PS-071: flags for regions beyond Hoenn, appended after the last flag in use (0x95F).
+// Badges 9-16 belong to region 2 and 17-24 to region 3 (constants/regions.h, src/region.c).
+// The block starts at FLAGS_COUNT: until PS-070 widens the flag space and raises FLAGS_COUNT
+// past REGION_FLAGS_END, these flags are out of range (FlagSet is a no-op, FlagGet is FALSE).
+#define REGION_FLAGS_START                          (DAILY_FLAGS_END + 1) // 0x960
+#define FLAG_BADGE09_GET                            (REGION_FLAGS_START + 0x0)
+#define FLAG_BADGE10_GET                            (REGION_FLAGS_START + 0x1)
+#define FLAG_BADGE11_GET                            (REGION_FLAGS_START + 0x2)
+#define FLAG_BADGE12_GET                            (REGION_FLAGS_START + 0x3)
+#define FLAG_BADGE13_GET                            (REGION_FLAGS_START + 0x4)
+#define FLAG_BADGE14_GET                            (REGION_FLAGS_START + 0x5)
+#define FLAG_BADGE15_GET                            (REGION_FLAGS_START + 0x6)
+#define FLAG_BADGE16_GET                            (REGION_FLAGS_START + 0x7)
+#define FLAG_BADGE17_GET                            (REGION_FLAGS_START + 0x8)
+#define FLAG_BADGE18_GET                            (REGION_FLAGS_START + 0x9)
+#define FLAG_BADGE19_GET                            (REGION_FLAGS_START + 0xA)
+#define FLAG_BADGE20_GET                            (REGION_FLAGS_START + 0xB)
+#define FLAG_BADGE21_GET                            (REGION_FLAGS_START + 0xC)
+#define FLAG_BADGE22_GET                            (REGION_FLAGS_START + 0xD)
+#define FLAG_BADGE23_GET                            (REGION_FLAGS_START + 0xE)
+#define FLAG_BADGE24_GET                            (REGION_FLAGS_START + 0xF)
+#define FLAG_VISITED_TEMPLATE_TOWN                  (REGION_FLAGS_START + 0x10) // template region Fly spot (placeholder, to be replaced)
+#define REGION_FLAGS_END                            FLAG_VISITED_TEMPLATE_TOWN
+
 // Special Flags (Stored in EWRAM (sSpecialFlags), not in the SaveBlock)
 #define SPECIAL_FLAGS_START                     0x4000
 #define FLAG_HIDE_MAP_NAME_POPUP                (SPECIAL_FLAGS_START + 0x0)

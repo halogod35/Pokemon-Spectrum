@@ -197,8 +197,10 @@ u8 *GetFlagPointer(u16 id)
 {
     if (id == 0)
         return NULL;
-    else if (id < SPECIAL_FLAGS_START)
+    else if (id < FLAGS_COUNT)
         return &gSaveBlock1Ptr->flags[id / 8];
+    else if (id < SPECIAL_FLAGS_START)
+        return NULL; // PS-071: past the saved flags (e.g. REGION_FLAGS_START.. before PS-070 widens the space): inert, never out of bounds
     else
         return &sSpecialFlags[(id - SPECIAL_FLAGS_START) / 8];
 }

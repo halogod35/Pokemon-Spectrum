@@ -6,6 +6,7 @@
 #include "item.h"
 #include "menu.h"
 #include "palette.h"
+#include "region.h"
 #include "script.h"
 #include "script_menu.h"
 #include "sound.h"
@@ -23,6 +24,7 @@
 static EWRAM_DATA u8 sProcessInputDelay = 0;
 
 static u8 sLilycoveSSTidalSelections[SSTIDAL_SELECTION_COUNT];
+static void CreateRegionTransitMultichoice(void); // PS-071
 
 static void Task_HandleMultichoiceInput(u8 taskId);
 static void Task_HandleYesNoInput(u8 taskId);
@@ -543,6 +545,64 @@ void GetLilycoveSSTidalSelection(void)
     {
         gSpecialVar_Result = sLilycoveSSTidalSelections[gSpecialVar_Result];
     }
+}
+
+// PS-071: region transit helper menu (data/scripts/region_transit.inc). Same shape as the
+// SS Tidal menu above: the rows are the unlocked destinations from src/region.c plus EXIT.
+bool8 ScriptMenu_CreateRegionTransitMultichoice(void)
+{
+    if (FuncIsActiveTask(Task_HandleMultichoiceInput) == TRUE)
+    {
+        return FALSE;
+    }
+    else
+    {
+        gSpecialVar_Result = 0xFF;
+        CreateRegionTransitMultichoice();
+        return TRUE;
+    }
+}
+
+static void CreateRegionTransitMultichoice(void)
+{
+    u8 count;
+    u8 i;
+    u32 pixelWidth = 0;
+    u8 width;
+    u8 windowId;
+
+    count = RegionTransit_BuildList(gSpecialVar_0x8004 == 1) + 1; // + EXIT
+    if (count > REGION_TRANSIT_MAX_ROWS)
+        count = REGION_TRANSIT_MAX_ROWS;
+
+    for (i = 0; i < count; i++)
+    {
+        RegionTransit_GetListName(i, gStringVar4);
+        pixelWidth = DisplayTextAndGetWidth(gStringVar4, pixelWidth);
+    }
+
+    width = ConvertPixelWidthToTileWidth(pixelWidth);
+    windowId = CreateWindowFromRect(MAX_MULTICHOICE_WIDTH - width, (6 - count) * 2, width, count * 2);
+    SetStandardWindowBorderStyle(windowId, FALSE);
+
+    for (i = 0; i < count; i++)
+    {
+        RegionTransit_GetListName(i, gStringVar4);
+        AddTextPrinterParameterized(windowId, FONT_NORMAL, gStringVar4, 8, i * 16 + 1, TEXT_SKIP_DRAW, NULL);
+    }
+
+    InitMenuInUpperLeftCornerNormal(windowId, count, count - 1);
+    CopyWindowToVram(windowId, COPYWIN_FULL);
+    InitMultichoiceCheckWrap(FALSE, count, windowId, MULTI_REGION_TRANSIT);
+}
+
+// VAR_RESULT: the chosen row -> destination index, or REGION_TRANSIT_CANCEL for EXIT / B.
+void GetRegionTransitSelection(void)
+{
+    if (gSpecialVar_Result == MULTI_B_PRESSED || gSpecialVar_Result >= REGION_TRANSIT_MAX_ROWS)
+        gSpecialVar_Result = REGION_TRANSIT_CANCEL;
+    else
+        gSpecialVar_Result = RegionTransit_GetListDestination(gSpecialVar_Result);
 }
 
 #define tState       data[0]

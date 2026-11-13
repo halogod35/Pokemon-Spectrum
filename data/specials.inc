@@ -540,3 +540,8 @@ gSpecials::
 	def_special RemoveRecordsWindow
 	def_special CloseDeptStoreElevatorWindow
 	def_special TrySetBattleTowerLinkType
+	@ PS-071: region transit helper (data/scripts/region_transit.inc)
+	def_special ScriptMenu_CreateRegionTransitMultichoice, waitstate=1
+	def_special GetRegionTransitSelection
+	def_special RegionTransit_CountDestinations
+	def_special RegionTransit_Warp, waitstate=1

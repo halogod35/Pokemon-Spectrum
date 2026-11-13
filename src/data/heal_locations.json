@@ -131,6 +131,12 @@
       "map": "MAP_BATTLE_FRONTIER_OUTSIDE_EAST",
       "x": 3,
       "y": 52
+    },
+    {
+      "id": "HEAL_LOCATION_TEMPLATE_TOWN",
+      "map": "MAP_TEMPLATE_TOWN",
+      "x": 9,
+      "y": 12
     }
   ]
 }

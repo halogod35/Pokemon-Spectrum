@@ -2254,7 +2254,7 @@ void CreateBoxMon(struct BoxPokemon *boxMon, u16 species, u8 level, u8 fixedIV, 
     SetBoxMonData(boxMon, MON_DATA_SPECIES, &species);
     SetBoxMonData(boxMon, MON_DATA_EXP, &gExperienceTables[gSpeciesInfo[species].growthRate][level]);
     SetBoxMonData(boxMon, MON_DATA_FRIENDSHIP, &gSpeciesInfo[species].friendship);
-    value = GetCurrentRegionMapSectionId();
+    value = GetCurrentMetLocation(); // PS-071: u8 met location (region alias outside Hoenn)
     SetBoxMonData(boxMon, MON_DATA_MET_LOCATION, &value);
     SetBoxMonData(boxMon, MON_DATA_MET_LEVEL, &level);
     SetBoxMonData(boxMon, MON_DATA_MET_GAME, &gGameVersion);
@@ -4739,7 +4739,7 @@ bool8 ExecuteTableBasedItemEffect(struct Pokemon *mon, u16 item, u8 partyIndex, 
         {                                                                                               \
             if (GetMonData(mon, MON_DATA_POKEBALL, NULL) == ITEM_LUXURY_BALL)                           \
                 friendship++;                                                                           \
-            if (GetMonData(mon, MON_DATA_MET_LOCATION, NULL) == GetCurrentRegionMapSectionId())         \
+            if (GetMonData(mon, MON_DATA_MET_LOCATION, NULL) == GetCurrentMetLocation()) /* PS-071 */   \
                 friendship++;                                                                           \
         }                                                                                               \
         if (friendship < 0)                                                                             \
@@ -5972,7 +5972,7 @@ void AdjustFriendship(struct Pokemon *mon, u8 event)
         {
             if (GetMonData(mon, MON_DATA_POKEBALL, NULL) == ITEM_LUXURY_BALL)
                 friendship++;
-            if (GetMonData(mon, MON_DATA_MET_LOCATION, NULL) == GetCurrentRegionMapSectionId())
+            if (GetMonData(mon, MON_DATA_MET_LOCATION, NULL) == GetCurrentMetLocation()) // PS-071
                 friendship++;
         }
 

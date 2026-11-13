@@ -14,6 +14,7 @@ enum
     MAP_INPUT_MOVE_END,
     MAP_INPUT_A_BUTTON,
     MAP_INPUT_B_BUTTON,
+    MAP_INPUT_REGION_CHANGED, // PS-071: L/R switched the shown region (full view only); refresh like MAP_INPUT_MOVE_END
 };
 
 enum {
@@ -75,7 +76,10 @@ struct RegionMap {
     /*0x081*/ u8 charBaseIdx;
     /*0x082*/ u8 mapBaseIdx;
     /*0x083*/ bool8 bgManaged;
-    /*0x084*/ u8 filler_084[0x100];
+    /*0x084*/ u8 region;         // PS-071: region currently shown (REGION_*)
+    /*0x085*/ u8 playerRegion;   // PS-071: region the player is in
+    /*0x086*/ bool8 needsPokenavMap; // PS-071: show a region with a PokéNav map (set by the PokéNav before LoadRegionMapGfx)
+    /*0x087*/ u8 filler_087[0xFD];
     /*0x184*/ u8 cursorSmallImage[0x100];
     /*0x284*/ u8 cursorLargeImage[0x600];
 }; // size = 0x884
@@ -102,7 +106,9 @@ void FreeRegionMapIconResources(void);
 mapsec_u16_t GetRegionMapSecIdAt(u16 x, u16 y);
 void CreateRegionMapPlayerIcon(u16 tileTag, u16 paletteTag);
 void CreateRegionMapCursor(u16 tileTag, u16 paletteTag);
-bool32 IsEventIslandMapSecId(mapsec_u8_t mapSecId);
+bool32 IsEventIslandMapSecId(mapsec_t mapSecId);
+void SetRegionMapNeedsPokenavMap(void); // PS-071
+u8 GetRegionMapShownRegion(void);        // PS-071
 u8 *GetMapName(u8 *dest, mapsec_u16_t regionMapId, u16 padLength);
 u8 *GetMapNameGeneric(u8 *dest, mapsec_u16_t mapSecId);
 u8 *GetMapNameHandleAquaHideout(u8 *dest, mapsec_u16_t mapSecId);
