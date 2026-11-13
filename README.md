@@ -39,7 +39,26 @@ You can resize the window and the picture scales with it. In fullscreen the pict
 | LB / RB | L / R |
 | D-pad or left stick | D-pad |
 
-Keys can't be remapped yet.
+**Changing the controls**
+
+The first time the game starts, it creates `pokemon-spectrum.ini` next to the game's exe file. Open it in any text editor, change the keys or controller buttons, save, and restart the game:
+
+```ini
+[keyboard]
+A           = Z, J
+B           = X, K
+FastForward = Space
+
+[controller]
+B           = B
+FastForward = RT
+```
+
+- A button can have several keys, separated by commas. `None` leaves it unbound.
+- Keyboard keys use SDL key names: `Z`, `Return`, `Space`, `Left Shift`, `Keypad 8`, `F1` and so on. The file lists more.
+- Controller inputs: `A B X Y LB RB LT RT Start Back LS RS`, the D-pad (`DPadUp` …) and the left stick (`StickUp` …).
+- Delete the file to get the default controls back.
+- The hotkeys (Ctrl+R, Ctrl+P, F3, Alt+Enter) can't be changed.
 
 ## Ideas under consideration
 
@@ -75,7 +94,6 @@ On PC, Mystery Gift always says "The Wireless Adapter is not connected." The fou
 
 ### Game and PC polish
 - **Graphics polish:** small visual issues spotted in play-tests, still to be listed and looked at.
-- **Key remapping:** change keyboard and controller buttons.
 - **Soft reset without closing the window:** reset the game in place instead of restarting the program.
 - **Sound:**
   - a limiter if loud battles with Pokémon cries ever distort;
