@@ -146,13 +146,14 @@ static bool8 IsOutdoorMapType(u8 mapType)
 
 bool8 DayNight_IsActive(void)
 {
-    if (gSaveBlock2Ptr->optionsDayNightOff)
+    // Only while the overworld itself is on screen: battles, menus, the title and the intro
+    // run their own callbacks and load their own palettes. Checked first: the save block
+    // pointer is not set during the first boot frames, and this runs from every VBlank.
+    if (gMain.callback2 != CB2_Overworld && gMain.callback2 != CB2_OverworldBasic)
+        return FALSE;
+    if (gSaveBlock2Ptr == NULL || gSaveBlock2Ptr->optionsDayNightOff)
         return FALSE;
     if (!sClockValid || sMulR == 0)
-        return FALSE;
-    // Only while the overworld itself is on screen: battles, menus, the title and the intro
-    // run their own callbacks and load their own palettes.
-    if (gMain.callback2 != CB2_Overworld && gMain.callback2 != CB2_OverworldBasic)
         return FALSE;
     return IsOutdoorMapType(gMapHeader.mapType);
 }
