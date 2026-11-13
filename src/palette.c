@@ -5,13 +5,9 @@
 #include "gpu_regs.h"
 #include "task.h"
 #include "constants/rgb.h"
+#include "day_night.h" // PS-072
 
-enum
-{
-    NORMAL_FADE,
-    FAST_FADE,
-    HARDWARE_FADE,
-};
+// NORMAL_FADE / FAST_FADE / HARDWARE_FADE moved to palette.h (PS-072: day_night.c reads the fade mode)
 
 // These are structs for some unused palette system.
 // The full functionality of this system is unknown.
@@ -104,7 +100,8 @@ void TransferPlttBuffer(void)
 {
     if (!gPaletteFade.bufferTransferDisabled)
     {
-        DmaCopy16Defvars(3, gPlttBufferFaded, (void *)PLTT, PLTT_SIZE);
+        if (!DayNight_TintPlttBuffer()) // PS-072: tinted copy into PLTT while the day/night tint is active
+            DmaCopy16Defvars(3, gPlttBufferFaded, (void *)PLTT, PLTT_SIZE);
         sPlttBufferTransferPending = FALSE;
         if (gPaletteFade.mode == HARDWARE_FADE && gPaletteFade.active)
             UpdateBlendRegisters();
@@ -190,7 +187,8 @@ bool8 BeginNormalPaletteFade(u32 selectedPalettes, s8 delay, u8 startY, u8 targe
 
         temp = gPaletteFade.bufferTransferDisabled;
         gPaletteFade.bufferTransferDisabled = FALSE;
-        CpuCopy32(gPlttBufferFaded, (void *)PLTT, PLTT_SIZE);
+        if (!DayNight_TintPlttBuffer()) // PS-072: same tinted copy as TransferPlttBuffer()
+            CpuCopy32(gPlttBufferFaded, (void *)PLTT, PLTT_SIZE);
         sPlttBufferTransferPending = FALSE;
         if (gPaletteFade.mode == HARDWARE_FADE && gPaletteFade.active)
             UpdateBlendRegisters();
