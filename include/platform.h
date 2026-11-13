@@ -5,6 +5,11 @@
 #include "siirtc.h"
 
 void Platform_StoreSaveFile(void);
+// PS-070. Loads `path` into FLASH_BASE: a missing or empty file reads as erased flash, a
+// format 1 file (128 KB) is migrated in memory (and backed up to "<path>.v1.bak" before the
+// first Platform_StoreSaveFile), a current-format file is read as is. FALSE (and FLASH_BASE
+// untouched) for any other size: the file is refused rather than overwritten.
+bool8 Platform_LoadSaveFile(const char *path);
 // MP: BUG-003, --save-selftest: the trade's two-phase link save on a real save (save_link_selftest.c).
 // `path` must equal gPlatformArgs.savePath. Returns the number of failures.
 u32 SaveSelftest_LinkSave(const char *path);

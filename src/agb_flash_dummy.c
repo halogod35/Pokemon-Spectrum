@@ -21,11 +21,11 @@ const struct FlashSetupInfo DUMMY_SAVE =
     WaitForFlashWrite_DUMMY,
     dummyMaxTime,
     {
-        131072, // ROM size
+        FLASH_PC_SIZE, // ROM size (PS-070: 36 sectors, 144 KB)
         {
             4096, // sector size
               12, // bit shift to multiply by sector size (4096 == 1 << 12)
-              32, // number of sectors
+            FLASH_PC_SECTORS, // number of sectors
                0  // appears to be unused
         },
         { 3, 1 }, // wait state setup data

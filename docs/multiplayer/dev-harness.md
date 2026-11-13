@@ -27,7 +27,7 @@ its own save file and its own multiplayer role, without going through menus.
 | `--mp-net-loss <pct>` | **Test only** (PS-054). Drop `pct` % (0–100) of this game's UDP datagrams at random, both directions. See "Faking a bad connection" below. | 0 |
 | `--mp-fake-protocol <n>` | **Test only.** Advertise protocol version `n` (0–65535) in HELLO, so a normal host answers `REJECT(VERSION)`. | off |
 | `--mp-fake-build <id>` | **Test only.** Hash `<id>` (1–15 printable ASCII) instead of the real build id, so a normal host answers `REJECT(BUILD)`. | off |
-| `--debug-slow-save` | **Test only.** Pause 50 ms after each 4 KB sector while the save file is written (1.6 s per file write; one in-game save writes the file twice, so about 3.2 s), so the process can be killed mid-save. Added by PS-014. | off |
+| `--debug-slow-save` | **Test only.** Pause 50 ms after each 4 KB sector while the save file is written (1.8 s per file write since PS-070's 36-sector save; one in-game save writes the file twice, so about 3.6 s), so the process can be killed mid-save. Added by PS-014. | off |
 | `--save-selftest` | Check the crash-safe save I/O on `<save>.selftest` (never the real save) without a window, print `[save] selftest OK` / `FAILED`, and exit 0 / 1. Added by PS-014. | off |
 | `--title <text>` | Window title (max 127 bytes). | `Pokémon Spectrum`, `Pokémon Spectrum [HOST]` or `Pokémon Spectrum [CLIENT]` |
 | `--scale <n>` | Initial window scale, 1–10. | 1 |
@@ -91,7 +91,8 @@ You can also run the instances by hand, for example a third player:
 
 ## Save file safety (PS-014)
 
-The PC build writes the save crash-safely: the whole 128 KB image goes to `<save>.tmp`,
+The PC build writes the save crash-safely: the whole 144 KB image (128 KB before PS-070, see
+`docs/save-format.md`) goes to `<save>.tmp`,
 which is flushed and synced to disk, and then renamed over `<save>` (`rename()` on Linux,
 `MoveFileExA(..., MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` on Windows). If the
 game dies mid-save, `<save>` is still the previous complete save. A leftover `<save>.tmp`
@@ -107,14 +108,14 @@ game logs `[save] ...` on stderr and the previous save stays as it was.
 2. Start `./pokemon-spectrum64 --save kill.sav --debug-slow-save`, continue, and walk a few
    steps so the new save differs from the old one.
 3. Open START > SAVE and confirm. The console prints
-   `[save] --debug-slow-save: writing 'kill.sav' over 1600 ms` (twice: the game writes the file
+   `[save] --debug-slow-save: writing 'kill.sav' over 1800 ms` (twice: the game writes the file
    twice per save, and each write is atomic on its own).
-4. Within those 3.2 s, kill the process: Linux `kill -9 $(pgrep pokemon-spectrum64)`, Windows
+4. Within those 3.6 s, kill the process: Linux `kill -9 $(pgrep pokemon-spectrum64)`, Windows
    Task Manager > End task (or `taskkill /F /IM pokemon-spectrum64.exe`). Vary the moment:
    immediately, about halfway, near the end.
 5. Start `./pokemon-spectrum64 --save kill.sav` again. Expected: the main menu shows CONTINUE
    with no "save file is corrupted" message, and CONTINUE loads either the old position or
-   the new one (if the kill landed after the rename). `kill.sav` is exactly 131072 bytes.
+   the new one (if the kill landed after the rename). `kill.sav` is exactly 147456 bytes.
 6. A `kill.sav.tmp` may exist after step 4. That is expected. It disappears after the next
    successful save.
 

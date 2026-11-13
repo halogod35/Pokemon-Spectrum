@@ -388,13 +388,13 @@ static bool8 WipeSector(u16 sector)
     return failed;
 }
 
-static bool8 WipeSectors(u32 sectorBits)
+static bool8 WipeSectors(u64 sectorBits) // PS-070: 36 sectors, one bit each
 {
     u16 i;
 
     for (i = 0; i < SECTORS_COUNT; i++)
-        if ((sectorBits & (1 << i)) && !WipeSector(i))
-            sectorBits &= ~(1 << i);
+        if ((sectorBits & (1ULL << i)) && !WipeSector(i))
+            sectorBits &= ~(1ULL << i);
 
     if (sectorBits == 0)
         return FALSE;

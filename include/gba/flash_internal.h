@@ -1,10 +1,15 @@
 #ifndef GUARD_GBA_FLASH_INTERNAL_H
 #define GUARD_GBA_FLASH_INTERNAL_H
 
+// PS-070: the PC flash is SECTORS_COUNT (save.h) sectors of 4 KB: 36 sectors, 144 KB.
+// save.c checks that the two agree. Format 1 files (128 KB) are migrated on load.
+#define FLASH_PC_SECTORS 36
+#define FLASH_PC_SIZE    (FLASH_PC_SECTORS * 4096)
+
 #ifndef PORTABLE
 #define FLASH_BASE ((u8 *)0xE000000)
 #else
-extern unsigned char FLASH_BASE[131072];
+extern unsigned char FLASH_BASE[FLASH_PC_SIZE];
 #endif
 
 #define FLASH_WRITE(addr, data) ((*(vu8 *)(FLASH_BASE + (addr))) = (data))

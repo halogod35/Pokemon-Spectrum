@@ -1638,7 +1638,35 @@
 #define DAILY_FLAGS_END                             (FLAG_UNUSED_0x95F + (7 - FLAG_UNUSED_0x95F % 8))
 #define NUM_DAILY_FLAGS                             (DAILY_FLAGS_END - DAILY_FLAGS_START + 1)
 
-#define FLAGS_COUNT (DAILY_FLAGS_END + 1)
+// The vanilla (Emerald) flag space ends here: 0x960 flags. Everything below is appended by
+// PS-070 (save format 2), so no existing flag id changes. Layout: docs/save-format.md.
+#define VANILLA_FLAGS_COUNT (DAILY_FLAGS_END + 1) // 0x960
+
+// PS-070: extended trainer flags for trainer ids MAX_TRAINERS_COUNT..MAX_TRAINERS_TOTAL - 1.
+// The vanilla block (0x500..0x85F) and this one are not contiguous: always map a trainer id
+// to its flag with TRAINER_FLAG(), never with TRAINER_FLAGS_START + id.
+#define MAX_TRAINERS_TOTAL                          2048
+#define TRAINER_FLAGS_EXT_START                     VANILLA_FLAGS_COUNT // 0x960
+#define TRAINER_FLAGS_EXT_COUNT                     (MAX_TRAINERS_TOTAL - MAX_TRAINERS_COUNT) // 1184
+#define TRAINER_FLAGS_EXT_END                       (TRAINER_FLAGS_EXT_START + TRAINER_FLAGS_EXT_COUNT - 1) // 0xDFF
+#define TRAINER_FLAG(trainerId) ((u16)((trainerId) < MAX_TRAINERS_COUNT                              \
+                                     ? TRAINER_FLAGS_START + (trainerId)                             \
+                                     : TRAINER_FLAGS_EXT_START + ((trainerId) - MAX_TRAINERS_COUNT)))
+
+// PS-070: extended system flags, for engine use by new regions (badges, visited towns,
+// landmarks, Fly unlocks, ...). Define them as (SYSTEM_FLAGS_EXT_START + n).
+#define SYSTEM_FLAGS_EXT_START                      (TRAINER_FLAGS_EXT_END + 1) // 0xE00
+#define SYSTEM_FLAGS_EXT_COUNT                      0x200
+#define SYSTEM_FLAGS_EXT_END                        (SYSTEM_FLAGS_EXT_START + SYSTEM_FLAGS_EXT_COUNT - 1) // 0xFFF
+
+// PS-070: extended event flags, for the map scripts, hidden items and object events of new
+// regions. Define them as (EVENT_FLAGS_EXT_START + n).
+#define EVENT_FLAGS_EXT_START                       (SYSTEM_FLAGS_EXT_END + 1) // 0x1000
+#define EVENT_FLAGS_EXT_COUNT                       0x2000
+#define EVENT_FLAGS_EXT_END                         (EVENT_FLAGS_EXT_START + EVENT_FLAGS_EXT_COUNT - 1) // 0x2FFF
+
+// Total number of flags stored in SaveBlock1 (NUM_FLAG_BYTES = FLAGS_COUNT / 8).
+#define FLAGS_COUNT (EVENT_FLAGS_EXT_END + 1) // 0x3000
 
 // Special Flags (Stored in EWRAM (sSpecialFlags), not in the SaveBlock)
 #define SPECIAL_FLAGS_START                     0x4000

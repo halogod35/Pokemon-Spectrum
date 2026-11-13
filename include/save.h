@@ -16,20 +16,42 @@
 
 #define SPECIAL_SECTOR_SENTINEL 0xB39D
 
+// PS-070 (save format 2): SaveBlock1 grew from 4 to 6 sectors (more flags and vars), so a
+// slot has 16 sectors and the PC flash 36 (144 KB). Format 1 (vanilla, v0.2.0 and earlier,
+// 128 KB) is migrated in memory when loaded; see docs/save-format.md and save_migrate.c.
 #define SECTOR_ID_SAVEBLOCK2          0
 #define SECTOR_ID_SAVEBLOCK1_START    1
-#define SECTOR_ID_SAVEBLOCK1_END      4
-#define SECTOR_ID_PKMN_STORAGE_START  5
-#define SECTOR_ID_PKMN_STORAGE_END   13
-#define NUM_SECTORS_PER_SLOT         14
-// Save Slot 1: 0-13;  Save Slot 2: 14-27
-#define SECTOR_ID_HOF_1              28
-#define SECTOR_ID_HOF_2              29
-#define SECTOR_ID_TRAINER_HILL       30
-#define SECTOR_ID_RECORDED_BATTLE    31
-#define SECTORS_COUNT                32
+#define SECTOR_ID_SAVEBLOCK1_END      6
+#define SECTOR_ID_PKMN_STORAGE_START  7
+#define SECTOR_ID_PKMN_STORAGE_END   15
+#define NUM_SECTORS_PER_SLOT         16
+// Save Slot 1: 0-15;  Save Slot 2: 16-31
+#define SECTOR_ID_HOF_1              32
+#define SECTOR_ID_HOF_2              33
+#define SECTOR_ID_TRAINER_HILL       34
+#define SECTOR_ID_RECORDED_BATTLE    35
+#define SECTORS_COUNT                36
 
 #define NUM_HOF_SECTORS 2
+
+// Save format version, stored in SaveBlock2.saveFormatVersion (PS-070). 0 or 1 = the vanilla
+// layout (the field was unused filler, so it reads as 0 in old saves); 2 = this layout.
+#define SAVE_FORMAT_VERSION 2
+
+// Format 1 layout, needed by the migration (save_migrate.c) and its selftest.
+#define SAVE_V1_SECTORS_PER_SLOT     14
+#define SAVE_V1_SECTOR_ID_SB1_END     4
+#define SAVE_V1_SECTOR_ID_PKMN_START  5
+#define SAVE_V1_SECTORS_COUNT        32
+#define SAVE_V1_FLASH_SIZE           (SAVE_V1_SECTORS_COUNT * SECTOR_SIZE) // 131072
+#define SAVE_V1_SB2_SIZE             0xF2C  // sizeof(struct SaveBlock2) in format 1
+#define SAVE_V1_PKMN_STORAGE_SIZE    0x83D0 // sizeof(struct PokemonStorage) in format 1
+#define SAVE_V1_SB1_SIZE             0x3D88 // sizeof(struct SaveBlock1) in format 1
+#define SAVE_V1_SB1_FLAGS_OFFSET     0x1270 // u8 flags[0x12C]
+#define SAVE_V1_SB1_NUM_FLAG_BYTES   0x12C  // 0x960 flags
+#define SAVE_V1_SB1_VARS_OFFSET      0x139C // u16 vars[0x100]
+#define SAVE_V1_SB1_VARS_BYTES       0x200
+#define SAVE_V1_SB1_TAIL_OFFSET      0x159C // gameStats and everything after it
 
 #define SAVE_STATUS_EMPTY    0
 #define SAVE_STATUS_OK       1
@@ -84,7 +106,7 @@ struct SaveSector
 extern u16 gLastWrittenSector;
 extern u32 gLastSaveCounter;
 extern u16 gLastKnownGoodSector;
-extern u32 gDamagedSaveSectors;
+extern u64 gDamagedSaveSectors; // one bit per flash sector (PS-070: 36 sectors, so 64 bits)
 extern u32 gSaveCounter;
 extern struct SaveSector *gFastSaveSector;
 extern u16 gIncrementalSectorId;
@@ -109,6 +131,16 @@ u16 GetSaveBlocksPointersBaseOffset(void);
 u32 TryReadSpecialSaveSector(u8 sector, u8 *dst);
 u32 TryWriteSpecialSaveSector(u8 sector, u8 *src);
 void Task_LinkFullSave(u8 taskId);
+// PS-070: the sector checksum used by every save sector footer.
+u16 Save_SectorChecksum(const void *data, u16 size);
+
+// save_migrate.c (PS-070). Converts a format 1 (128 KB) flash image at the start of
+// FLASH_BASE into the current layout, in place. Returns the number of sectors that held
+// save data (0 for an erased or empty image). Never writes a file.
+u32 Save_MigrateV1Flash(void);
+// --save-selftest group "migration" (save_migrate_selftest.c). `path` must equal
+// gPlatformArgs.savePath. Returns the number of failures.
+u32 SaveSelftest_Migration(const char *path);
 
 // save_failed_screen.c
 void DoSaveFailedScreen(u8 saveType);

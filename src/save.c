@@ -26,20 +26,20 @@ static u8 HandleReplaceSector(u16, const struct SaveSectorLocation *);
 /*
  * Sector Layout:
  *
- * Sectors 0 - 13:      Save Slot 1
- * Sectors 14 - 27:     Save Slot 2
- * Sectors 28 - 29:     Hall of Fame
- * Sector 30:           Trainer Hill
- * Sector 31:           Recorded Battle
+ * Sectors 0 - 15:      Save Slot 1   (PS-070, save format 2; 0 - 13 in format 1)
+ * Sectors 16 - 31:     Save Slot 2   (14 - 27 in format 1)
+ * Sectors 32 - 33:     Hall of Fame  (28 - 29 in format 1)
+ * Sector 34:           Trainer Hill  (30 in format 1)
+ * Sector 35:           Recorded Battle (31 in format 1)
  *
  * There are two save slots for saving the player's game data. We alternate between
  * them each time the game is saved, so that if the current save slot is corrupt,
  * we can load the previous one. We also rotate the sectors in each save slot
  * so that the same data is not always being written to the same sector. This
  * might be done to reduce wear on the flash memory, but I'm not sure, since all
- * 14 sectors get written anyway.
+ * 16 sectors get written anyway.
  *
- * See SECTOR_ID_* constants in save.h
+ * See SECTOR_ID_* constants in save.h and docs/save-format.md.
  */
 
 #define SAVEBLOCK_CHUNK(structure, chunkNum)                                   \
@@ -60,7 +60,9 @@ struct
     SAVEBLOCK_CHUNK(struct SaveBlock1, 0), // SECTOR_ID_SAVEBLOCK1_START
     SAVEBLOCK_CHUNK(struct SaveBlock1, 1),
     SAVEBLOCK_CHUNK(struct SaveBlock1, 2),
-    SAVEBLOCK_CHUNK(struct SaveBlock1, 3), // SECTOR_ID_SAVEBLOCK1_END
+    SAVEBLOCK_CHUNK(struct SaveBlock1, 3),
+    SAVEBLOCK_CHUNK(struct SaveBlock1, 4), // PS-070: SaveBlock1 has 6 sectors (4 before)
+    SAVEBLOCK_CHUNK(struct SaveBlock1, 5), // SECTOR_ID_SAVEBLOCK1_END
 
     SAVEBLOCK_CHUNK(struct PokemonStorage, 0), // SECTOR_ID_PKMN_STORAGE_START
     SAVEBLOCK_CHUNK(struct PokemonStorage, 1),
@@ -78,11 +80,18 @@ struct
 STATIC_ASSERT(sizeof(struct SaveBlock2) <= SECTOR_DATA_SIZE, SaveBlock2FreeSpace);
 STATIC_ASSERT(sizeof(struct SaveBlock1) <= SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1), SaveBlock1FreeSpace);
 STATIC_ASSERT(sizeof(struct PokemonStorage) <= SECTOR_DATA_SIZE * (SECTOR_ID_PKMN_STORAGE_END - SECTOR_ID_PKMN_STORAGE_START + 1), PokemonStorageFreeSpace);
+// PS-070: the slot ids, the special sectors and the PC flash must agree.
+STATIC_ASSERT(SECTOR_ID_PKMN_STORAGE_END + 1 == NUM_SECTORS_PER_SLOT, SlotSectorCount);
+STATIC_ASSERT(NUM_SECTORS_PER_SLOT * NUM_SAVE_SLOTS == SECTOR_ID_HOF_1, SpecialSectorsAfterSlots);
+STATIC_ASSERT(SECTOR_ID_RECORDED_BATTLE + 1 == SECTORS_COUNT, SectorsCount);
+STATIC_ASSERT(SECTORS_COUNT == FLASH_PC_SECTORS, FlashSectorCount);
+STATIC_ASSERT(SECTORS_COUNT <= 64, DamagedSectorBits); // gDamagedSaveSectors is a u64
+STATIC_ASSERT(NUM_SECTORS_PER_SLOT <= 32, ValidSectorFlagBits); // validSectorFlags is a u32
 
 COMMON_DATA u16 gLastWrittenSector = 0;
 COMMON_DATA u32 gLastSaveCounter = 0;
 COMMON_DATA u16 gLastKnownGoodSector = 0;
-COMMON_DATA u32 gDamagedSaveSectors = 0;
+COMMON_DATA u64 gDamagedSaveSectors = 0; // PS-070: u64, one bit per sector (36 sectors)
 COMMON_DATA u32 gSaveCounter = 0;
 COMMON_DATA struct SaveSector *gReadWriteSector = NULL; // Pointer to a buffer for reading/writing a sector
 COMMON_DATA u16 gIncrementalSectorId = 0;
@@ -122,13 +131,13 @@ static bool32 SetDamagedSectorBits(u8 op, u8 sectorId)
     switch (op)
     {
     case ENABLE:
-        gDamagedSaveSectors |= (1 << sectorId);
+        gDamagedSaveSectors |= (1ULL << sectorId); // PS-070: 64-bit, sectors go up to 35
         break;
     case DISABLE:
-        gDamagedSaveSectors &= ~(1 << sectorId);
+        gDamagedSaveSectors &= ~(1ULL << sectorId);
         break;
     case CHECK: // unused
-        if (gDamagedSaveSectors & (1 << sectorId))
+        if (gDamagedSaveSectors & (1ULL << sectorId))
             retVal = TRUE;
         break;
     }
@@ -691,6 +700,18 @@ static u16 CalculateChecksum(void *data, u16 size)
     return ((checksum >> 16) + checksum);
 }
 
+// PS-070: for save_migrate.c and the selftests, which build sector footers themselves.
+u16 Save_SectorChecksum(const void *data, u16 size)
+{
+    return CalculateChecksum((void *)data, size);
+}
+
+// PS-070: every save written by this build carries the current format version.
+static void StampSaveFormatVersion(void)
+{
+    gSaveBlock2Ptr->saveFormatVersion = SAVE_FORMAT_VERSION;
+}
+
 static void UpdateSaveAddresses(void)
 {
     int i = SECTOR_ID_SAVEBLOCK2;
@@ -718,6 +739,7 @@ u8 HandleSavingData(u8 saveType)
 
     gTrainerHillVBlankCounter = NULL;
     UpdateSaveAddresses();
+    StampSaveFormatVersion(); // PS-070
     switch (saveType)
     {
     case SAVE_HALL_OF_FAME_ERASE_BEFORE:
@@ -803,6 +825,7 @@ bool8 LinkFullSave_Init(void)
     if (gFlashMemoryPresent != TRUE)
         return TRUE;
     UpdateSaveAddresses();
+    StampSaveFormatVersion(); // PS-070
     CopyPartyAndObjectsToSave();
     RestoreSaveBackupVarsAndIncrement(gRamSaveSectorLocations);
     return FALSE;
@@ -852,6 +875,7 @@ bool8 WriteSaveBlock2(void)
         return TRUE;
 
     UpdateSaveAddresses();
+    StampSaveFormatVersion(); // PS-070
     CopyPartyAndObjectsToSave();
     RestoreSaveBackupVars(gRamSaveSectorLocations);
 

@@ -15,6 +15,16 @@ All PC builds produce an executable in the repository root:
 The game reads and writes its save file, `pokemon-spectrum.sav`, in the **current working directory**.
 Run the executable from the folder where you want the save to be. An older `pokeemerald.sav` (and its `.mp.cfg` / `.trade` files) in that folder is renamed to the new name once, the first time the game starts without a `pokemon-spectrum.sav`.
 
+### Upgrading from v0.2.0 or earlier (save format 2)
+
+Saves written by v0.2.0 and earlier are 128 KB (save format 1). This version uses a bigger save (144 KB,
+save format 2: more event flags, trainer flags and vars for future regions). An old save is converted
+automatically when it is loaded; the first time the game saves, it first copies the untouched old file to
+`pokemon-spectrum.sav.v1.bak` (or `<your save>.v1.bak` with `--save`), so you can go back to v0.2.0 by
+renaming that backup over the save. The console prints `[save] migrated ...` and `[save] backup ...` when
+this happens. A save file of any other size is refused at startup (the game exits with a `[save]` message
+instead of overwriting it). See `docs/save-format.md`.
+
 Use `-j$(nproc)` to build with all CPU threads, for example `make linux -j$(nproc)`.
 
 If you switch between `linux` and `winwsl` builds, the object folders are separate (`build/pc64`, `build/pc32`),
