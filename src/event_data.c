@@ -26,6 +26,11 @@ EWRAM_DATA u16 gSpecialVar_MonBoxId = 0;
 EWRAM_DATA u16 gSpecialVar_MonBoxPos = 0;
 EWRAM_DATA u16 gSpecialVar_Unused_0x8014 = 0;
 EWRAM_DATA static u8 sSpecialFlags[SPECIAL_FLAGS_SIZE] = {0};
+// PS-071: TEST ONLY. Until PS-070 widens the saved flag space past REGION_FLAGS_END, the region
+// flags (badges 9-24, FLAG_VISITED_TEMPLATE_TOWN) are inert. In the test build they live here
+// for the session (never saved), so the template region's Fly spot and badge can be checked.
+EWRAM_DATA static u8 sTestRegionFlags[(REGION_FLAGS_END - REGION_FLAGS_START) / 8 + 1] = {0};
+STATIC_ASSERT((REGION_FLAGS_START & 7) == 0, TestRegionFlagsByteAligned);
 
 extern u16 *const gSpecialVars[];
 
@@ -199,6 +204,8 @@ u8 *GetFlagPointer(u16 id)
         return NULL;
     else if (id < FLAGS_COUNT)
         return &gSaveBlock1Ptr->flags[id / 8];
+    else if (id >= REGION_FLAGS_START && id <= REGION_FLAGS_END)
+        return &sTestRegionFlags[(id - REGION_FLAGS_START) / 8]; // PS-071: TEST ONLY session-only region flags (see above)
     else if (id < SPECIAL_FLAGS_START)
         return NULL; // PS-071: past the saved flags (e.g. REGION_FLAGS_START.. before PS-070 widens the space): inert, never out of bounds
     else

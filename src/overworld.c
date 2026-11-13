@@ -68,6 +68,10 @@
 #include "constants/weather.h"
 #include "mp/mp.h" // MP:
 #include "mp_menu.h" // MP: queued field notice ("Disconnected from host", PS-022)
+#include <stdio.h>         // PS-071: TEST ONLY --debug-warp
+#include "heal_location.h" // PS-071: TEST ONLY --debug-warp
+#include "platform.h"      // PS-071: TEST ONLY --debug-warp
+#include "constants/heal_locations.h" // PS-071: TEST ONLY --debug-warp
 
 struct CableClubPlayer
 {
@@ -1764,6 +1768,29 @@ void CB2_ContinueSavedGame(void)
     ScriptContext_Init();
     UnlockPlayerFieldControls();
     InitMatchCallCounters();
+    // PS-071: TEST ONLY --debug-warp <group> <num> [<x> <y>]: the first CONTINUE of this run lands
+    // on that map (its heal spot if it has one, else the given x y, else the map's centre) instead
+    // of the saved location. Used to reach the template region; never part of a release build.
+    if (gPlatformArgs.hasDebugWarp)
+    {
+        gPlatformArgs.hasDebugWarp = FALSE;
+        if (MP_IsValidMap(gPlatformArgs.debugWarpGroup, gPlatformArgs.debugWarpNum)) // MP: bounds check of the map table
+        {
+            u32 healLocation = GetHealLocationIndexByMap(gPlatformArgs.debugWarpGroup, gPlatformArgs.debugWarpNum);
+
+            if (healLocation != HEAL_LOCATION_NONE && gPlatformArgs.debugWarpX < 0)
+                SetContinueGameWarpToHealLocation(healLocation);
+            else
+                SetContinueGameWarp(gPlatformArgs.debugWarpGroup, gPlatformArgs.debugWarpNum, WARP_ID_NONE, gPlatformArgs.debugWarpX, gPlatformArgs.debugWarpY);
+            SetContinueGameWarpStatus();
+            printf("[debug] --debug-warp: continuing into map %u.%u\n", gPlatformArgs.debugWarpGroup, gPlatformArgs.debugWarpNum);
+        }
+        else
+        {
+            printf("[debug] --debug-warp: map %u.%u does not exist, ignored\n", gPlatformArgs.debugWarpGroup, gPlatformArgs.debugWarpNum);
+        }
+        fflush(stdout);
+    }
     if (UseContinueGameWarp() == TRUE)
     {
         ClearContinueGameWarpStatus();

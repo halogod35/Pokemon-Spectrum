@@ -36,6 +36,7 @@ its own save file and its own multiplayer role, without going through menus.
 | `--audio-queue-ms <n>` | PS-058: how much audio is kept ready ahead of the sound card, 20–200 ms. Larger survives longer hitches but delays sound effects. | 50 |
 | `--audio-legacy` | **Test only** (PS-058). The v0.1.0 audio pacing (one sound frame per loop, no fades), to compare by ear. | off |
 | `--debug-loop-hz <hz>` | **Test only** (PS-058). Hold the main loop to `<hz>` iterations per second (10–1000, up to 3 decimals, e.g. `59.94`), like vsync on a monitor with that refresh rate. Used by the CI audio check. | off |
+| `--debug-warp <group> <num> [<x> <y>]` | **Test only** (PS-071, TEST ONLY commit, never on `master`). The first **Continue** of this run lands on map `group`/`num` (0–127 each) instead of the saved location: on the map's heal spot if it has one, else on `x y` (0–127) if given, else on the map's centre. A map that does not exist is logged and ignored. See "Test only: reaching the template region" below. | off |
 | `-h`, `--help` | Print help and exit. | |
 
 Rules:
@@ -50,6 +51,30 @@ Rules:
 On Windows the help and errors appear in the console window that opens next to the game. If you double-click
 the `.exe` with bad flags (for example from a shortcut), that window closes immediately, so run it from `cmd`
 to read the message.
+
+### Test only: reaching the template region (PS-071)
+
+The template region (`REGION_TEMPLATE`, `docs/regions.md`) is not reachable in normal play. The
+`TEST ONLY` commit at the end of branch `ps-071-multi-region` (never merged to `master`) adds:
+
+- `--debug-warp <group> <num> [<x> <y>]`: the first **Continue** of the run lands on that map. The
+  template town is map group 34, number 0 (`MAP_TEMPLATE_TOWN`); the route above it is 34 1:
+
+  ```
+  pokemon-spectrum64.exe --save mytest.sav --debug-warp 34 0
+  ```
+
+  Use a copy of your save: the game saves to it as usual, so the saved location afterwards is the
+  template region. (Any Hoenn map works too, e.g. `--debug-warp 0 9` is Littleroot Town.)
+- The region flags (`FLAG_BADGE09..24`, `FLAG_VISITED_TEMPLATE_TOWN`) are held in memory for the
+  session instead of being inert, so the template Fly spot unlocks when you arrive and the
+  placeholder gym leader's badge shows on the trainer card. They are **not saved** (the real flag
+  space comes with PS-070): restart the game and they are clear again.
+
+Ways back to Hoenn, both work without the flag: the placeholder sailor in the template town (region
+transit helper, offers LITTLEROOT TOWN), or Fly: on the Fly map press L/R to switch to HOENN and pick
+any unlocked city. Two instances with `--host` / `--join` and the same `--debug-warp` see each other
+in the template town like on any Hoenn map.
 
 ## Running a host + client pair
 

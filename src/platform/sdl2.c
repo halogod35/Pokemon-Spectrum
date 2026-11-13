@@ -426,6 +426,8 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --audio-queue-ms <n> Audio kept ready ahead of the sound card, %d-%d ms (default %d)\n"
         "  --audio-legacy       Test only: v0.1.0 audio pacing without fades, to compare by ear\n"
         "  --debug-loop-hz <hz> Test only: run the main loop at this rate, e.g. 59.94 (simulated vsync)\n"
+        "  --debug-warp <group> <num> [<x> <y>]\n"
+        "                       Test only: CONTINUE warps into map group/num (template region: 34 0)\n"
         "  -h, --help           Show this help and exit\n"
         "\n"
         "If a port is given more than once (--host <port>, --join ip:port, --port), the last one wins.\n",
@@ -732,6 +734,40 @@ static int ParsePlatformArgs(int argc, char **argv)
             if (!ParseMilli(value, 10000, 1000000, &gPlatformArgs.debugLoopMilliHz))
                 goto bad_value;
             i++;
+        }
+        else if (strcmp(arg, "--debug-warp") == 0) // PS-071: TEST ONLY, CONTINUE warps into a map (template region test)
+        {
+            unsigned long group, num, x, y;
+            const char *value2 = (i + 2 < argc) ? argv[i + 2] : NULL;
+
+            if (value == NULL || value2 == NULL)
+                goto missing_value;
+            if (!ParseUnsigned(value, 0, 127, &group))
+                goto bad_value;
+            if (!ParseUnsigned(value2, 0, 127, &num))
+            {
+                value = value2;
+                goto bad_value;
+            }
+            gPlatformArgs.hasDebugWarp = TRUE;
+            gPlatformArgs.debugWarpGroup = (u8)group;
+            gPlatformArgs.debugWarpNum = (u8)num;
+            gPlatformArgs.debugWarpX = -1;
+            gPlatformArgs.debugWarpY = -1;
+            i += 2;
+            // Optional x y: only taken if the next two arguments start with a digit.
+            if (i + 2 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9'
+             && argv[i + 2][0] >= '0' && argv[i + 2][0] <= '9')
+            {
+                if (!ParseUnsigned(argv[i + 1], 0, 127, &x) || !ParseUnsigned(argv[i + 2], 0, 127, &y))
+                {
+                    value = argv[i + 1];
+                    goto bad_value;
+                }
+                gPlatformArgs.debugWarpX = (s8)x;
+                gPlatformArgs.debugWarpY = (s8)y;
+                i += 2;
+            }
         }
         else if (strcmp(arg, "--scale") == 0)
         {

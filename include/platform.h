@@ -80,6 +80,11 @@ struct PlatformArgs
     u32 debugLoopMilliHz;                        // --debug-loop-hz <hz> in thousandths (PS-058), 0 = off
     bool8 audioLegacy;                           // --audio-legacy (PS-058): v0.1.0 audio pacing, for A/B tests
     u32 audioQueueMs;                            // --audio-queue-ms (PS-058), default PLATFORM_AUDIO_DEFAULT_QUEUE_MS
+    bool8 hasDebugWarp;                          // TEST ONLY (PS-071): --debug-warp given
+    u8 debugWarpGroup;                           // --debug-warp <group> <num>: map group (0..127)
+    u8 debugWarpNum;                             // map number within the group (0..127)
+    s8 debugWarpX;                               // optional x y (0..127), -1 = the map's heal spot or its centre
+    s8 debugWarpY;
 };
 
 extern struct PlatformArgs gPlatformArgs;
