@@ -6,6 +6,7 @@
 #include "bg.h"
 #include "cable_club.h"
 #include "clock.h"
+#include "day_night.h" // PS-072
 #include "event_data.h"
 #include "event_object_movement.h"
 #include "event_scripts.h"
@@ -1486,6 +1487,7 @@ static void OverworldBasic(void)
     UpdateCameraPanning();
     BuildOamBuffer();
     UpdatePaletteFade();
+    DayNight_Update(); // PS-072: re-read the clock, pick the tint band (CB2_Overworld and CB2_OverworldBasic)
     UpdateTilesetAnimations();
     DoScheduledBgTilemapCopiesToVram();
 }

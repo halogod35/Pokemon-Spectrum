@@ -24,6 +24,14 @@
 #define OBJ_PLTT_ID(n) (OBJ_PLTT_OFFSET + PLTT_ID(n))
 #define OBJ_PLTT_ID2(n) (PLTT_ID((n) + 16))
 
+// gPaletteFade.mode (was private to palette.c; PS-072: day_night.c reads it)
+enum
+{
+    NORMAL_FADE,
+    FAST_FADE,
+    HARDWARE_FADE,
+};
+
 enum
 {
     FAST_FADE_IN_FROM_WHITE,
