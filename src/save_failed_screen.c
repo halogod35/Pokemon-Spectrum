@@ -143,7 +143,7 @@ static void CB2_FadeAndReturnToTitleScreen(void);
 static void CB2_ReturnToTitleScreen(void);
 static void VBlankCB_UpdateClockGraphics(void);
 static bool8 VerifySectorWipe(u16 sector);
-static bool8 WipeSectors(u32);
+static bool8 WipeSectors(u64); // PS-070: one bit per sector, 36 sectors
 
 // Although this is a general text printer, it's only used in this file.
 static void SaveFailedScreenTextPrint(const u8 *text, u8 x, u8 y)
