@@ -32,7 +32,7 @@ from where id 0 sits). Save counter N goes to slot N % 2.
 | Sector id (in slot) | Data | Size used |
 |---|---|---|
 | 0 | `struct SaveBlock2` | 0xF2C of 3968 bytes |
-| 1–6 | `struct SaveBlock1` (0x505C bytes, 6 chunks of 3968) | 20572 of 23808 bytes (3236 spare) |
+| 1–6 | `struct SaveBlock1` (0x505C bytes on GBA, somewhat more on PC, see below; 6 chunks of 3968) | about 20.6 KB of 23808 bytes (about 3 KB spare) |
 | 7–15 | `struct PokemonStorage` (0x83D0 bytes, 9 chunks) | 33744 of 35712 bytes |
 
 Format 1 had SaveBlock1 in 4 sectors (ids 1–4, 0x3D88 bytes), the boxes in ids 5–13, 14 sectors per
@@ -84,9 +84,14 @@ above 0x8015 instead of indexing out of bounds.
 
 ## SaveBlock1 layout change
 
-Only `flags[]` (0x12C → 0x600 bytes) and `vars[]` (0x200 → 0x1000 bytes) grew, in place, at offset
-0x1270. Everything before `flags` is byte-identical to format 1; everything from `gameStats` on is
-the same bytes shifted by 0x12D4. The offset comments in `include/global.h` are the format 2 ones.
+Only `flags[]` (0x12C → 0x600 bytes) and `vars[]` (0x200 → 0x1000 bytes) grew, in place.
+Everything before `flags` is byte-identical to format 1; everything from `gameStats` to
+`waldaPhrase` (the last member) is the same bytes shifted by 0x12D4. The offset comments in
+`include/global.h` are GBA offsets (updated for format 2); the **PC layout differs** (the object
+event templates hold a pointer), and 32- and 64-bit builds have different `SaveBlock1` sizes, as
+they already had in format 1 (a save is tied to its bitness; that is pre-existing). So the
+format 1 layout is derived from the current struct (`SAVE_V1_*` in `include/save.h`: head =
+`offsetof(flags)`, then 0x12C + 0x200 bytes, then the tail, then the compiler's trailing padding).
 `src/save_migrate.c` static-asserts these assumptions, so a later change to SaveBlock1 that breaks
 them fails the build instead of the migration.
 

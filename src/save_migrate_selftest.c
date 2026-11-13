@@ -135,10 +135,11 @@ static void V1WriteSlot(u32 slot, u16 rotation, u32 counter, const struct SaveBl
     u32 base = slot * SAVE_V1_SECTORS_PER_SLOT;
     u32 n;
 
+    memset(sSb1V1, 0, sizeof(sSb1V1)); // the format 1 trailing padding, if any
     memcpy(sSb1V1, src, SAVE_V1_SB1_FLAGS_OFFSET);
     memcpy(sSb1V1 + SAVE_V1_SB1_FLAGS_OFFSET, src + offsetof(struct SaveBlock1, flags), SAVE_V1_SB1_NUM_FLAG_BYTES);
     memcpy(sSb1V1 + SAVE_V1_SB1_VARS_OFFSET, src + offsetof(struct SaveBlock1, vars), SAVE_V1_SB1_VARS_BYTES);
-    memcpy(sSb1V1 + SAVE_V1_SB1_TAIL_OFFSET, src + offsetof(struct SaveBlock1, gameStats), SAVE_V1_SB1_SIZE - SAVE_V1_SB1_TAIL_OFFSET);
+    memcpy(sSb1V1 + SAVE_V1_SB1_TAIL_OFFSET, src + offsetof(struct SaveBlock1, gameStats), SAVE_SB1_TAIL_SIZE);
 
 #define V1_POS(id) (base + ((id) + rotation) % SAVE_V1_SECTORS_PER_SLOT)
     V1WriteSector(V1_POS(SECTOR_ID_SAVEBLOCK2), SECTOR_ID_SAVEBLOCK2, sb2, SAVE_V1_SB2_SIZE, counter);
@@ -155,8 +156,7 @@ static void V1WriteSlot(u32 slot, u16 rotation, u32 counter, const struct SaveBl
 static void BuildGameData(void)
 {
     u8 *sb1 = (u8 *)&sSb1;
-    u32 tailOld = SAVE_V1_SB1_SIZE - SAVE_V1_SB1_TAIL_OFFSET;
-    u32 tailNew = sizeof(struct SaveBlock1) - offsetof(struct SaveBlock1, gameStats);
+    u32 tailEnd = offsetof(struct SaveBlock1, gameStats) + SAVE_SB1_TAIL_SIZE;
 
     FillPattern(&sSb2, sizeof(sSb2), 1);
     sSb2.saveFormatVersion = 0; // unused filler in format 1
@@ -166,7 +166,7 @@ static void BuildGameData(void)
     FillPattern(&sSb1, sizeof(sSb1), 2);
     memset(sb1 + offsetof(struct SaveBlock1, flags) + SAVE_V1_SB1_NUM_FLAG_BYTES, 0, NUM_FLAG_BYTES - SAVE_V1_SB1_NUM_FLAG_BYTES);
     memset(sb1 + offsetof(struct SaveBlock1, vars) + SAVE_V1_SB1_VARS_BYTES, 0, VARS_COUNT * sizeof(u16) - SAVE_V1_SB1_VARS_BYTES);
-    memset(sb1 + offsetof(struct SaveBlock1, gameStats) + tailOld, 0, tailNew - tailOld);
+    memset(sb1 + tailEnd, 0, sizeof(struct SaveBlock1) - tailEnd); // the format 2 trailing padding, if any
 
     FillPattern(&sStorage, sizeof(sStorage), 3);
     FillPattern(sHallOfFame, sizeof(sHallOfFame), 4);

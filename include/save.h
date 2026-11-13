@@ -44,14 +44,24 @@
 #define SAVE_V1_SECTOR_ID_PKMN_START  5
 #define SAVE_V1_SECTORS_COUNT        32
 #define SAVE_V1_FLASH_SIZE           (SAVE_V1_SECTORS_COUNT * SECTOR_SIZE) // 131072
-#define SAVE_V1_SB2_SIZE             0xF2C  // sizeof(struct SaveBlock2) in format 1
-#define SAVE_V1_PKMN_STORAGE_SIZE    0x83D0 // sizeof(struct PokemonStorage) in format 1
-#define SAVE_V1_SB1_SIZE             0x3D88 // sizeof(struct SaveBlock1) in format 1
-#define SAVE_V1_SB1_FLAGS_OFFSET     0x1270 // u8 flags[0x12C]
+// The format 1 structs, derived from the current ones: SaveBlock2 and PokemonStorage did not
+// change; in SaveBlock1 only flags[] (0x12C bytes) and vars[] (0x200 bytes) grew, in place, so
+// the head (everything before flags) and the tail (gameStats .. waldaPhrase, the last member)
+// are the same bytes. Note that the PC layout is not the GBA one (the object event templates
+// hold a pointer), and differs between 32- and 64-bit builds; that was already so in format 1.
+#define SAVE_V1_SB2_SIZE             sizeof(struct SaveBlock2)
+#define SAVE_V1_PKMN_STORAGE_SIZE    sizeof(struct PokemonStorage)
+#define SAVE_V1_SB1_FLAGS_OFFSET     offsetof(struct SaveBlock1, flags)
 #define SAVE_V1_SB1_NUM_FLAG_BYTES   0x12C  // 0x960 flags
-#define SAVE_V1_SB1_VARS_OFFSET      0x139C // u16 vars[0x100]
-#define SAVE_V1_SB1_VARS_BYTES       0x200
-#define SAVE_V1_SB1_TAIL_OFFSET      0x159C // gameStats and everything after it
+#define SAVE_V1_SB1_VARS_OFFSET      (SAVE_V1_SB1_FLAGS_OFFSET + SAVE_V1_SB1_NUM_FLAG_BYTES)
+#define SAVE_V1_SB1_VARS_BYTES       0x200  // 256 vars
+#define SAVE_V1_SB1_TAIL_OFFSET      (SAVE_V1_SB1_VARS_OFFSET + SAVE_V1_SB1_VARS_BYTES)
+// The tail of SaveBlock1 without the struct's trailing padding (the same in both formats).
+#define SAVE_SB1_TAIL_SIZE           (offsetof(struct SaveBlock1, waldaPhrase) + sizeof(((struct SaveBlock1 *)0)->waldaPhrase) \
+                                      - offsetof(struct SaveBlock1, gameStats))
+#define SAVE_ALIGN_UP(x, a)          ((((x) + (a) - 1) / (a)) * (a))
+// sizeof(struct SaveBlock1) in format 1: the tail plus the compiler's trailing padding.
+#define SAVE_V1_SB1_SIZE             SAVE_ALIGN_UP(SAVE_V1_SB1_TAIL_OFFSET + SAVE_SB1_TAIL_SIZE, __alignof__(struct SaveBlock1))
 
 #define SAVE_STATUS_EMPTY    0
 #define SAVE_STATUS_OK       1

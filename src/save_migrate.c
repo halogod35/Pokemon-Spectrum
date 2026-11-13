@@ -21,18 +21,19 @@
 #include <string.h>
 #include "global.h"
 #include "gba/flash_internal.h"
+#include "pokemon_storage_system.h"
 #include "save.h"
 
-// The migration assumes that only flags[] and vars[] grew, in place.
-STATIC_ASSERT(offsetof(struct SaveBlock1, flags) == SAVE_V1_SB1_FLAGS_OFFSET, SaveBlock1HeadUnchanged);
+// The migration assumes that only flags[] and vars[] grew, in place (see SAVE_V1_* in save.h).
+STATIC_ASSERT(SAVE_V1_SB1_FLAGS_OFFSET % 4 == 0, SaveBlock1FlagsAligned); // so format 1 had no padding before vars / gameStats
 STATIC_ASSERT(offsetof(struct SaveBlock1, vars) == SAVE_V1_SB1_FLAGS_OFFSET + NUM_FLAG_BYTES, SaveBlock1VarsFollowFlags);
 STATIC_ASSERT(offsetof(struct SaveBlock1, gameStats) == offsetof(struct SaveBlock1, vars) + VARS_COUNT * sizeof(u16), SaveBlock1TailFollowsVars);
 STATIC_ASSERT(NUM_FLAG_BYTES >= SAVE_V1_SB1_NUM_FLAG_BYTES, SaveBlock1FlagsOnlyGrew);
 STATIC_ASSERT(VARS_COUNT * sizeof(u16) >= SAVE_V1_SB1_VARS_BYTES, SaveBlock1VarsOnlyGrew);
-STATIC_ASSERT(sizeof(struct SaveBlock1) - offsetof(struct SaveBlock1, gameStats) >= SAVE_V1_SB1_SIZE - SAVE_V1_SB1_TAIL_OFFSET, SaveBlock1TailNotShorter);
-STATIC_ASSERT(sizeof(struct SaveBlock2) >= SAVE_V1_SB2_SIZE, SaveBlock2NotShorter);
+// waldaPhrase must stay the last member (SAVE_SB1_TAIL_SIZE); append new members after it and update save.h.
+STATIC_ASSERT(sizeof(struct SaveBlock1) - (offsetof(struct SaveBlock1, waldaPhrase) + sizeof(((struct SaveBlock1 *)0)->waldaPhrase)) < __alignof__(struct SaveBlock1), SaveBlock1WaldaPhraseIsLast);
+STATIC_ASSERT(SAVE_V1_SB1_SIZE <= SECTOR_DATA_SIZE * (SAVE_V1_SECTOR_ID_SB1_END - SECTOR_ID_SAVEBLOCK1_START + 1), V1SaveBlock1FitsItsSectors);
 STATIC_ASSERT(offsetof(struct SaveBlock2, saveFormatVersion) == 0x90, SaveFormatVersionOffset);
-STATIC_ASSERT(sizeof(struct PokemonStorage) >= SAVE_V1_PKMN_STORAGE_SIZE, PokemonStorageNotShorter);
 STATIC_ASSERT(SAVE_V1_FLASH_SIZE <= FLASH_PC_SIZE, FlashGrewOnly);
 
 #define V1_SB1_CHUNKS   (SAVE_V1_SECTOR_ID_SB1_END - SECTOR_ID_SAVEBLOCK1_START + 1) // 4
@@ -103,8 +104,6 @@ static u32 NewPosition(u32 slot, u16 rotation, u16 id)
 static void ConvertSaveBlock1(const struct SaveSector *const *best, u32 slot, u16 rotation)
 {
     u8 *dst = (u8 *)&sNewSaveBlock1;
-    u32 oldTail = SAVE_V1_SB1_SIZE - SAVE_V1_SB1_TAIL_OFFSET;
-    u32 newTail = sizeof(struct SaveBlock1) - offsetof(struct SaveBlock1, gameStats);
     u32 counter = best[SECTOR_ID_SAVEBLOCK1_START]->counter;
     u32 n;
 
@@ -113,13 +112,12 @@ static void ConvertSaveBlock1(const struct SaveSector *const *best, u32 slot, u1
                best[SECTOR_ID_SAVEBLOCK1_START + n]->data,
                ChunkSize(SAVE_V1_SB1_SIZE, n));
 
-    // Head, flags, vars and tail; the new flag and var space reads as zero (unset).
+    // Head, flags, vars and tail; the new flag and var space (and the padding) reads as zero.
     memset(dst, 0, sizeof(struct SaveBlock1));
     memcpy(dst, sOldSaveBlock1, SAVE_V1_SB1_FLAGS_OFFSET);
     memcpy(dst + offsetof(struct SaveBlock1, flags), sOldSaveBlock1 + SAVE_V1_SB1_FLAGS_OFFSET, SAVE_V1_SB1_NUM_FLAG_BYTES);
     memcpy(dst + offsetof(struct SaveBlock1, vars), sOldSaveBlock1 + SAVE_V1_SB1_VARS_OFFSET, SAVE_V1_SB1_VARS_BYTES);
-    memcpy(dst + offsetof(struct SaveBlock1, gameStats), sOldSaveBlock1 + SAVE_V1_SB1_TAIL_OFFSET,
-           (oldTail < newTail) ? oldTail : newTail);
+    memcpy(dst + offsetof(struct SaveBlock1, gameStats), sOldSaveBlock1 + SAVE_V1_SB1_TAIL_OFFSET, SAVE_SB1_TAIL_SIZE);
 
     for (n = 0; n < V2_SB1_CHUNKS; n++)
         WriteNewSector(NewPosition(slot, rotation, SECTOR_ID_SAVEBLOCK1_START + n),
