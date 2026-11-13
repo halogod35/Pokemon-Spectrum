@@ -62,8 +62,12 @@ struct SiiRtcInfo internalClock;
 #define SAVE_SELFTEST_SUFFIX     ".selftest"
 #define SAVE_CHUNK_SIZE          0x1000  // one flash sector
 #define SAVE_FLASH_SECTOR_SHIFT  12      // DUMMY_SAVE sector shift, used if gFlash is not set yet
-#define SAVE_SLOW_DELAY_MS       50      // --debug-slow-save: per sector, 32 sectors = 1.6 s per file write
+#define SAVE_SLOW_DELAY_MS       50      // --debug-slow-save: per sector, 36 sectors = 1.8 s per file write
 #define SAVE_REPLACE_RETRIES     5       // Windows: retry if another process briefly holds the file
+
+// PS-070: the save format version of the loaded flash image (save.h, src/save.c); save.h
+// itself clashes with this file's gIntrTable, so it is declared here.
+u32 Save_FlashFormatVersion(void);
 
 struct PlatformArgs gPlatformArgs;
 
@@ -134,45 +138,6 @@ static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
 }
 #endif
 
-// PS-056: the files were called "pokeemerald.*" before. With the default save path only, and only
-// when the new save does not exist yet: rename the old save and its companion files (the Join Game
-// address and a pending trade journal) to the new names, once. An explicit --save is left alone.
-static void MigrateLegacySaveFiles(void)
-{
-    static const char *const sSuffixes[] = { "", ".mp.cfg", ".trade" };
-    char oldPath[64];
-    char newPath[64];
-    FILE *file;
-    u32 i;
-
-    if (strcmp(gPlatformArgs.savePath, PLATFORM_DEFAULT_SAVE_PATH) != 0)
-        return;
-    file = fopen(PLATFORM_DEFAULT_SAVE_PATH, "rb");
-    if (file != NULL)
-    {
-        fclose(file);
-        return;
-    }
-    file = fopen(PLATFORM_LEGACY_SAVE_PATH, "rb");
-    if (file == NULL)
-        return;
-    fclose(file);
-
-    for (i = 0; i < sizeof(sSuffixes) / sizeof(sSuffixes[0]); i++)
-    {
-        snprintf(oldPath, sizeof(oldPath), "%s%s", PLATFORM_LEGACY_SAVE_PATH, sSuffixes[i]);
-        snprintf(newPath, sizeof(newPath), "%s%s", PLATFORM_DEFAULT_SAVE_PATH, sSuffixes[i]);
-        file = fopen(oldPath, "rb");
-        if (file == NULL)
-            continue;
-        fclose(file);
-        if (rename(oldPath, newPath) == 0)
-            printf("[save] renamed '%s' to '%s'\n", oldPath, newPath);
-        else
-            printf("[save] could not rename '%s' to '%s'; the game uses '%s'\n", oldPath, newPath, newPath);
-    }
-}
-
 int main(int argc, char **argv)
 {
     // Open an output console on Windows
@@ -188,8 +153,6 @@ int main(int argc, char **argv)
     int argsResult = ParsePlatformArgs(argc, argv);
     if (argsResult >= 0)
         return argsResult;
-    if (!gPlatformArgs.mpSelftest && !gPlatformArgs.saveSelftest)
-        MigrateLegacySaveFiles();
 
     if (gPlatformArgs.mpSelftest) // MP: --mp-selftest runs without a window or a save
     {
@@ -796,11 +759,19 @@ usage_error:
 // open, so it can be replaced by rename). A missing save is created empty, as before,
 // so an unwritable --save path still fails at startup. A "<save>.tmp" left behind by a
 // killed save is ignored: the real save is still the previous complete one.
+// PS-070: the file must be empty or exactly one flash image (FLASH_PC_SIZE bytes) whose
+// SaveBlock2.saveFormatVersion is SAVE_FORMAT_VERSION. Anything else is refused with a
+// message and the game exits, so a save from another version of the game is never
+// overwritten by a fresh one (a wrong-size file is not even read: FLASH_BASE stays as it
+// was). There is no migration until 1.0.0 (PS-069 policy): a player with an old save moves
+// it away and starts a new game.
 static bool ReadSaveFile(const char *path)
 {
     FILE *file;
     size_t bytesRead = 0;
     size_t i;
+    long fileSize;
+    u32 formatVersion;
 
     file = fopen(path, "rb");
     if (file == NULL)
@@ -813,13 +784,48 @@ static bool ReadSaveFile(const char *path)
         return false;
     }
 
-    // Read at most sizeof(FLASH_BASE) bytes; a shorter or new file reads as erased flash.
-    bytesRead = fread(FLASH_BASE, 1, sizeof(FLASH_BASE), file);
+    if (fseek(file, 0, SEEK_END) != 0 || (fileSize = ftell(file)) < 0 || fseek(file, 0, SEEK_SET) != 0)
+    {
+        fprintf(stderr, "[save] could not read the size of '%s'.\n", path);
+        fclose(file);
+        return false;
+    }
+
+    if (fileSize != 0 && fileSize != (long)sizeof(FLASH_BASE))
+    {
+        // A v0.2.0 save (131072 bytes), a truncated file, or not a save at all. Not read.
+        fprintf(stderr, "[save] '%s' is %ld bytes, not %u: it is from an older or unknown version of the game."
+                        " Saves from earlier versions are not supported: move it away and start a new game.\n",
+                path, fileSize, (unsigned int)sizeof(FLASH_BASE));
+        fclose(file);
+        return false;
+    }
+    if (fileSize != 0)
+    {
+        bytesRead = fread(FLASH_BASE, 1, sizeof(FLASH_BASE), file);
+        if (bytesRead != sizeof(FLASH_BASE))
+        {
+            fprintf(stderr, "[save] could not read '%s' (%u of %u bytes).\n", path, (unsigned int)bytesRead, (unsigned int)sizeof(FLASH_BASE));
+            fclose(file);
+            return false;
+        }
+    }
     fclose(file);
 
+    // A new or empty save reads as erased flash.
     for (i = bytesRead; i < sizeof(FLASH_BASE); i++)
     {
         FLASH_BASE[i] = 0xFF;
+    }
+
+    // The right size, but written by another version of the game (its SaveBlock2 says so).
+    formatVersion = Save_FlashFormatVersion();
+    if (formatVersion != SAVE_FORMAT_VERSION)
+    {
+        fprintf(stderr, "[save] '%s' is from an older or unknown version of the game (format %u, this build needs %u)."
+                        " Saves from earlier versions are not supported: move it away and start a new game.\n",
+                path, (unsigned int)formatVersion, (unsigned int)SAVE_FORMAT_VERSION);
+        return false;
     }
 
     return true;
@@ -946,10 +952,16 @@ void Platform_StoreSaveFile(void)
     StoreSaveFile();
 }
 
+// PS-070: for the save format selftest (save_format_selftest.c).
+bool8 Platform_LoadSaveFile(const char *path)
+{
+    return ReadSaveFile(path) ? TRUE : FALSE;
+}
+
 // MP: PS-014. Reads from FLASH_BASE, the in-memory copy of the save that every flash write
 // goes to (agb_flash_dummy.c). It used to reopen the file for every read, which could
 // return stale data for anything written since the last Platform_StoreSaveFile.
-// Bytes outside the 128 KB flash read as 0xFF (erased).
+// Bytes outside the flash (144 KB, PS-070) read as 0xFF (erased).
 void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 {
     u32 shift = (gFlash != NULL) ? gFlash->sector.shift : SAVE_FLASH_SECTOR_SHIFT;
@@ -1119,7 +1131,7 @@ static int RunSaveSelftest(void)
     Platform_ReadFlash(3, 0x10, buf, sizeof(buf));
     SAVE_SELFTEST_CHECK(memcmp(buf, FLASH_BASE + (3 << SAVE_FLASH_SECTOR_SHIFT) + 0x10, sizeof(buf)) == 0);
     memset(buf, 0, sizeof(buf));
-    Platform_ReadFlash(31, 0x1000 - 16, buf, sizeof(buf)); // last 16 bytes of the flash + 48 outside
+    Platform_ReadFlash(FLASH_PC_SECTORS - 1, 0x1000 - 16, buf, sizeof(buf)); // last 16 bytes of the flash + 48 outside
     SAVE_SELFTEST_CHECK(memcmp(buf, FLASH_BASE + sizeof(FLASH_BASE) - 16, 16) == 0);
     allFF = true;
     for (i = 16; i < sizeof(buf); i++)
@@ -1145,6 +1157,20 @@ static int RunSaveSelftest(void)
         memcpy(gPlatformArgs.savePath, savedPath, sizeof(savedPath));
     }
     SelftestReport("link save", before);
+
+    // 8. PS-070. The save format: a format 2 round trip with the extended flag / var ranges,
+    //    refused file sizes and save format versions (save_format_selftest.c). Same savePath
+    //    dance as 7.
+    before = sSaveSelftestFailures;
+    {
+        char savedPath[sizeof(gPlatformArgs.savePath)];
+
+        memcpy(savedPath, gPlatformArgs.savePath, sizeof(savedPath));
+        snprintf(gPlatformArgs.savePath, sizeof(gPlatformArgs.savePath), "%s", path);
+        sSaveSelftestFailures += SaveSelftest_Format(path);
+        memcpy(gPlatformArgs.savePath, savedPath, sizeof(savedPath));
+    }
+    SelftestReport("format", before);
 
     remove(path);
     remove(tmpPath);

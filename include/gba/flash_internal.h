@@ -1,10 +1,23 @@
 #ifndef GUARD_GBA_FLASH_INTERNAL_H
 #define GUARD_GBA_FLASH_INTERNAL_H
 
+// PS-070: the PC flash is SECTORS_COUNT (save.h) sectors of 4 KB: 36 sectors, 144 KB.
+// save.c checks that the two agree. The save file is exactly this image.
+#define FLASH_PC_SECTORS 36
+#define FLASH_PC_SIZE    (FLASH_PC_SECTORS * 4096)
+
+// Save format version (PS-070), written into SaveBlock2.saveFormatVersion by every save and
+// checked by the PC loader (src/platform/sdl2.c ReadSaveFile): a file of another version is
+// refused with a message. Bump it whenever the save layout changes. 1 = the vanilla layout of
+// v0.2.0 and earlier (the field was unused filler there, so such files read 0); 2 = the
+// layout in docs/save-format.md. No migration until 1.0.0 (PS-069 policy). Defined here
+// rather than in save.h because sdl2.c cannot include save.h (main.h's gIntrTable clashes).
+#define SAVE_FORMAT_VERSION 2
+
 #ifndef PORTABLE
 #define FLASH_BASE ((u8 *)0xE000000)
 #else
-extern unsigned char FLASH_BASE[131072];
+extern unsigned char FLASH_BASE[FLASH_PC_SIZE];
 #endif
 
 #define FLASH_WRITE(addr, data) ((*(vu8 *)(FLASH_BASE + (addr))) = (data))

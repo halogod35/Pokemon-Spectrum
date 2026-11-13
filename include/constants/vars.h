@@ -274,8 +274,13 @@
 #define VAR_UNUSED_0x40FE                                0x40FE // Unused Var
 #define VAR_UNUSED_0x40FF                                0x40FF // Unused Var
 
-#define VARS_END                                         0x40FF
-#define VARS_COUNT                                       (VARS_END - VARS_START + 1)
+// The vanilla (Emerald) var space ends here: 256 vars. PS-070 (save format 2) appends
+// 0x4100..0x47FF for new regions, so no existing var id changes. Define new vars as
+// (VARS_EXT_START + n). Layout: docs/save-format.md.
+#define VANILLA_VARS_END                                 0x40FF
+#define VARS_EXT_START                                   0x4100
+#define VARS_END                                         0x47FF
+#define VARS_COUNT                                       (VARS_END - VARS_START + 1) // 2048
 
 #define SPECIAL_VARS_START            0x8000
 // special vars

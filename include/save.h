@@ -16,18 +16,22 @@
 
 #define SPECIAL_SECTOR_SENTINEL 0xB39D
 
+// PS-070 (save format 2): SaveBlock1 grew from 4 to 6 sectors (more flags and vars), so a
+// slot has 16 sectors and the PC flash 36 (144 KB). See docs/save-format.md. The format
+// version, SAVE_FORMAT_VERSION, lives in gba/flash_internal.h; files of another version or
+// size are refused by the PC loader (no migration until 1.0.0).
 #define SECTOR_ID_SAVEBLOCK2          0
 #define SECTOR_ID_SAVEBLOCK1_START    1
-#define SECTOR_ID_SAVEBLOCK1_END      4
-#define SECTOR_ID_PKMN_STORAGE_START  5
-#define SECTOR_ID_PKMN_STORAGE_END   13
-#define NUM_SECTORS_PER_SLOT         14
-// Save Slot 1: 0-13;  Save Slot 2: 14-27
-#define SECTOR_ID_HOF_1              28
-#define SECTOR_ID_HOF_2              29
-#define SECTOR_ID_TRAINER_HILL       30
-#define SECTOR_ID_RECORDED_BATTLE    31
-#define SECTORS_COUNT                32
+#define SECTOR_ID_SAVEBLOCK1_END      6
+#define SECTOR_ID_PKMN_STORAGE_START  7
+#define SECTOR_ID_PKMN_STORAGE_END   15
+#define NUM_SECTORS_PER_SLOT         16
+// Save Slot 1: 0-15;  Save Slot 2: 16-31
+#define SECTOR_ID_HOF_1              32
+#define SECTOR_ID_HOF_2              33
+#define SECTOR_ID_TRAINER_HILL       34
+#define SECTOR_ID_RECORDED_BATTLE    35
+#define SECTORS_COUNT                36
 
 #define NUM_HOF_SECTORS 2
 
@@ -84,7 +88,7 @@ struct SaveSector
 extern u16 gLastWrittenSector;
 extern u32 gLastSaveCounter;
 extern u16 gLastKnownGoodSector;
-extern u32 gDamagedSaveSectors;
+extern u64 gDamagedSaveSectors; // one bit per flash sector (PS-070: 36 sectors, so 64 bits)
 extern u32 gSaveCounter;
 extern struct SaveSector *gFastSaveSector;
 extern u16 gIncrementalSectorId;
@@ -109,6 +113,15 @@ u16 GetSaveBlocksPointersBaseOffset(void);
 u32 TryReadSpecialSaveSector(u8 sector, u8 *dst);
 u32 TryWriteSpecialSaveSector(u8 sector, u8 *src);
 void Task_LinkFullSave(u8 taskId);
+// PS-070: the sector checksum used by every save sector footer.
+u16 Save_SectorChecksum(const void *data, u16 size);
+// PS-070: the save format version of the flash image in FLASH_BASE (the newest valid
+// SaveBlock2 sector's saveFormatVersion), or SAVE_FORMAT_VERSION if there is none (erased
+// flash, a new game). The PC loader refuses a file whose version is not SAVE_FORMAT_VERSION.
+u32 Save_FlashFormatVersion(void);
+// --save-selftest group "format" (save_format_selftest.c). `path` must equal
+// gPlatformArgs.savePath. Returns the number of failures.
+u32 SaveSelftest_Format(const char *path);
 
 // save_failed_screen.c
 void DoSaveFailedScreen(u8 saveType);

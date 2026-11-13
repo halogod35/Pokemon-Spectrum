@@ -165,10 +165,14 @@ u16 *GetVarPointer(u16 id)
 {
     if (id < VARS_START)
         return NULL;
-    else if (id < SPECIAL_VARS_START)
+    else if (id <= VARS_END)
         return &gSaveBlock1Ptr->vars[id - VARS_START];
-    else
+    else if (id < SPECIAL_VARS_START)
+        return NULL; // PS-070: between the saved vars and the special vars (was out of bounds)
+    else if (id <= SPECIAL_VARS_END)
         return gSpecialVars[id - SPECIAL_VARS_START];
+    else
+        return NULL; // PS-070: past the special vars (was out of bounds)
 }
 
 u16 VarGet(u16 id)
@@ -197,10 +201,14 @@ u8 *GetFlagPointer(u16 id)
 {
     if (id == 0)
         return NULL;
-    else if (id < SPECIAL_FLAGS_START)
+    else if (id < FLAGS_COUNT)
         return &gSaveBlock1Ptr->flags[id / 8];
-    else
+    else if (id < SPECIAL_FLAGS_START)
+        return NULL; // PS-070: between the saved flags and the special flags (was out of bounds)
+    else if (id <= SPECIAL_FLAGS_END)
         return &sSpecialFlags[(id - SPECIAL_FLAGS_START) / 8];
+    else
+        return NULL; // PS-070: past the special flags (was out of bounds)
 }
 
 u8 FlagSet(u16 id)

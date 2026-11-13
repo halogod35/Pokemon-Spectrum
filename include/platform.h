@@ -5,9 +5,15 @@
 #include "siirtc.h"
 
 void Platform_StoreSaveFile(void);
+// PS-070. Loads `path` into FLASH_BASE: a missing or empty file reads as erased flash, a
+// FLASH_PC_SIZE file of the current save format is read as is. FALSE for any other size
+// (FLASH_BASE untouched) or save format version: the file is refused, never overwritten.
+bool8 Platform_LoadSaveFile(const char *path);
 // MP: BUG-003, --save-selftest: the trade's two-phase link save on a real save (save_link_selftest.c).
 // `path` must equal gPlatformArgs.savePath. Returns the number of failures.
 u32 SaveSelftest_LinkSave(const char *path);
+// PS-070, --save-selftest group "format" (save_format_selftest.c), same contract. Also in save.h.
+u32 SaveSelftest_Format(const char *path);
 // MP: PS-050 (src/platform/file_atomic.c). Crash-safe small files next to the save:
 // write "<path>.tmp", flush + sync, atomic replace. FALSE on any error (the old file stays).
 bool8 Platform_WriteFileAtomic(const char *path, const void *data, u32 size);
@@ -32,7 +38,6 @@ void Platform_SetAlarm(u8 *alarmData);
 // See docs/multiplayer/dev-harness.md.
 
 #define PLATFORM_DEFAULT_SAVE_PATH  "pokemon-spectrum.sav"
-#define PLATFORM_LEGACY_SAVE_PATH   "pokeemerald.sav"   // before PS-056: migrated once at startup
 #define PLATFORM_MP_DEFAULT_PORT    27500
 #define PLATFORM_MAX_SCALE          10
 #define PLATFORM_AUDIO_DEFAULT_QUEUE_MS 50  // PS-058: audio kept queued ahead of the sound card
