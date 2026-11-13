@@ -1238,6 +1238,27 @@
       "y": 4,
       "width": 1,
       "height": 1
+    },
+    {
+      "id": "MAPSEC_NONE",
+      "comment": "PS-071: end of Hoenn (0xD5). Regions below start at MAPSEC_REGIONS_START (0x100), see docs/regions.md"
+    },
+    {
+      "id": "MAPSEC_TEMPLATE_TOWN",
+      "value": "0x100",
+      "name": "TEMPLATE TOWN",
+      "x": 4,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_TEMPLATE_ROUTE",
+      "name": "TEMPLATE ROUTE",
+      "x": 4,
+      "y": 5,
+      "width": 1,
+      "height": 1
     }
   ]
 }

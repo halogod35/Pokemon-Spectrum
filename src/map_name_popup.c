@@ -7,6 +7,7 @@
 #include "menu.h"
 #include "map_name_popup.h"
 #include "palette.h"
+#include "region.h"
 #include "region_map.h"
 #include "start_menu.h"
 #include "string_util.h"
@@ -17,16 +18,7 @@
 #include "constants/region_map_sections.h"
 #include "constants/weather.h"
 
-// enums
-enum MapPopUp_Themes
-{
-    MAPPOPUP_THEME_WOOD,
-    MAPPOPUP_THEME_MARBLE,
-    MAPPOPUP_THEME_STONE,
-    MAPPOPUP_THEME_BRICK,
-    MAPPOPUP_THEME_UNDERWATER,
-    MAPPOPUP_THEME_STONE2,
-};
+// enums: MapPopUp_Themes lives in map_name_popup.h (PS-071: the region table names a theme per region)
 
 // static functions
 static void Task_MapNamePopUpWindow(u8 taskId);
@@ -72,7 +64,8 @@ static const u16 sMapPopUp_Palette_Underwater[16] = INCGFX_U16("graphics/map_pop
 // -1 in the size excludes MAPSEC_NONE.
 // The MAPSEC values for Kanto (between MAPSEC_DYNAMIC and MAPSEC_AQUA_HIDEOUT) are also excluded,
 // and this is then handled by subtracting KANTO_MAPSEC_COUNT here and in LoadMapNamePopUpWindowBg.
-static const u8 sMapSectionToThemeId[MAPSEC_COUNT - KANTO_MAPSEC_COUNT - 1] =
+// PS-071: sized by MAPSEC_NONE (Hoenn's own sections); other regions use the theme of their region table entry.
+static const u8 sMapSectionToThemeId[MAPSEC_NONE - KANTO_MAPSEC_COUNT] =
 {
     [MAPSEC_LITTLEROOT_TOWN] = MAPPOPUP_THEME_WOOD,
     [MAPSEC_OLDALE_TOWN] = MAPPOPUP_THEME_WOOD,
@@ -406,14 +399,21 @@ static void LoadMapNamePopUpWindowBg(void)
     u8 popupWindowId = GetMapNamePopUpWindowId();
     mapsec_u16_t regionMapSectionId = gMapHeader.regionMapSectionId;
 
-    if (regionMapSectionId >= KANTO_MAPSEC_START)
+    if (regionMapSectionId >= MAPSEC_REGIONS_START) // PS-071: regions beyond Hoenn use their region's theme
     {
-        if (regionMapSectionId > KANTO_MAPSEC_END)
-            regionMapSectionId -= KANTO_MAPSEC_COUNT;
-        else
-            regionMapSectionId = 0; // Discard kanto region sections;
+        popUpThemeId = GetRegionInfo(GetRegionOfMapSec(regionMapSectionId))->popupTheme;
     }
-    popUpThemeId = sMapSectionToThemeId[regionMapSectionId];
+    else
+    {
+        if (regionMapSectionId >= KANTO_MAPSEC_START)
+        {
+            if (regionMapSectionId > KANTO_MAPSEC_END)
+                regionMapSectionId -= KANTO_MAPSEC_COUNT;
+            else
+                regionMapSectionId = 0; // Discard kanto region sections;
+        }
+        popUpThemeId = sMapSectionToThemeId[regionMapSectionId];
+    }
 
     LoadBgTiles(GetWindowAttribute(popupWindowId, WINDOW_BG), sMapPopUp_OutlineTable[popUpThemeId], 0x400, 0x21D);
     CallWindowFunction(popupWindowId, DrawMapNamePopUpFrame);

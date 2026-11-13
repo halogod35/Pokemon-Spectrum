@@ -1,6 +1,7 @@
 #include "global.h"
 #include "bg.h"
 #include "gpu_regs.h"
+#include "region.h"
 #include "international_string_util.h"
 #include "main.h"
 #include "malloc.h"
@@ -137,10 +138,18 @@ static void MCB2_FieldUpdateRegionMap(void)
     DoScheduledBgTilemapCopiesToVram();
 }
 
+// PS-071: the title names the region shown (Hoenn's map said HOENN, and still does)
+static void PrintRegionMapTitle(void)
+{
+    const u8 *name = GetRegionInfo(GetRegionMapShownRegion())->name;
+    u8 offset = GetStringCenterAlignXOffset(FONT_NORMAL, name, 0x38);
+
+    FillWindowPixelBuffer(WIN_TITLE, PIXEL_FILL(1));
+    AddTextPrinterParameterized(WIN_TITLE, FONT_NORMAL, name, offset, 1, 0, NULL);
+}
+
 static void FieldUpdateRegionMap(void)
 {
-    u8 offset;
-
     switch (sFieldRegionMapHandler->state)
     {
         case 0:
@@ -151,8 +160,7 @@ static void FieldUpdateRegionMap(void)
             break;
         case 1:
             DrawStdFrameWithCustomTileAndPalette(WIN_TITLE, FALSE, 0x27, 0xd);
-            offset = GetStringCenterAlignXOffset(FONT_NORMAL, gText_Hoenn, 0x38);
-            AddTextPrinterParameterized(WIN_TITLE, FONT_NORMAL, gText_Hoenn, offset, 1, 0, NULL);
+            PrintRegionMapTitle(); // PS-071
             ScheduleBgCopyTilemapToVram(0);
             DrawStdFrameWithCustomTileAndPalette(WIN_MAPSEC_NAME, FALSE, 0x27, 0xd);
             PrintRegionMapSecName();
@@ -176,6 +184,11 @@ static void FieldUpdateRegionMap(void)
             {
                 case MAP_INPUT_MOVE_END:
                     PrintRegionMapSecName();
+                    break;
+                case MAP_INPUT_REGION_CHANGED: // PS-071
+                    PrintRegionMapTitle();
+                    PrintRegionMapSecName();
+                    ScheduleBgCopyTilemapToVram(0);
                     break;
                 case MAP_INPUT_A_BUTTON:
                 case MAP_INPUT_B_BUTTON:

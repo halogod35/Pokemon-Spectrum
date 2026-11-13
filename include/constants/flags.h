@@ -1668,6 +1668,32 @@
 // Total number of flags stored in SaveBlock1 (NUM_FLAG_BYTES = FLAGS_COUNT / 8).
 #define FLAGS_COUNT (EVENT_FLAGS_EXT_END + 1) // 0x3000
 
+// PS-071: flags for regions beyond Hoenn. The block lives in PS-070's system-flag extension
+// (SYSTEM_FLAGS_EXT_START, 0xE00..0xFFF), inside the saved flag space, so it is saved like any other flag.
+// Badges 9-16 belong to region 2 and 17-24 to region 3 (constants/regions.h, src/region.c).
+#define REGION_FLAGS_START                          SYSTEM_FLAGS_EXT_START // 0xE00: PS-070's system-flag extension (re-based at merge)
+#define FLAG_BADGE09_GET                            (REGION_FLAGS_START + 0x0)
+#define FLAG_BADGE10_GET                            (REGION_FLAGS_START + 0x1)
+#define FLAG_BADGE11_GET                            (REGION_FLAGS_START + 0x2)
+#define FLAG_BADGE12_GET                            (REGION_FLAGS_START + 0x3)
+#define FLAG_BADGE13_GET                            (REGION_FLAGS_START + 0x4)
+#define FLAG_BADGE14_GET                            (REGION_FLAGS_START + 0x5)
+#define FLAG_BADGE15_GET                            (REGION_FLAGS_START + 0x6)
+#define FLAG_BADGE16_GET                            (REGION_FLAGS_START + 0x7)
+#define FLAG_BADGE17_GET                            (REGION_FLAGS_START + 0x8)
+#define FLAG_BADGE18_GET                            (REGION_FLAGS_START + 0x9)
+#define FLAG_BADGE19_GET                            (REGION_FLAGS_START + 0xA)
+#define FLAG_BADGE20_GET                            (REGION_FLAGS_START + 0xB)
+#define FLAG_BADGE21_GET                            (REGION_FLAGS_START + 0xC)
+#define FLAG_BADGE22_GET                            (REGION_FLAGS_START + 0xD)
+#define FLAG_BADGE23_GET                            (REGION_FLAGS_START + 0xE)
+#define FLAG_BADGE24_GET                            (REGION_FLAGS_START + 0xF)
+#define FLAG_VISITED_TEMPLATE_TOWN                  (REGION_FLAGS_START + 0x10) // template region Fly spot (placeholder, to be replaced)
+#define REGION_FLAGS_END                            FLAG_VISITED_TEMPLATE_TOWN
+#if REGION_FLAGS_END > SYSTEM_FLAGS_EXT_END || REGION_FLAGS_END >= FLAGS_COUNT
+#error "REGION_FLAGS block must fit inside SYSTEM_FLAGS_EXT (PS-070) and the saved flag space"
+#endif
+
 // Special Flags (Stored in EWRAM (sSpecialFlags), not in the SaveBlock)
 #define SPECIAL_FLAGS_START                     0x4000
 #define FLAG_HIDE_MAP_NAME_POPUP                (SPECIAL_FLAGS_START + 0x0)

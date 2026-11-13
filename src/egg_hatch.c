@@ -27,6 +27,7 @@
 #include "constants/abilities.h"
 #include "daycare.h"
 #include "overworld.h"
+#include "region.h" // PS-071
 #include "scanline_effect.h"
 #include "field_weather.h"
 #include "international_string_util.h"
@@ -385,7 +386,7 @@ static void AddHatchedMonToParty(u8 id)
     metLevel = 0;
     SetMonData(mon, MON_DATA_MET_LEVEL, &metLevel);
 
-    metLocation = GetCurrentRegionMapSectionId();
+    metLocation = GetCurrentMetLocation(); // PS-071: u8 met location (region alias outside Hoenn)
     SetMonData(mon, MON_DATA_MET_LOCATION, &metLocation);
 
     MonRestorePP(mon);

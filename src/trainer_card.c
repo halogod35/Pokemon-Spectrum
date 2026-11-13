@@ -1,6 +1,7 @@
 #include "global.h"
 #include "scanline_effect.h"
 #include "palette.h"
+#include "region.h"
 #include "task.h"
 #include "main.h"
 #include "window.h"
@@ -136,6 +137,7 @@ static void PrintIdOnCard(void);
 static void PrintMoneyOnCard(void);
 static void PrintPokedexOnCard(void);
 static void PrintProfilePhraseOnCard(void);
+static void PrintRegionNameOnCard(void); // PS-071
 static bool8 PrintAllOnCardBack(void);
 static void PrintNameOnCardBack(void);
 static void PrintHofDebutTimeOnCard(void);
@@ -846,7 +848,8 @@ static void SetDataFromTrainerCard(void)
     if (sData->trainerCard.battleTowerWins || sData->trainerCard.battleTowerStraightWins)
         sData->hasBattleTowerWins++;
 
-    for (i = 0, badgeFlag = FLAG_BADGE01_GET; badgeFlag < FLAG_BADGE01_GET + NUM_BADGES; badgeFlag++, i++)
+    // PS-071: the badge row shows the badges of the region the player is in (Hoenn: FLAG_BADGE01..08, as before)
+    for (i = 0, badgeFlag = GetRegionInfo(GetCurrentRegion())->firstBadgeFlag; i < NUM_BADGES; badgeFlag++, i++)
     {
         if (FlagGet(badgeFlag))
             sData->badgeCount[i]++;
@@ -946,6 +949,9 @@ static bool8 PrintAllOnCardFront(void)
         break;
     case 5:
         PrintProfilePhraseOnCard();
+        break;
+    case 6:
+        PrintRegionNameOnCard(); // PS-071
         break;
     default:
         sData->printState = 0;
@@ -1168,6 +1174,17 @@ static void PrintProfilePhraseOnCard(void)
         AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, 8, yOffsetsLine2[sData->isHoenn], sTrainerCardTextColors, TEXT_SKIP_DRAW, sData->easyChatProfile[2]);
         AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, GetStringWidth(FONT_NORMAL, sData->easyChatProfile[2], 0) + 14, yOffsetsLine2[sData->isHoenn], sTrainerCardTextColors, TEXT_SKIP_DRAW, sData->easyChatProfile[3]);
     }
+}
+
+// PS-071: outside Hoenn the badge row belongs to the current region; name it above the row.
+// (Hoenn's card is unchanged: no name is printed.)
+static void PrintRegionNameOnCard(void)
+{
+    u8 region = GetCurrentRegion();
+
+    if (region == REGION_HOENN || sData->isLink)
+        return;
+    AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, 20, 104, sTrainerCardTextColors, TEXT_SKIP_DRAW, GetRegionInfo(region)->name);
 }
 
 static void BufferNameForCardBack(void)

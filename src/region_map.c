@@ -20,6 +20,7 @@
 #include "field_specials.h"
 #include "fldeff.h"
 #include "region_map.h"
+#include "region.h"
 #include "constants/region_map_sections.h"
 #include "heal_location.h"
 #include "constants/field_specials.h"
@@ -38,8 +39,8 @@
  *
  */
 
-#define MAP_WIDTH 28
-#define MAP_HEIGHT 15
+#define MAP_WIDTH REGION_MAP_WIDTH   // PS-071: shared with the region table (region.h)
+#define MAP_HEIGHT REGION_MAP_HEIGHT
 #define MAPCURSOR_X_MIN 1
 #define MAPCURSOR_Y_MIN 2
 #define MAPCURSOR_X_MAX (MAPCURSOR_X_MIN + MAP_WIDTH - 1)
@@ -94,7 +95,12 @@ static u8 GetMapsecType(mapsec_u16_t mapSecId);
 static mapsec_u16_t CorrectSpecialMapSecId_Internal(mapsec_u16_t mapSecId);
 static mapsec_u16_t GetTerraOrMarineCaveMapSecId(void);
 static void GetMarineCaveCoords(u16 *x, u16 *y);
-static bool32 IsPlayerInAquaHideout(mapsec_u8_t mapSecId);
+static bool32 IsPlayerInAquaHideout(mapsec_t mapSecId);
+static void SetCursorToRegionDefault(void);      // PS-071
+static u8 SwitchRegionMapRegion(s8 direction);   // PS-071
+static void CreateRegionFlyDestIcons(void);      // PS-071
+static void RecreateFlyDestIcons(void);          // PS-071
+static void DrawFlyMapRegionHintWindow(const u8 *mapSecName); // PS-071
 static void GetPositionOfCursorWithinMapSec(void);
 static bool8 RegionMap_IsMapSecIdInNextRow(u16 y);
 static void SpriteCB_CursorMapFull(struct Sprite *sprite);
@@ -119,15 +125,13 @@ static void CB_ExitFlyMap(void);
 static const u16 sRegionMapCursorPal[] = INCGFX_U16("graphics/pokenav/region_map/cursor.pal", ".gbapal");
 static const u32 sRegionMapCursorSmallGfxLZ[] = INCGFX_U32("graphics/pokenav/region_map/cursor_small.png", ".4bpp.lz");
 static const u32 sRegionMapCursorLargeGfxLZ[] = INCGFX_U32("graphics/pokenav/region_map/cursor_large.png", ".4bpp.lz");
-static const u16 sRegionMapBg_Pal[] = INCGFX_U16("graphics/pokenav/region_map/map.pal", ".gbapal");
-static const u32 sRegionMapBg_GfxLZ[] = INCGFX_U32("graphics/pokenav/region_map/map.png", ".8bpp.lz", "-num_tiles 233 -Wnum_tiles");
-static const u32 sRegionMapBg_TilemapLZ[] = INCGFX_U32("graphics/pokenav/region_map/map.bin", ".lz");
+// PS-071: the region map background (tiles, tilemap, palette) and the map section layout come
+// from the region table (src/region.c), one set per region.
 static const u16 sRegionMapPlayerIcon_BrendanPal[] = INCGFX_U16("graphics/pokenav/region_map/brendan_icon.png", ".gbapal");
 static const u8 sRegionMapPlayerIcon_BrendanGfx[] = INCGFX_U8("graphics/pokenav/region_map/brendan_icon.png", ".4bpp");
 static const u16 sRegionMapPlayerIcon_MayPal[] = INCGFX_U16("graphics/pokenav/region_map/may_icon.png", ".gbapal");
 static const u8 sRegionMapPlayerIcon_MayGfx[] = INCGFX_U8("graphics/pokenav/region_map/may_icon.png", ".4bpp");
 
-#include "data/region_map/region_map_layout.h"
 #include "data/region_map/region_map_entries.h"
 
 static const mapsec_u16_t sRegionMap_SpecialPlaceLocations[][2] =
@@ -203,7 +207,7 @@ static const struct UCoords16 sMarineCaveLocationCoords[MARINE_CAVE_LOCATIONS] =
     [MARINE_CAVE_COORD(ROUTE_129_EAST)]  = {24, 10}
 };
 
-static const mapsec_u8_t sMapSecAquaHideoutOld[] =
+static const mapsec_t sMapSecAquaHideoutOld[] =
 {
     MAPSEC_AQUA_HIDEOUT_OLD
 };
@@ -273,7 +277,7 @@ static const union AnimCmd *const sRegionMapPlayerIconAnimTable[] =
 };
 
 // Event islands that don't appear on map. (Southern Island does)
-static const mapsec_u8_t sMapSecIdsOffMap[] =
+static const mapsec_t sMapSecIdsOffMap[] =
 {
     MAPSEC_BIRTH_ISLAND,
     MAPSEC_FARAWAY_ISLAND,
@@ -517,6 +521,9 @@ void InitRegionMapData(struct RegionMap *regionMap, const struct BgTemplate *tem
     sRegionMap->initStep = 0;
     sRegionMap->zoomed = zoomed;
     sRegionMap->inputCallback = zoomed == TRUE ? ProcessRegionMapInput_Zoomed : ProcessRegionMapInput_Full;
+    sRegionMap->playerRegion = GetCurrentRegion(); // PS-071: show the region the player is in
+    sRegionMap->region = sRegionMap->playerRegion;
+    sRegionMap->needsPokenavMap = FALSE;
     if (template != NULL)
     {
         sRegionMap->bgNum = template->bg;
@@ -536,7 +543,12 @@ void InitRegionMapData(struct RegionMap *regionMap, const struct BgTemplate *tem
 void ShowRegionMapForPokedexAreaScreen(struct RegionMap *regionMap)
 {
     sRegionMap = regionMap;
+    sRegionMap->playerRegion = GetCurrentRegion(); // PS-071: the Pokédex area screen is Hoenn's map
+    sRegionMap->region = REGION_HOENN;
+    sRegionMap->needsPokenavMap = FALSE;
     InitMapBasedOnPlayerLocation();
+    if (sRegionMap->playerRegion != REGION_HOENN)
+        SetCursorToRegionDefault();
     sRegionMap->playerIconSpritePosX = sRegionMap->cursorPosX;
     sRegionMap->playerIconSpritePosY = sRegionMap->cursorPosY;
 }
@@ -546,25 +558,27 @@ bool8 LoadRegionMapGfx(void)
     switch (sRegionMap->initStep)
     {
     case 0:
+        if (sRegionMap->needsPokenavMap) // PS-071: the PokéNav shows a region that has a map
+            sRegionMap->region = GetRegionForPokenavMap(sRegionMap->playerRegion);
         if (sRegionMap->bgManaged)
-            DecompressAndCopyTileDataToVram(sRegionMap->bgNum, sRegionMapBg_GfxLZ, 0, 0, 0);
+            DecompressAndCopyTileDataToVram(sRegionMap->bgNum, GetRegionInfo(sRegionMap->region)->mapTilesLZ, 0, 0, 0);
         else
-            LZ77UnCompVram(sRegionMapBg_GfxLZ, (u16 *)BG_CHAR_ADDR(2));
+            LZ77UnCompVram(GetRegionInfo(sRegionMap->region)->mapTilesLZ, (u16 *)BG_CHAR_ADDR(2));
         break;
     case 1:
         if (sRegionMap->bgManaged)
         {
             if (!FreeTempTileDataBuffersIfPossible())
-                DecompressAndCopyTileDataToVram(sRegionMap->bgNum, sRegionMapBg_TilemapLZ, 0, 0, 1);
+                DecompressAndCopyTileDataToVram(sRegionMap->bgNum, GetRegionInfo(sRegionMap->region)->mapTilemapLZ, 0, 0, 1);
         }
         else
         {
-            LZ77UnCompVram(sRegionMapBg_TilemapLZ, (u16 *)BG_SCREEN_ADDR(28));
+            LZ77UnCompVram(GetRegionInfo(sRegionMap->region)->mapTilemapLZ, (u16 *)BG_SCREEN_ADDR(28));
         }
         break;
     case 2:
         if (!FreeTempTileDataBuffersIfPossible())
-            LoadPalette(sRegionMapBg_Pal, BG_PLTT_ID(7), 3 * PLTT_SIZE_4BPP);
+            LoadPalette(GetRegionInfo(sRegionMap->region)->mapPalette, BG_PLTT_ID(7), 3 * PLTT_SIZE_4BPP);
         break;
     case 3:
         LZ77UnCompWram(sRegionMapCursorSmallGfxLZ, sRegionMap->cursorSmallImage);
@@ -576,6 +590,8 @@ bool8 LoadRegionMapGfx(void)
         InitMapBasedOnPlayerLocation();
         sRegionMap->playerIconSpritePosX = sRegionMap->cursorPosX;
         sRegionMap->playerIconSpritePosY = sRegionMap->cursorPosY;
+        if (sRegionMap->region != sRegionMap->playerRegion) // PS-071: another region is shown
+            SetCursorToRegionDefault();
         sRegionMap->mapSecId = CorrectSpecialMapSecId_Internal(sRegionMap->mapSecId);
         sRegionMap->mapSecType = GetMapsecType(sRegionMap->mapSecId);
         GetMapName(sRegionMap->mapSecName, sRegionMap->mapSecId, MAP_NAME_LENGTH);
@@ -679,6 +695,10 @@ static u8 ProcessRegionMapInput_Full(void)
     else if (JOY_NEW(B_BUTTON))
     {
         input = MAP_INPUT_B_BUTTON;
+    }
+    else if (JOY_NEW(L_BUTTON | R_BUTTON) && GetVisitedRegionCount() > 1) // PS-071: L/R show the previous/next visited region
+    {
+        input = SwitchRegionMapRegion(JOY_NEW(L_BUTTON) ? -1 : 1);
     }
     if (input == MAP_INPUT_MOVE_START)
     {
@@ -962,7 +982,7 @@ static mapsec_u16_t GetMapSecIdAt(u16 x, u16 y)
     }
     y -= MAPCURSOR_Y_MIN;
     x -= MAPCURSOR_X_MIN;
-    return sRegionMap_MapSectionLayout[y][x];
+    return GetRegionInfo(sRegionMap->region)->mapLayout[y][x]; // PS-071: the shown region's layout
 }
 
 static void InitMapBasedOnPlayerLocation(void)
@@ -1174,6 +1194,14 @@ static void RegionMap_InitializeStateBasedOnSSTidalLocation(void)
 
 static u8 GetMapsecType(mapsec_u16_t mapSecId)
 {
+    if (mapSecId >= MAPSEC_REGIONS_START) // PS-071: regions beyond Hoenn: Fly spots from the region table, everything else is a route
+    {
+        const struct RegionFlySpot *spot = GetRegionFlySpot(GetRegionOfMapSec(mapSecId), mapSecId);
+
+        if (spot != NULL)
+            return FlagGet(spot->visitedFlag) ? MAPSECTYPE_CITY_CANFLY : MAPSECTYPE_CITY_CANTFLY;
+        return MAPSECTYPE_ROUTE;
+    }
     switch (mapSecId)
     {
     case MAPSEC_NONE:
@@ -1274,7 +1302,7 @@ static void GetMarineCaveCoords(u16 *x, u16 *y)
 
 // Probably meant to be an "IsPlayerInIndoorDungeon" function, but in practice it only has the one mapsec
 // Additionally, because the mapsec doesnt exist in Emerald, this function always returns FALSE
-static bool32 IsPlayerInAquaHideout(mapsec_u8_t mapSecId)
+static bool32 IsPlayerInAquaHideout(mapsec_t mapSecId)
 {
     u32 i;
 
@@ -1477,6 +1505,8 @@ void CreateRegionMapPlayerIcon(u16 tileTag, u16 paletteTag)
         sRegionMap->playerIconSprite->y = sRegionMap->playerIconSpritePosY * 16 - 0x42;
         sRegionMap->playerIconSprite->callback = SpriteCB_PlayerIconMapZoomed;
     }
+    if (sRegionMap->region != sRegionMap->playerRegion) // PS-071: the player is in another region than the one shown
+        HideRegionMapPlayerIcon();
 }
 
 static void HideRegionMapPlayerIcon(void)
@@ -1574,9 +1604,13 @@ u8 *GetMapName(u8 *dest, mapsec_u16_t regionMapId, u16 padLength)
     {
         str = GetSecretBaseMapName(dest);
     }
-    else if (regionMapId < MAPSEC_NONE)
+    else if (MapSecHasName(regionMapId)) // PS-071: Hoenn's sections and every other region's
     {
         str = StringCopy(dest, gRegionMapEntries[regionMapId].name);
+    }
+    else if (GetRegionOfMetLocation(regionMapId) != REGION_NONE) // PS-071: u8 met-location alias of a region
+    {
+        str = StringCopy(dest, GetRegionInfo(GetRegionOfMetLocation(regionMapId))->name);
     }
     else
     {
@@ -1632,7 +1666,7 @@ bool8 IsRegionMapZoomed(void)
     return sRegionMap->zoomed;
 }
 
-bool32 IsEventIslandMapSecId(mapsec_u8_t mapSecId)
+bool32 IsEventIslandMapSecId(mapsec_t mapSecId)
 {
     u32 i;
 
@@ -1642,6 +1676,82 @@ bool32 IsEventIslandMapSecId(mapsec_u8_t mapSecId)
             return TRUE;
     }
     return FALSE;
+}
+
+// PS-071: the PokéNav calls this right after InitRegionMapData, so a region without a PokéNav
+// map shows another visited region that has one (GetRegionForPokenavMap).
+void SetRegionMapNeedsPokenavMap(void)
+{
+    sRegionMap->needsPokenavMap = TRUE;
+}
+
+u8 GetRegionMapShownRegion(void)
+{
+    return sRegionMap->region;
+}
+
+// PS-071: when the shown region is not the player's, the cursor starts on the region's first
+// Fly spot (or its top-left cell).
+static void SetCursorToRegionDefault(void)
+{
+    const struct RegionInfo *info = GetRegionInfo(sRegionMap->region);
+    u16 x = 0;
+    u16 y = 0;
+
+    if (info->flySpotCount != 0 && MapSecHasName(info->flySpots[0].mapSecId))
+    {
+        x = gRegionMapEntries[info->flySpots[0].mapSecId].x;
+        y = gRegionMapEntries[info->flySpots[0].mapSecId].y;
+    }
+    sRegionMap->cursorPosX = x + MAPCURSOR_X_MIN;
+    sRegionMap->cursorPosY = y + MAPCURSOR_Y_MIN;
+    sRegionMap->playerIsInCave = FALSE;
+    sRegionMap->mapSecId = GetMapSecIdAt(sRegionMap->cursorPosX, sRegionMap->cursorPosY);
+}
+
+// PS-071: L/R on the full map. Shows the previous/next visited region: reloads the background,
+// moves the cursor (back onto the player in the player's region) and shows or hides the player
+// icon. Returns MAP_INPUT_REGION_CHANGED, or MAP_INPUT_NONE when there is nothing to switch to.
+static u8 SwitchRegionMapRegion(s8 direction)
+{
+    const struct RegionInfo *old = GetRegionInfo(sRegionMap->region);
+    const struct RegionInfo *info;
+    u8 region = GetNextVisitedRegion(sRegionMap->region, direction);
+
+    if (region == sRegionMap->region || sRegionMap->zoomed)
+        return MAP_INPUT_NONE;
+    sRegionMap->region = region;
+    info = GetRegionInfo(region);
+    if (info->mapTilesLZ != old->mapTilesLZ)
+        LZ77UnCompVram(info->mapTilesLZ, (u16 *)BG_CHAR_ADDR(sRegionMap->charBaseIdx));
+    LZ77UnCompVram(info->mapTilemapLZ, (u16 *)BG_SCREEN_ADDR(sRegionMap->mapBaseIdx));
+    if (info->mapPalette != old->mapPalette)
+        LoadPalette(info->mapPalette, BG_PLTT_ID(7), 3 * PLTT_SIZE_4BPP);
+
+    if (region == sRegionMap->playerRegion)
+    {
+        sRegionMap->cursorPosX = sRegionMap->playerIconSpritePosX;
+        sRegionMap->cursorPosY = sRegionMap->playerIconSpritePosY;
+        sRegionMap->mapSecId = CorrectSpecialMapSecId_Internal(GetMapSecIdAt(sRegionMap->cursorPosX, sRegionMap->cursorPosY));
+        UnhideRegionMapPlayerIcon();
+    }
+    else
+    {
+        SetCursorToRegionDefault();
+        HideRegionMapPlayerIcon();
+    }
+    if (sRegionMap->cursorSprite != NULL)
+    {
+        sRegionMap->cursorSprite->x = 8 * sRegionMap->cursorPosX + 4;
+        sRegionMap->cursorSprite->y = 8 * sRegionMap->cursorPosY + 4;
+    }
+    sRegionMap->cursorDeltaX = 0;
+    sRegionMap->cursorDeltaY = 0;
+    sRegionMap->mapSecType = GetMapsecType(sRegionMap->mapSecId);
+    GetMapName(sRegionMap->mapSecName, sRegionMap->mapSecId, MAP_NAME_LENGTH);
+    GetPositionOfCursorWithinMapSec();
+    m4aSongNumStart(SE_SELECT);
+    return MAP_INPUT_REGION_CHANGED;
 }
 
 void CB2_OpenFlyMap(void)
@@ -1762,6 +1872,7 @@ static void DrawFlyDestTextWindow(void)
     u16 i;
     bool32 namePrinted;
     const u8 *name;
+    bool32 regionHint = GetVisitedRegionCount() > 1; // PS-071: tall window with the shown region and the L/R hint
 
     if (sFlyMap->regionMap.mapSecType > MAPSECTYPE_NONE && sFlyMap->regionMap.mapSecType < NUM_MAPSEC_TYPES)
     {
@@ -1787,7 +1898,11 @@ static void DrawFlyDestTextWindow(void)
         }
         if (!namePrinted)
         {
-            if (sDrawFlyDestTextWindow == TRUE)
+            if (regionHint)
+            {
+                DrawFlyMapRegionHintWindow(sFlyMap->regionMap.mapSecName); // PS-071
+            }
+            else if (sDrawFlyDestTextWindow == TRUE)
             {
                 ClearStdWindowAndFrameToTransparent(WIN_MAPSEC_NAME_TALL, FALSE);
                 DrawStdFrameWithCustomTileAndPalette(WIN_MAPSEC_NAME, FALSE, 101, 13);
@@ -1797,10 +1912,17 @@ static void DrawFlyDestTextWindow(void)
                 // Window is already drawn, just empty it
                 FillWindowPixelBuffer(WIN_MAPSEC_NAME, PIXEL_FILL(1));
             }
-            AddTextPrinterParameterized(WIN_MAPSEC_NAME, FONT_NORMAL, sFlyMap->regionMap.mapSecName, 0, 1, 0, NULL);
-            ScheduleBgCopyTilemapToVram(0);
-            sDrawFlyDestTextWindow = FALSE;
+            if (!regionHint)
+            {
+                AddTextPrinterParameterized(WIN_MAPSEC_NAME, FONT_NORMAL, sFlyMap->regionMap.mapSecName, 0, 1, 0, NULL);
+                ScheduleBgCopyTilemapToVram(0);
+                sDrawFlyDestTextWindow = FALSE;
+            }
         }
+    }
+    else if (regionHint)
+    {
+        DrawFlyMapRegionHintWindow(NULL); // PS-071: nothing under the cursor, keep the region line
     }
     else
     {
@@ -1817,6 +1939,24 @@ static void DrawFlyDestTextWindow(void)
     }
 }
 
+// PS-071: with more than one region visited the tall name window is used all the time: line 1
+// is the section under the cursor (if any), line 2 "{L}{R} <region>", right-aligned like Ever
+// Grande's subtitle. Region names up to 10 characters fit next to the two button icons.
+static void DrawFlyMapRegionHintWindow(const u8 *mapSecName)
+{
+    u8 *end;
+
+    ClearStdWindowAndFrameToTransparent(WIN_MAPSEC_NAME, FALSE);
+    DrawStdFrameWithCustomTileAndPalette(WIN_MAPSEC_NAME_TALL, FALSE, 101, 13);
+    if (mapSecName != NULL)
+        AddTextPrinterParameterized(WIN_MAPSEC_NAME_TALL, FONT_NORMAL, mapSecName, 0, 1, 0, NULL);
+    end = StringCopy(gStringVar4, gText_RegionLRButtons);
+    StringCopy(end, GetRegionInfo(sFlyMap->regionMap.region)->name);
+    AddTextPrinterParameterized(WIN_MAPSEC_NAME_TALL, FONT_NORMAL, gStringVar4, GetStringRightAlignXOffset(FONT_NORMAL, gStringVar4, 96), 17, 0, NULL);
+    ScheduleBgCopyTilemapToVram(0);
+    sDrawFlyDestTextWindow = TRUE;
+}
+
 
 static void LoadFlyDestIcons(void)
 {
@@ -1829,12 +1969,73 @@ static void LoadFlyDestIcons(void)
     LoadSpriteSheet(&sheet);
     LoadSpritePalette(&sFlyTargetIconsSpritePalette);
     CreateFlyDestIcons();
-    TryCreateRedOutlineFlyDestIcons();
+    if (sFlyMap->regionMap.region == REGION_HOENN) // PS-071: the red outline (Battle Frontier) is a Hoenn table
+        TryCreateRedOutlineFlyDestIcons();
 }
 
 // Sprite data for SpriteCB_FlyDestIcon
 #define sIconMapSec   data[0]
 #define sFlickerTimer data[1]
+
+// PS-071: Fly icons of a region beyond Hoenn, one per entry of its Fly spot table
+static void CreateRegionFlyDestIcons(void)
+{
+    const struct RegionInfo *info = GetRegionInfo(sFlyMap->regionMap.region);
+    mapsec_t mapSecId;
+    u16 x;
+    u16 y;
+    u16 width;
+    u16 height;
+    u16 shape;
+    u8 spriteId;
+    u32 i;
+
+    for (i = 0; i < info->flySpotCount; i++)
+    {
+        mapSecId = info->flySpots[i].mapSecId;
+        if (!MapSecHasName(mapSecId))
+            continue;
+        GetMapSecDimensions(mapSecId, &x, &y, &width, &height);
+        x = (x + MAPCURSOR_X_MIN) * 8 + 4;
+        y = (y + MAPCURSOR_Y_MIN) * 8 + 4;
+
+        if (width == 2)
+            shape = SPRITE_SHAPE(16x8);
+        else if (height == 2)
+            shape = SPRITE_SHAPE(8x16);
+        else
+            shape = SPRITE_SHAPE(8x8);
+
+        spriteId = CreateSprite(&sFlyDestIconSpriteTemplate, x, y, 10);
+        if (spriteId != MAX_SPRITES)
+        {
+            gSprites[spriteId].oam.shape = shape;
+
+            if (FlagGet(info->flySpots[i].visitedFlag))
+                gSprites[spriteId].callback = SpriteCB_FlyDestIcon;
+            else
+                shape += 3;
+
+            StartSpriteAnim(&gSprites[spriteId], shape);
+            gSprites[spriteId].sIconMapSec = mapSecId;
+        }
+    }
+}
+
+// PS-071: after an L/R region switch on the Fly map: drop every Fly icon, create the shown region's
+static void RecreateFlyDestIcons(void)
+{
+    u32 i;
+
+    for (i = 0; i < MAX_SPRITES; i++)
+    {
+        if (gSprites[i].inUse && gSprites[i].template == &sFlyDestIconSpriteTemplate)
+            DestroySprite(&gSprites[i]);
+    }
+    CreateFlyDestIcons();
+    if (sFlyMap->regionMap.region == REGION_HOENN)
+        TryCreateRedOutlineFlyDestIcons();
+}
 
 static void CreateFlyDestIcons(void)
 {
@@ -1847,6 +2048,11 @@ static void CreateFlyDestIcons(void)
     u16 shape;
     u8 spriteId;
 
+    if (sFlyMap->regionMap.region != REGION_HOENN) // PS-071: other regions take their Fly spots from the region table
+    {
+        CreateRegionFlyDestIcons();
+        return;
+    }
     canFlyFlag = FLAG_VISITED_LITTLEROOT_TOWN;
     for (mapSecId = MAPSEC_LITTLEROOT_TOWN; mapSecId <= MAPSEC_EVER_GRANDE_CITY; mapSecId++)
     {
@@ -1966,6 +2172,10 @@ static void CB_HandleFlyMapInput(void)
         case MAP_INPUT_MOVE_END:
             DrawFlyDestTextWindow();
             break;
+        case MAP_INPUT_REGION_CHANGED: // PS-071
+            RecreateFlyDestIcons();
+            DrawFlyDestTextWindow();
+            break;
         case MAP_INPUT_A_BUTTON:
             if (sFlyMap->regionMap.mapSecType == MAPSECTYPE_CITY_CANFLY || sFlyMap->regionMap.mapSecType == MAPSECTYPE_BATTLE_FRONTIER)
             {
@@ -1995,7 +2205,21 @@ static void CB_ExitFlyMap(void)
         if (!UpdatePaletteFade())
         {
             FreeRegionMapIconResources();
-            if (sFlyMap->choseFlyLocation)
+            if (sFlyMap->choseFlyLocation && sFlyMap->regionMap.region != REGION_HOENN) // PS-071: Fly spot of another region
+            {
+                const struct RegionFlySpot *spot = GetRegionFlySpot(sFlyMap->regionMap.region, sFlyMap->regionMap.mapSecId);
+
+                if (spot != NULL)
+                {
+                    SetWarpDestinationToHealLocation(spot->healLocation);
+                    ReturnToFieldFromFlyMapSelect();
+                }
+                else
+                {
+                    SetMainCallback2(CB2_ReturnToPartyMenuFromFlyMap);
+                }
+            }
+            else if (sFlyMap->choseFlyLocation)
             {
                 switch (sFlyMap->regionMap.mapSecId)
                 {

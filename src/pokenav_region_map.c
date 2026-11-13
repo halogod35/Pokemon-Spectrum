@@ -1,6 +1,7 @@
 #include "global.h"
 #include "bg.h"
 #include "decompress.h"
+#include "region.h"
 #include "landmark.h"
 #include "main.h"
 #include "menu.h"
@@ -206,6 +207,7 @@ static u32 HandleRegionMapInput(struct Pokenav_RegionMapMenu *state)
 {
     switch (DoRegionMapInputCallback())
     {
+    case MAP_INPUT_REGION_CHANGED: // PS-071: L/R switched the region, refresh the info window
     case MAP_INPUT_MOVE_END:
         return POKENAV_MAP_FUNC_CURSOR_MOVED;
     case MAP_INPUT_A_BUTTON:
@@ -316,6 +318,7 @@ static u32 LoopedTask_OpenRegionMap(s32 taskState)
         InitBgTemplates(sRegionMapBgTemplates, ARRAY_COUNT(sRegionMapBgTemplates) - 1);
         regionMap = GetSubstructPtr(POKENAV_SUBSTRUCT_REGION_MAP);
         InitRegionMapData(regionMap, &sRegionMapBgTemplates[1], ShouldOpenRegionMapZoomed());
+        SetRegionMapNeedsPokenavMap(); // PS-071: a region without a PokéNav map shows a visited one that has it
         LoadCityZoomViewGfx();
         return LT_INC_AND_PAUSE;
     case 1:
@@ -408,7 +411,7 @@ static u32 LoopedTask_RegionMapZoomOut(s32 taskState)
         if (UpdateRegionMapZoom() || IsChangeBgYForZoomActive())
             return LT_PAUSE;
 
-        PrintHelpBarText(HELPBAR_MAP_ZOOMED_OUT);
+        PrintHelpBarText(GetVisitedRegionCount() > 1 ? HELPBAR_MAP_ZOOMED_OUT_REGIONS : HELPBAR_MAP_ZOOMED_OUT); // PS-071
         return LT_INC_AND_PAUSE;
     case 2:
         if (WaitForHelpBar())

@@ -38,18 +38,21 @@
 // the "real" or "canonical" type. Continuing with Map Sections as our 
 // example, the smallest type is an 8-bit integer, and so any values that 
 // can't fit in an 8-bit integer will be truncated and lost at some point 
-// within the codebase. Therefore mapsec_u8_t is the "canonical" type for 
-// Map Sections, and the larger typedefs just exist to describe situations 
-// where the game handles Map Sections inconsistently with that "canon."
+// within the codebase. Therefore the smallest typedef is the "canonical" type for
+// Map Sections (mapsec_t, 16 bits since PS-071), and the larger typedefs just exist
+// to describe situations where the game handles Map Sections inconsistently with
+// that "canon."
 //
 
 // Map Sections are named areas that can appear in the region map. Each 
 // individual map can be assigned to a Map Section as appropriate. The 
 // possible values are in constants/region_map_sections.h.
 //
-// If you choose to widen Map Sections, be aware that Met Locations (below) 
-// are based on Map Sections and will also be widened.
-typedef u8  mapsec_u8_t;
+// PS-071: Map Sections are 16 bits wide. Hoenn keeps Emerald's 8-bit ids (0x00-0xD5);
+// every other region's sections start at MAPSEC_REGIONS_START (constants/regions.h).
+// mapsec_t is the canonical type; the typedefs below describe the wider integer types
+// some code uses for the same values.
+typedef u16 mapsec_t;
 typedef u16 mapsec_u16_t;
 typedef s16 mapsec_s16_t;
 typedef s32 mapsec_s32_t;
@@ -62,6 +65,11 @@ typedef s32 mapsec_s32_t;
 // greater than you expect due to how Pokemon substructs are laid out; you 
 // would have to rearrange the substructs' contents in order to minimize 
 // how much more space a wider Met Location would consume.
-typedef mapsec_u8_t metloc_u8_t;
+//
+// PS-071: Met Locations stay 8 bits wide (the box data layout is part of the save). A
+// Pokémon met in a region whose sections are above 0xFF stores that region's alias
+// instead (METLOC_REGION_START..END in constants/regions.h; GetMetLocationForMapSec in
+// region.c). TV show locations in the save follow the same rule.
+typedef u8 metloc_u8_t;
 
 #endif //GUARD_GAMETYPES_H

@@ -1066,6 +1066,7 @@ const u8 gText_PokenavMatchCall_SelfIntroduction[] = _("SELF-INTRODUCTION");
 const u8 gText_Pokenav_ClearButtonList[] = _("{CLEAR 128}");
 const u8 gText_PokenavMap_ZoomedOutButtons[] = _("{A_BUTTON}ZOOM {B_BUTTON}CANCEL");
 const u8 gText_PokenavMap_ZoomedInButtons[] = _("{A_BUTTON}FULL {B_BUTTON}CANCEL");
+const u8 gText_PokenavMap_ZoomedOutRegionsButtons[] = _("{A_BUTTON}ZOOM {B_BUTTON}BACK {L_BUTTON}{R_BUTTON}REGION"); // PS-071: fits the 128 px help bar
 const u8 gText_PokenavCondition_MonListButtons[] = _("{A_BUTTON}CONDITION {B_BUTTON}CANCEL");
 const u8 gText_PokenavCondition_MonStatusButtons[] = _("{A_BUTTON}MARKINGS {B_BUTTON}CANCEL");
 const u8 gText_PokenavCondition_MarkingButtons[] = _("{A_BUTTON}SELECT MARK {B_BUTTON}CANCEL");

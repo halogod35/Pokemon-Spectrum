@@ -507,3 +507,20 @@ Contract: protocol.md 7.6 (rules), 6.17 `RESUME`, 6.18 `PLAYER_STATUS`, 7.3 (tim
   `ENetHost`, its NULL init in `host.c`, and the check before `enet_socket_send` in `protocol.c`,
   all marked "Pokemon Spectrum (PS-054)"); re-apply it if ENet is updated. Used by the selftest and
   the dev flag `--mp-net-loss` and the selftest dropouts (dev-harness.md).
+
+## Regions (PS-071)
+
+Presence keys on `(mapGroup, mapNum)` only (protocol.md 6.8), so a region beyond Hoenn needs no
+wire change: two players on the same map of any region see each other, players in different
+regions do not, exactly as for two Hoenn maps. What a new region does touch:
+
+- **`MP_IsValidMap`** (`mp_presence.c`): the per-group map count table `sMapGroupSizes` must get one
+  entry per new map group (the compile-time checks fail the build otherwise). The template region's
+  group `gMapGroup_TemplateRegion` is entry 34.
+- **Build hash:** every map or region table change changes it; host and client must run the same
+  build, as before.
+- **Player summary** (PS-013): unchanged. The badge count on the wire is Hoenn's 8 badges
+  (`FLAG_BADGE01..08`); region badges 9-24 are not sent.
+- **Region transit / Fly** between regions is an ordinary warp: presence reports the new map on the
+  next frame, avatars on the old map disappear and the ones on the new map are spawned, as for any
+  warp.

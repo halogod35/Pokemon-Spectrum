@@ -1,6 +1,7 @@
 #include "global.h"
 #include "pokenav.h"
 #include "event_data.h"
+#include "region.h"
 #include "main.h"
 #include "sound.h"
 #include "constants/songs.h"
@@ -221,7 +222,10 @@ static u32 HandleMainMenuInput(struct Pokenav_Menu *menu)
         switch (sMenuItems[menu->menuType][menu->cursorPos])
         {
         case POKENAV_MENUITEM_MAP:
-            menu->helpBarIndex = gSaveBlock2Ptr->regionMapZoom ? HELPBAR_MAP_ZOOMED_IN : HELPBAR_MAP_ZOOMED_OUT;
+            if (gSaveBlock2Ptr->regionMapZoom)
+                menu->helpBarIndex = HELPBAR_MAP_ZOOMED_IN;
+            else // PS-071: with more than one region visited the help bar also names L/R
+                menu->helpBarIndex = GetVisitedRegionCount() > 1 ? HELPBAR_MAP_ZOOMED_OUT_REGIONS : HELPBAR_MAP_ZOOMED_OUT;
             SetMenuIdAndCB(menu, POKENAV_REGION_MAP);
             return POKENAV_MENU_FUNC_OPEN_FEATURE;
         case POKENAV_MENUITEM_CONDITION:
