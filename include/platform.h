@@ -13,6 +13,8 @@ bool8 Platform_LoadSaveFile(const char *path);
 // MP: BUG-003, --save-selftest: the trade's two-phase link save on a real save (save_link_selftest.c).
 // `path` must equal gPlatformArgs.savePath. Returns the number of failures.
 u32 SaveSelftest_LinkSave(const char *path);
+// PS-070, --save-selftest group "migration" (save_migrate_selftest.c), same contract. Also in save.h.
+u32 SaveSelftest_Migration(const char *path);
 // MP: PS-050 (src/platform/file_atomic.c). Crash-safe small files next to the save:
 // write "<path>.tmp", flush + sync, atomic replace. FALSE on any error (the old file stays).
 bool8 Platform_WriteFileAtomic(const char *path, const void *data, u32 size);
