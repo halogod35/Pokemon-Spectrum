@@ -24,7 +24,6 @@
 #include "gba/m4a_internal.h"
 #include "cgb_audio.h"
 #include "gba/flash_internal.h"
-#include "save.h" // PS-070: SECTORS_COUNT, SAVE_V1_FLASH_SIZE, Save_MigrateV1Flash
 #include "platform/dma.h"
 #include "platform/framedraw.h"
 #include "platform/system.h"
@@ -69,8 +68,9 @@ struct SiiRtcInfo internalClock;
 // PS-070: a save format 1 file (128 KB, v0.2.0 and earlier) is converted in memory when it is
 // loaded (save_migrate.c). The original bytes are kept here and written to "<save>.v1.bak"
 // by the first StoreSaveFile, before the file is replaced by the format 2 save.
-static u8 sSaveV1Image[SAVE_V1_FLASH_SIZE];
+static u8 sSaveV1Image[FLASH_PC_V1_SIZE];
 static bool sSaveV1BackupPending;
+u32 Save_MigrateV1Flash(void); // save.h (src/save_migrate.c); save.h itself clashes with this file's gIntrTable
 
 struct PlatformArgs gPlatformArgs;
 
@@ -845,13 +845,13 @@ static bool ReadSaveFile(const char *path)
     {
         // A new or empty save reads as erased flash.
     }
-    else if (fileSize == SAVE_V1_FLASH_SIZE)
+    else if (fileSize == FLASH_PC_V1_SIZE)
     {
         // PS-070: save format 1. Read it, convert it in memory, keep the original for the backup.
-        bytesRead = fread(sSaveV1Image, 1, SAVE_V1_FLASH_SIZE, file);
-        if (bytesRead != SAVE_V1_FLASH_SIZE)
+        bytesRead = fread(sSaveV1Image, 1, FLASH_PC_V1_SIZE, file);
+        if (bytesRead != FLASH_PC_V1_SIZE)
         {
-            fprintf(stderr, "[save] could not read '%s' (%u of %u bytes).\n", path, (unsigned int)bytesRead, (unsigned int)SAVE_V1_FLASH_SIZE);
+            fprintf(stderr, "[save] could not read '%s' (%u of %u bytes).\n", path, (unsigned int)bytesRead, (unsigned int)FLASH_PC_V1_SIZE);
             fclose(file);
             return false;
         }
@@ -870,20 +870,20 @@ static bool ReadSaveFile(const char *path)
     {
         fprintf(stderr, "[save] '%s' is %ld bytes; a save file is %u bytes (or %u bytes before v0.3.0).\n"
                         "[save] It is not loaded, so it is not overwritten. Move it away, or restore a copy of it.\n",
-                path, fileSize, (unsigned int)sizeof(FLASH_BASE), (unsigned int)SAVE_V1_FLASH_SIZE);
+                path, fileSize, (unsigned int)sizeof(FLASH_BASE), (unsigned int)FLASH_PC_V1_SIZE);
         fclose(file);
         return false;
     }
     fclose(file);
 
-    if (fileSize == SAVE_V1_FLASH_SIZE)
+    if (fileSize == FLASH_PC_V1_SIZE)
     {
         u32 sectors;
         bool erased = true;
 
-        for (i = 0; i < SAVE_V1_FLASH_SIZE && erased; i++)
+        for (i = 0; i < FLASH_PC_V1_SIZE && erased; i++)
             erased = (sSaveV1Image[i] == 0xFF);
-        memcpy(FLASH_BASE, sSaveV1Image, SAVE_V1_FLASH_SIZE);
+        memcpy(FLASH_BASE, sSaveV1Image, FLASH_PC_V1_SIZE);
         sectors = Save_MigrateV1Flash();
         if (!erased)
         {
@@ -1017,7 +1017,7 @@ static void WriteSaveV1Backup(void)
         printf("[save] the backup '%s' already exists and is kept; the format 1 save is not backed up again.\n", bakPath);
         return;
     }
-    if (WriteSaveFileAtomic(bakPath, sSaveV1Image, SAVE_V1_FLASH_SIZE, 0))
+    if (WriteSaveFileAtomic(bakPath, sSaveV1Image, FLASH_PC_V1_SIZE, 0))
         printf("[save] backup of the format 1 save written (backup: '%s')\n", bakPath);
     else
         fprintf(stderr, "[save] WARNING: could not write the backup '%s'; the save is written in format 2 anyway.\n", bakPath);
@@ -1220,7 +1220,7 @@ static int RunSaveSelftest(void)
     Platform_ReadFlash(3, 0x10, buf, sizeof(buf));
     SAVE_SELFTEST_CHECK(memcmp(buf, FLASH_BASE + (3 << SAVE_FLASH_SECTOR_SHIFT) + 0x10, sizeof(buf)) == 0);
     memset(buf, 0, sizeof(buf));
-    Platform_ReadFlash(SECTORS_COUNT - 1, 0x1000 - 16, buf, sizeof(buf)); // last 16 bytes of the flash + 48 outside
+    Platform_ReadFlash(FLASH_PC_SECTORS - 1, 0x1000 - 16, buf, sizeof(buf)); // last 16 bytes of the flash + 48 outside
     SAVE_SELFTEST_CHECK(memcmp(buf, FLASH_BASE + sizeof(FLASH_BASE) - 16, 16) == 0);
     allFF = true;
     for (i = 16; i < sizeof(buf); i++)

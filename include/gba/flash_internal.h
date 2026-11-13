@@ -5,6 +5,7 @@
 // save.c checks that the two agree. Format 1 files (128 KB) are migrated on load.
 #define FLASH_PC_SECTORS 36
 #define FLASH_PC_SIZE    (FLASH_PC_SECTORS * 4096)
+#define FLASH_PC_V1_SIZE (32 * 4096) // save format 1 (v0.2.0 and earlier) file size, = SAVE_V1_FLASH_SIZE
 
 #ifndef PORTABLE
 #define FLASH_BASE ((u8 *)0xE000000)
