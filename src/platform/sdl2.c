@@ -199,6 +199,9 @@ int main(int argc, char **argv)
     if (gPlatformArgs.saveSelftest) // MP: --save-selftest checks the crash-safe save I/O (PS-014)
         return RunSaveSelftest();
 
+    if (gPlatformArgs.hasTimeOfDay) // TEST ONLY (PS-072): shift the RTC so the game clock starts at HH:MM
+        RtcSetDebugTimeOfDay(gPlatformArgs.timeOfDayMinute);
+
     // MP: --name is checked before anything opens (A-Z a-z 0-9, 1-7 chars)
     if (gPlatformArgs.hasName && !MP_SetNameOverride(gPlatformArgs.name))
     {
@@ -426,6 +429,7 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --audio-queue-ms <n> Audio kept ready ahead of the sound card, %d-%d ms (default %d)\n"
         "  --audio-legacy       Test only: v0.1.0 audio pacing without fades, to compare by ear\n"
         "  --debug-loop-hz <hz> Test only: run the main loop at this rate, e.g. 59.94 (simulated vsync)\n"
+        "  --time-of-day HH:MM  Test only: the game clock starts at HH:MM and ticks on from there (day/night tint)\n"
         "  -h, --help           Show this help and exit\n"
         "\n"
         "If a port is given more than once (--host <port>, --join ip:port, --port), the last one wins.\n",
@@ -731,6 +735,24 @@ static int ParsePlatformArgs(int argc, char **argv)
                 goto missing_value;
             if (!ParseMilli(value, 10000, 1000000, &gPlatformArgs.debugLoopMilliHz))
                 goto bad_value;
+            i++;
+        }
+        else if (strcmp(arg, "--time-of-day") == 0) // TEST ONLY (PS-072)
+        {
+            unsigned long hour, minute;
+            char hourText[3];
+
+            if (value == NULL)
+                goto missing_value;
+            // "H:MM" or "HH:MM"
+            if (strlen(value) < 4 || strlen(value) > 5 || value[strlen(value) - 3] != ':')
+                goto bad_value;
+            memcpy(hourText, value, strlen(value) - 3);
+            hourText[strlen(value) - 3] = '\0';
+            if (!ParseUnsigned(hourText, 0, 23, &hour) || !ParseUnsigned(value + strlen(value) - 2, 0, 59, &minute))
+                goto bad_value;
+            gPlatformArgs.hasTimeOfDay = TRUE;
+            gPlatformArgs.timeOfDayMinute = (u16)(hour * 60 + minute);
             i++;
         }
         else if (strcmp(arg, "--scale") == 0)

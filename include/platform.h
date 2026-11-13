@@ -80,6 +80,8 @@ struct PlatformArgs
     u32 debugLoopMilliHz;                        // --debug-loop-hz <hz> in thousandths (PS-058), 0 = off
     bool8 audioLegacy;                           // --audio-legacy (PS-058): v0.1.0 audio pacing, for A/B tests
     u32 audioQueueMs;                            // --audio-queue-ms (PS-058), default PLATFORM_AUDIO_DEFAULT_QUEUE_MS
+    bool8 hasTimeOfDay;                          // TEST ONLY (PS-072): --time-of-day HH:MM given
+    u16 timeOfDayMinute;                         // TEST ONLY (PS-072): minute of the day the game clock starts at
 };
 
 extern struct PlatformArgs gPlatformArgs;

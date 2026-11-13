@@ -131,11 +131,51 @@ void RtcGetInfo(struct SiiRtcInfo *rtc)
         RtcGetRawInfo(rtc);
 }
 
+// TEST ONLY (PS-072): --time-of-day HH:MM. The RTC's hour and minute are shifted by a fixed
+// offset (taken on the first read, so the clock reads HH:MM at startup and keeps ticking),
+// before anything else looks at them: the game clock, berries, the wall clock and the
+// day/night tint all see the shifted time. The date is not shifted.
+static bool8 sDebugTimeOfDay;
+static bool8 sDebugTimeOfDaySet;
+static u16 sDebugTargetMinute;
+static u16 sDebugMinuteOffset;
+
+static u8 ConvertBinaryToBcd(u8 value)
+{
+    return ((value / 10) << 4) | (value % 10);
+}
+
+void RtcSetDebugTimeOfDay(u16 minuteOfDay)
+{
+    sDebugTimeOfDay = TRUE;
+    sDebugTimeOfDaySet = FALSE;
+    sDebugTargetMinute = minuteOfDay % (HOURS_PER_DAY * MINUTES_PER_HOUR);
+}
+
+static void ApplyDebugTimeOfDay(struct SiiRtcInfo *rtc)
+{
+    u32 realMinute = ConvertBcdToBinary(rtc->hour) * MINUTES_PER_HOUR + ConvertBcdToBinary(rtc->minute);
+    u32 shifted;
+
+    if (realMinute >= HOURS_PER_DAY * MINUTES_PER_HOUR)
+        return; // invalid BCD from the clock; leave it for RtcCheckInfo to report
+    if (!sDebugTimeOfDaySet)
+    {
+        sDebugMinuteOffset = (sDebugTargetMinute + HOURS_PER_DAY * MINUTES_PER_HOUR - realMinute) % (HOURS_PER_DAY * MINUTES_PER_HOUR);
+        sDebugTimeOfDaySet = TRUE;
+    }
+    shifted = (realMinute + sDebugMinuteOffset) % (HOURS_PER_DAY * MINUTES_PER_HOUR);
+    rtc->hour = ConvertBinaryToBcd(shifted / MINUTES_PER_HOUR);
+    rtc->minute = ConvertBinaryToBcd(shifted % MINUTES_PER_HOUR);
+}
+
 void RtcGetDateTime(struct SiiRtcInfo *rtc)
 {
     RtcDisableInterrupts();
     SiiRtcGetDateTime(rtc);
     RtcRestoreInterrupts();
+    if (sDebugTimeOfDay)
+        ApplyDebugTimeOfDay(rtc); // TEST ONLY (PS-072)
 }
 
 void RtcGetStatus(struct SiiRtcInfo *rtc)

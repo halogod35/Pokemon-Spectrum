@@ -36,6 +36,7 @@ its own save file and its own multiplayer role, without going through menus.
 | `--audio-queue-ms <n>` | PS-058: how much audio is kept ready ahead of the sound card, 20–200 ms. Larger survives longer hitches but delays sound effects. | 50 |
 | `--audio-legacy` | **Test only** (PS-058). The v0.1.0 audio pacing (one sound frame per loop, no fades), to compare by ear. | off |
 | `--debug-loop-hz <hz>` | **Test only** (PS-058). Hold the main loop to `<hz>` iterations per second (10–1000, up to 3 decimals, e.g. `59.94`), like vsync on a monitor with that refresh rate. Used by the CI audio check. | off |
+| `--time-of-day HH:MM` | **Test only** (PS-072, TEST ONLY commit, not on master). The game clock (RTC hour and minute, so berries, the wall clock and the day/night tint all agree) starts at `HH:MM` and keeps ticking from there. The date is not changed. `23:40` shows the night band; `09:58` shows the morning-to-day blend finish two minutes later. | off |
 | `-h`, `--help` | Print help and exit. | |
 
 Rules:
