@@ -3,18 +3,20 @@
 Pokémon Spectrum keeps Emerald's save system (`src/save.c`: 4 KB flash sectors with a 128-byte
 footer, two alternating save slots, per-sector checksums) and mirrors the whole flash to one file,
 `pokemon-spectrum.sav` (`--save <path>` to choose another). This page documents **save format 2**
-(PS-070), the differences from the vanilla layout (**format 1**, written by v0.2.0 and earlier),
-and how old files are migrated.
+(PS-070) and what changed from the vanilla layout (format 1, written by v0.2.0 and earlier).
+
+**Saves from earlier versions are not supported: start a new game.** There is no migration until
+1.0.0 (PS-069 policy): the loader refuses any file that is not exactly one flash image of the
+current format, prints a `[save]` message and exits without touching the file.
 
 ## Files next to the save
 
 | File | What |
 |---|---|
-| `<save>` | The flash image, 147456 bytes (36 sectors × 4096). Format 1 files are 131072 bytes (32 sectors). |
+| `<save>` | The flash image, 147456 bytes (36 sectors × 4096). |
 | `<save>.tmp` | Crash-safe write in progress (PS-014). Never loaded; the next save replaces it. |
-| `<save>.v1.bak` | The untouched format 1 file, written once by the first save after a migration (see below). |
 | `<save>.mp.cfg` | Last Join Game address (PS-021). |
-| `<save>.trade` | Pending trade journal (PS-050). Bound to the save by trainer id, independent of the save format. |
+| `<save>.trade` | Pending trade journal (PS-050). Bound to the save by trainer id. |
 
 ## Flash layout (format 2)
 
@@ -36,15 +38,29 @@ from where id 0 sits). Save counter N goes to slot N % 2.
 | 7–15 | `struct PokemonStorage` (0x83D0 bytes, 9 chunks) | 33744 of 35712 bytes |
 
 Format 1 had SaveBlock1 in 4 sectors (ids 1–4, 0x3D88 bytes), the boxes in ids 5–13, 14 sectors per
-slot, slot 2 at sectors 14–27 and the special sectors at 28–31.
+slot, slot 2 at sectors 14–27 and the special sectors at 28–31; its files are 131072 bytes.
 
-Constants: `include/save.h` (`SECTOR_ID_*`, `NUM_SECTORS_PER_SLOT`, `SECTORS_COUNT`,
-`SAVE_FORMAT_VERSION`, `SAVE_V1_*`), `include/gba/flash_internal.h` (`FLASH_PC_SECTORS`,
-`FLASH_PC_SIZE`). `src/save.c` static-asserts that they agree with each other and with the struct sizes.
+Constants: `include/save.h` (`SECTOR_ID_*`, `NUM_SECTORS_PER_SLOT`, `SECTORS_COUNT`),
+`include/gba/flash_internal.h` (`FLASH_PC_SECTORS`, `FLASH_PC_SIZE`, `SAVE_FORMAT_VERSION`).
+`src/save.c` static-asserts that they agree with each other and with the struct sizes.
+
+## Save format version and what the loader accepts
 
 `SaveBlock2.saveFormatVersion` (offset 0x90, unused filler before) is written as `SAVE_FORMAT_VERSION`
-(2) by every save. Format 1 files have 0 there. The loader does not depend on it (the file size is
-what decides), but a future format 3 can.
+(2) by every save (`src/save.c`). Bump the constant whenever the save layout changes.
+
+`src/platform/sdl2.c` (`ReadSaveFile`) loads the file at startup:
+
+1. 0 bytes (new or empty file): erased flash, a new game.
+2. Exactly `FLASH_PC_SIZE` (147456) bytes: read into the flash. `Save_FlashFormatVersion()`
+   (`src/save.c`) then reads `saveFormatVersion` from the newest SaveBlock2 sector with a valid
+   signature and checksum (either slot; an erased image counts as current). If it is not
+   `SAVE_FORMAT_VERSION`, the file is refused:
+   `[save] '<file>' is from an older or unknown version of the game (format N, this build needs 2). Saves from earlier versions are not supported: move it away and start a new game.`
+3. Any other size (a v0.2.0 save, a truncated file, not a save at all) is refused without being
+   read: `[save] '<file>' is N bytes, not 147456: it is from an older or unknown version of the game. Saves from earlier versions are not supported: move it away and start a new game.`
+
+In both refusal cases the game exits with status 1 and the file is never written.
 
 ## Flags (`SaveBlock1.flags`, `FLAGS_COUNT` = 0x3000 bits = 1536 bytes; was 0x960 / 300 bytes)
 
@@ -82,61 +98,24 @@ block. Adding trainers 864+ also needs `gTrainers[]` to grow (not part of PS-070
 `VarGet` returns the id itself (the "immediate value" convention) for ids in 0x4800–0x7FFF and
 above 0x8015 instead of indexing out of bounds.
 
-## SaveBlock1 layout change
+## SaveBlock1 layout
 
-Only `flags[]` (0x12C → 0x600 bytes) and `vars[]` (0x200 → 0x1000 bytes) grew, in place.
-Everything before `flags` is byte-identical to format 1; everything from `gameStats` to
-`waldaPhrase` (the last member) is the same bytes shifted by 0x12D4. The offset comments in
-`include/global.h` are GBA offsets (updated for format 2); the **PC layout differs** (the object
-event templates hold a pointer), and 32- and 64-bit builds have different `SaveBlock1` sizes, as
-they already had in format 1 (a save is tied to its bitness; that is pre-existing). So the
-format 1 layout is derived from the current struct (`SAVE_V1_*` in `include/save.h`: head =
-`offsetof(flags)`, then 0x12C + 0x200 bytes, then the tail, then the compiler's trailing padding).
-`src/save_migrate.c` static-asserts these assumptions, so a later change to SaveBlock1 that breaks
-them fails the build instead of the migration.
+Compared with format 1, only `flags[]` (0x12C → 0x600 bytes) and `vars[]` (0x200 → 0x1000 bytes)
+grew, in place. The offset comments in `include/global.h` are GBA offsets; the **PC layout
+differs** (the object event templates hold a pointer), and 32- and 64-bit builds have different
+`SaveBlock1` sizes (a save is tied to its bitness; that is pre-existing, BUG-015).
 
 Growing SaveBlock1 or SaveBlock2 **at the end** within their sectors needs no new format: the
-loader zero-fills sectors before writing and the checksum is a word sum, so old files keep
-validating and the new fields read as zero. Any other change (new sectors, fields in the middle)
-needs a format 3 with its own migration.
-
-## Migration of format 1 files (v0.2.0 and earlier)
-
-Done by `src/platform/sdl2.c` (`ReadSaveFile`) and `src/save_migrate.c` (`Save_MigrateV1Flash`),
-after the PS-056 rename of `pokeemerald.*` files and before anything reads the save:
-
-1. The file size decides: 0 bytes = new game; 131072 = format 1; 147456 = format 2; anything
-   else is refused (the game exits with a `[save]` message and never overwrites the file).
-2. A format 1 image is converted **in memory**, sector by sector, using the footers the game
-   wrote (id, checksum, signature, counter). Only sectors with a valid signature and checksum are
-   converted; if an id occurs twice (interrupted save), the higher counter wins. Per slot:
-   SaveBlock2 is copied (plus `saveFormatVersion` = 2, re-checksummed); SaveBlock1 is reassembled
-   from its 4 chunks, widened (new flag and var space zero), and re-sliced into 6 chunks; the 9
-   box sectors are copied with ids 7–15. Counters and the in-slot rotation are kept, so the game
-   picks the slot it would have picked before. A slot that was incomplete in format 1 stays
-   incomplete (its SaveBlock1 chunks are dropped); an erased slot stays erased. Hall of Fame,
-   Trainer Hill and Recorded Battle are copied as they are to sectors 32–35.
-3. The original 128 KB bytes are kept in memory. The **first write** of the save (any in-game save,
-   trade save, link save or "clear save data") first writes them crash-safely to `<save>.v1.bak`,
-   then writes the save in format 2. An existing `.v1.bak` is kept, not overwritten. If the
-   backup cannot be written, a warning is logged and the save is written anyway. An all-erased
-   format 1 file (no save data) gets no backup.
-4. The trade journal (`<save>.trade`) is read after the save is loaded (`MP_TradeJournalOnLoad`),
-   so it works on the migrated data; it needs no conversion.
-
-Console output: `[save] migrated '<save>' from save format 1 (128 KB) to format 2 (144 KB) in
-memory, N sectors (backup: '<save>.v1.bak', written before the first save)`, then on the first
-save `[save] backup of the format 1 save written (backup: '<save>.v1.bak')`.
-
-To go back to v0.2.0: quit, rename `<save>.v1.bak` to `<save>` (progress made in format 2 is lost).
+loader zero-fills sectors before writing and the checksum is a word sum, so existing files keep
+validating and the new fields read as zero. Any other change (new sectors, fields in the middle,
+a different flash size) needs a new `SAVE_FORMAT_VERSION`; existing saves are then refused.
 
 ## Tests
 
 `--save-selftest` (CI, Linux) runs, on `<save>.selftest`, the PS-014 I/O checks, the BUG-003 link
-save, and the PS-070 group `migration` (`src/save_migrate_selftest.c`): a synthetic format 1 file
-with two slots (different counters and rotations), Hall of Fame and Trainer Hill migrates and the
-game loads byte-identical data from the newest slot; nothing on disk changes until the first save,
-which writes the `.v1.bak` (byte-identical to the original) and the 144 KB save; a format 2 round
-trip with flags and vars at both ends of the vanilla and the new ranges; files of other sizes are
-refused with the in-memory flash untouched; empty and erased files load as a new game without a
-backup.
+save, and the PS-070 group `format` (`src/save_format_selftest.c`): the `TRAINER_FLAG()` mapping
+and the range constants; a format 2 round trip (save, then load the file from disk) with flags and
+vars at both ends of the vanilla and the new ranges; files of other sizes (including 131072, a
+v0.2.0 save) refused with the in-memory flash untouched; a file of the right size stamped with
+save format 1 or 3 refused, the same file re-stamped with 2 accepted; empty and erased files load
+as a new game.

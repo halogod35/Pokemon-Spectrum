@@ -59,18 +59,14 @@ struct SiiRtcInfo internalClock;
 // Platform_StoreSaveFile replaces the file atomically (write "<save>.tmp", flush, rename).
 #define SAVE_TMP_SUFFIX          ".tmp"
 #define SAVE_SELFTEST_SUFFIX     ".selftest"
-#define SAVE_V1_BACKUP_SUFFIX    ".v1.bak" // PS-070: the format 1 save, kept before the first format 2 save
 #define SAVE_CHUNK_SIZE          0x1000  // one flash sector
 #define SAVE_FLASH_SECTOR_SHIFT  12      // DUMMY_SAVE sector shift, used if gFlash is not set yet
 #define SAVE_SLOW_DELAY_MS       50      // --debug-slow-save: per sector, 36 sectors = 1.8 s per file write
 #define SAVE_REPLACE_RETRIES     5       // Windows: retry if another process briefly holds the file
 
-// PS-070: a save format 1 file (128 KB, v0.2.0 and earlier) is converted in memory when it is
-// loaded (save_migrate.c). The original bytes are kept here and written to "<save>.v1.bak"
-// by the first StoreSaveFile, before the file is replaced by the format 2 save.
-static u8 sSaveV1Image[FLASH_PC_V1_SIZE];
-static bool sSaveV1BackupPending;
-u32 Save_MigrateV1Flash(void); // save.h (src/save_migrate.c); save.h itself clashes with this file's gIntrTable
+// PS-070: the save format version of the loaded flash image (save.h, src/save.c); save.h
+// itself clashes with this file's gIntrTable, so it is declared here.
+u32 Save_FlashFormatVersion(void);
 
 struct PlatformArgs gPlatformArgs;
 
@@ -141,45 +137,6 @@ static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
 }
 #endif
 
-// PS-056: the files were called "pokeemerald.*" before. With the default save path only, and only
-// when the new save does not exist yet: rename the old save and its companion files (the Join Game
-// address and a pending trade journal) to the new names, once. An explicit --save is left alone.
-static void MigrateLegacySaveFiles(void)
-{
-    static const char *const sSuffixes[] = { "", ".mp.cfg", ".trade" };
-    char oldPath[64];
-    char newPath[64];
-    FILE *file;
-    u32 i;
-
-    if (strcmp(gPlatformArgs.savePath, PLATFORM_DEFAULT_SAVE_PATH) != 0)
-        return;
-    file = fopen(PLATFORM_DEFAULT_SAVE_PATH, "rb");
-    if (file != NULL)
-    {
-        fclose(file);
-        return;
-    }
-    file = fopen(PLATFORM_LEGACY_SAVE_PATH, "rb");
-    if (file == NULL)
-        return;
-    fclose(file);
-
-    for (i = 0; i < sizeof(sSuffixes) / sizeof(sSuffixes[0]); i++)
-    {
-        snprintf(oldPath, sizeof(oldPath), "%s%s", PLATFORM_LEGACY_SAVE_PATH, sSuffixes[i]);
-        snprintf(newPath, sizeof(newPath), "%s%s", PLATFORM_DEFAULT_SAVE_PATH, sSuffixes[i]);
-        file = fopen(oldPath, "rb");
-        if (file == NULL)
-            continue;
-        fclose(file);
-        if (rename(oldPath, newPath) == 0)
-            printf("[save] renamed '%s' to '%s'\n", oldPath, newPath);
-        else
-            printf("[save] could not rename '%s' to '%s'; the game uses '%s'\n", oldPath, newPath, newPath);
-    }
-}
-
 int main(int argc, char **argv)
 {
     // Open an output console on Windows
@@ -195,8 +152,6 @@ int main(int argc, char **argv)
     int argsResult = ParsePlatformArgs(argc, argv);
     if (argsResult >= 0)
         return argsResult;
-    if (!gPlatformArgs.mpSelftest && !gPlatformArgs.saveSelftest)
-        MigrateLegacySaveFiles();
 
     if (gPlatformArgs.mpSelftest) // MP: --mp-selftest runs without a window or a save
     {
@@ -798,31 +753,24 @@ usage_error:
     return 2;
 }
 
-static bool FileExists(const char *path)
-{
-    FILE *file = fopen(path, "rb");
-
-    if (file == NULL)
-        return false;
-    fclose(file);
-    return true;
-}
-
 // MP: PS-014. Loads the save into FLASH_BASE and closes the file again (it is not kept
 // open, so it can be replaced by rename). A missing save is created empty, as before,
 // so an unwritable --save path still fails at startup. A "<save>.tmp" left behind by a
 // killed save is ignored: the real save is still the previous complete one.
-// PS-070: the file must be empty, a format 1 save (128 KB, converted in memory) or a
-// format 2 save (144 KB). Any other size is refused, and FLASH_BASE is left untouched, so
-// a damaged or foreign file is never overwritten by a fresh save.
+// PS-070: the file must be empty or exactly one flash image (FLASH_PC_SIZE bytes) whose
+// SaveBlock2.saveFormatVersion is SAVE_FORMAT_VERSION. Anything else is refused with a
+// message and the game exits, so a save from another version of the game is never
+// overwritten by a fresh one (a wrong-size file is not even read: FLASH_BASE stays as it
+// was). There is no migration until 1.0.0 (PS-069 policy): a player with an old save moves
+// it away and starts a new game.
 static bool ReadSaveFile(const char *path)
 {
     FILE *file;
     size_t bytesRead = 0;
     size_t i;
     long fileSize;
+    u32 formatVersion;
 
-    sSaveV1BackupPending = false;
     file = fopen(path, "rb");
     if (file == NULL)
     {
@@ -841,22 +789,16 @@ static bool ReadSaveFile(const char *path)
         return false;
     }
 
-    if (fileSize == 0)
+    if (fileSize != 0 && fileSize != (long)sizeof(FLASH_BASE))
     {
-        // A new or empty save reads as erased flash.
+        // A v0.2.0 save (131072 bytes), a truncated file, or not a save at all. Not read.
+        fprintf(stderr, "[save] '%s' is %ld bytes, not %u: it is from an older or unknown version of the game."
+                        " Saves from earlier versions are not supported: move it away and start a new game.\n",
+                path, fileSize, (unsigned int)sizeof(FLASH_BASE));
+        fclose(file);
+        return false;
     }
-    else if (fileSize == FLASH_PC_V1_SIZE)
-    {
-        // PS-070: save format 1. Read it, convert it in memory, keep the original for the backup.
-        bytesRead = fread(sSaveV1Image, 1, FLASH_PC_V1_SIZE, file);
-        if (bytesRead != FLASH_PC_V1_SIZE)
-        {
-            fprintf(stderr, "[save] could not read '%s' (%u of %u bytes).\n", path, (unsigned int)bytesRead, (unsigned int)FLASH_PC_V1_SIZE);
-            fclose(file);
-            return false;
-        }
-    }
-    else if (fileSize == (long)sizeof(FLASH_BASE))
+    if (fileSize != 0)
     {
         bytesRead = fread(FLASH_BASE, 1, sizeof(FLASH_BASE), file);
         if (bytesRead != sizeof(FLASH_BASE))
@@ -866,38 +808,22 @@ static bool ReadSaveFile(const char *path)
             return false;
         }
     }
-    else
-    {
-        fprintf(stderr, "[save] '%s' is %ld bytes; a save file is %u bytes (or %u bytes before v0.3.0).\n"
-                        "[save] It is not loaded, so it is not overwritten. Move it away, or restore a copy of it.\n",
-                path, fileSize, (unsigned int)sizeof(FLASH_BASE), (unsigned int)FLASH_PC_V1_SIZE);
-        fclose(file);
-        return false;
-    }
     fclose(file);
 
-    if (fileSize == FLASH_PC_V1_SIZE)
-    {
-        u32 sectors;
-        bool erased = true;
-
-        for (i = 0; i < FLASH_PC_V1_SIZE && erased; i++)
-            erased = (sSaveV1Image[i] == 0xFF);
-        memcpy(FLASH_BASE, sSaveV1Image, FLASH_PC_V1_SIZE);
-        sectors = Save_MigrateV1Flash();
-        if (!erased)
-        {
-            sSaveV1BackupPending = true;
-            printf("[save] migrated '%s' from save format 1 (128 KB) to format 2 (144 KB) in memory, %u sectors"
-                   " (backup: '%s%s', written before the first save)\n",
-                   path, (unsigned int)sectors, path, SAVE_V1_BACKUP_SUFFIX);
-        }
-        return true;
-    }
-
+    // A new or empty save reads as erased flash.
     for (i = bytesRead; i < sizeof(FLASH_BASE); i++)
     {
         FLASH_BASE[i] = 0xFF;
+    }
+
+    // The right size, but written by another version of the game (its SaveBlock2 says so).
+    formatVersion = Save_FlashFormatVersion();
+    if (formatVersion != SAVE_FORMAT_VERSION)
+    {
+        fprintf(stderr, "[save] '%s' is from an older or unknown version of the game (format %u, this build needs %u)."
+                        " Saves from earlier versions are not supported: move it away and start a new game.\n",
+                path, (unsigned int)formatVersion, (unsigned int)SAVE_FORMAT_VERSION);
+        return false;
     }
 
     return true;
@@ -945,7 +871,7 @@ static bool ReplaceSaveWithTemp(const char *tmpPath, const char *path)
 // the old save is then left untouched.
 static bool WriteSaveFileAtomic(const char *path, const u8 *data, u32 size, u32 delayMsPerSector)
 {
-    char tmpPath[PLATFORM_ARG_PATH_SIZE + sizeof(SAVE_TMP_SUFFIX) + sizeof(SAVE_SELFTEST_SUFFIX) + sizeof(SAVE_V1_BACKUP_SUFFIX)];
+    char tmpPath[PLATFORM_ARG_PATH_SIZE + sizeof(SAVE_TMP_SUFFIX) + sizeof(SAVE_SELFTEST_SUFFIX)];
     FILE *file;
     u32 written;
     u32 chunk;
@@ -1003,32 +929,10 @@ static bool WriteSaveFileAtomic(const char *path, const u8 *data, u32 size, u32 
     return true;
 }
 
-// PS-070. Before the first format 2 write over a format 1 file: copy the original bytes to
-// "<save>.v1.bak" (crash-safe, like the save itself). One attempt, once per migration. An
-// existing backup is kept: it is an older copy of the same format 1 save.
-static void WriteSaveV1Backup(void)
-{
-    char bakPath[PLATFORM_ARG_PATH_SIZE + sizeof(SAVE_SELFTEST_SUFFIX) + sizeof(SAVE_V1_BACKUP_SUFFIX)];
-
-    sSaveV1BackupPending = false;
-    snprintf(bakPath, sizeof(bakPath), "%s%s", gPlatformArgs.savePath, SAVE_V1_BACKUP_SUFFIX);
-    if (FileExists(bakPath))
-    {
-        printf("[save] the backup '%s' already exists and is kept; the format 1 save is not backed up again.\n", bakPath);
-        return;
-    }
-    if (WriteSaveFileAtomic(bakPath, sSaveV1Image, FLASH_PC_V1_SIZE, 0))
-        printf("[save] backup of the format 1 save written (backup: '%s')\n", bakPath);
-    else
-        fprintf(stderr, "[save] WARNING: could not write the backup '%s'; the save is written in format 2 anyway.\n", bakPath);
-}
-
 static bool StoreSaveFile(void)
 {
     u32 delay = gPlatformArgs.debugSlowSave ? SAVE_SLOW_DELAY_MS : 0;
 
-    if (sSaveV1BackupPending) // PS-070
-        WriteSaveV1Backup();
     if (delay != 0)
         printf("[save] --debug-slow-save: writing '%s' over %u ms\n", gPlatformArgs.savePath,
                (unsigned int)(delay * (sizeof(FLASH_BASE) / SAVE_CHUNK_SIZE)));
@@ -1046,7 +950,7 @@ void Platform_StoreSaveFile(void)
     StoreSaveFile();
 }
 
-// PS-070: for the migration selftest (save_migrate_selftest.c).
+// PS-070: for the save format selftest (save_format_selftest.c).
 bool8 Platform_LoadSaveFile(const char *path)
 {
     return ReadSaveFile(path) ? TRUE : FALSE;
@@ -1119,7 +1023,12 @@ static bool SelftestPatternMatches(const u8 *data, u8 seed)
 
 static bool SelftestFileExists(const char *path)
 {
-    return FileExists(path);
+    FILE *file = fopen(path, "rb");
+
+    if (file == NULL)
+        return false;
+    fclose(file);
+    return true;
 }
 
 // TRUE if `path` is exactly sizeof(FLASH_BASE) bytes of pattern `seed`.
@@ -1247,27 +1156,22 @@ static int RunSaveSelftest(void)
     }
     SelftestReport("link save", before);
 
-    // 8. PS-070. Save format 1 -> 2 migration, the .v1.bak backup, refused file sizes and the
-    //    extended flag / var ranges (save_migrate_selftest.c). Same savePath dance as 7.
+    // 8. PS-070. The save format: a format 2 round trip with the extended flag / var ranges,
+    //    refused file sizes and save format versions (save_format_selftest.c). Same savePath
+    //    dance as 7.
     before = sSaveSelftestFailures;
     {
         char savedPath[sizeof(gPlatformArgs.savePath)];
 
         memcpy(savedPath, gPlatformArgs.savePath, sizeof(savedPath));
         snprintf(gPlatformArgs.savePath, sizeof(gPlatformArgs.savePath), "%s", path);
-        sSaveSelftestFailures += SaveSelftest_Migration(path);
+        sSaveSelftestFailures += SaveSelftest_Format(path);
         memcpy(gPlatformArgs.savePath, savedPath, sizeof(savedPath));
     }
-    SelftestReport("migration", before);
+    SelftestReport("format", before);
 
     remove(path);
     remove(tmpPath);
-    {
-        char bakPath[sizeof(path) + sizeof(SAVE_V1_BACKUP_SUFFIX)];
-
-        snprintf(bakPath, sizeof(bakPath), "%s%s", path, SAVE_V1_BACKUP_SUFFIX);
-        remove(bakPath);
-    }
 
     if (sSaveSelftestFailures == 0)
     {

@@ -26,11 +26,11 @@ static u8 HandleReplaceSector(u16, const struct SaveSectorLocation *);
 /*
  * Sector Layout:
  *
- * Sectors 0 - 15:      Save Slot 1   (PS-070, save format 2; 0 - 13 in format 1)
- * Sectors 16 - 31:     Save Slot 2   (14 - 27 in format 1)
- * Sectors 32 - 33:     Hall of Fame  (28 - 29 in format 1)
- * Sector 34:           Trainer Hill  (30 in format 1)
- * Sector 35:           Recorded Battle (31 in format 1)
+ * Sectors 0 - 15:      Save Slot 1   (PS-070, save format 2: 16 sectors per slot, 14 in vanilla)
+ * Sectors 16 - 31:     Save Slot 2
+ * Sectors 32 - 33:     Hall of Fame
+ * Sector 34:           Trainer Hill
+ * Sector 35:           Recorded Battle
  *
  * There are two save slots for saving the player's game data. We alternate between
  * them each time the game is saved, so that if the current save slot is corrupt,
@@ -700,7 +700,7 @@ static u16 CalculateChecksum(void *data, u16 size)
     return ((checksum >> 16) + checksum);
 }
 
-// PS-070: for save_migrate.c and the selftests, which build sector footers themselves.
+// PS-070: for the selftests, which build sector footers themselves.
 u16 Save_SectorChecksum(const void *data, u16 size)
 {
     return CalculateChecksum((void *)data, size);
@@ -710,6 +710,36 @@ u16 Save_SectorChecksum(const void *data, u16 size)
 static void StampSaveFormatVersion(void)
 {
     gSaveBlock2Ptr->saveFormatVersion = SAVE_FORMAT_VERSION;
+}
+
+// PS-070: the save format version of the flash image in FLASH_BASE: the saveFormatVersion of
+// the newest SaveBlock2 sector with a valid signature and checksum, in either slot, or
+// SAVE_FORMAT_VERSION if there is none (erased flash, a new game: nothing to disagree with).
+// The PC loader (src/platform/sdl2.c ReadSaveFile) refuses a file whose version differs
+// before the game sees it. There is no migration until 1.0.0 (PS-069 policy).
+u32 Save_FlashFormatVersion(void)
+{
+    const struct SaveSector *sector;
+    u32 version = SAVE_FORMAT_VERSION;
+    u32 newestCounter = 0;
+    bool32 found = FALSE;
+    u16 i;
+
+    for (i = 0; i < NUM_SECTORS_PER_SLOT * NUM_SAVE_SLOTS; i++)
+    {
+        sector = (const struct SaveSector *)(FLASH_BASE + i * SECTOR_SIZE);
+        if (sector->id != SECTOR_ID_SAVEBLOCK2 || sector->signature != SECTOR_SIGNATURE)
+            continue;
+        if (sector->checksum != CalculateChecksum((void *)sector->data, sSaveSlotLayout[SECTOR_ID_SAVEBLOCK2].size))
+            continue;
+        if (!found || sector->counter > newestCounter)
+        {
+            found = TRUE;
+            newestCounter = sector->counter;
+            version = sector->data[offsetof(struct SaveBlock2, saveFormatVersion)];
+        }
+    }
+    return version;
 }
 
 static void UpdateSaveAddresses(void)

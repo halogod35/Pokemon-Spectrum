@@ -566,7 +566,7 @@ struct SaveBlock2
              //u16 padding1:4;
              //u16 padding2;
     /*0x18*/ struct Pokedex pokedex;
-    /*0x90*/ u8 saveFormatVersion; // PS-070: SAVE_FORMAT_VERSION (save.h); 0 in saves older than v0.3.0
+    /*0x90*/ u8 saveFormatVersion; // PS-070: SAVE_FORMAT_VERSION (gba/flash_internal.h); 0 in saves older than v0.3.0, which are refused
     /*0x91*/ u8 filler_91[0x7];
     /*0x98*/ struct Time localTimeOffset;
     /*0xA0*/ struct Time lastBerryTreeUpdate;
