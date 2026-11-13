@@ -294,6 +294,9 @@ u32 SaveSelftest_Migration(const char *path)
     FlagSet(TRAINER_FLAG(MAX_TRAINERS_COUNT));
     VarSet(VARS_END, 0xBEEF);
     VarSet(VARS_EXT_START, 0x1234);
+    // The neighbours checked after the round trip must not depend on the synthetic save's fill pattern.
+    FlagClear(TRAINER_FLAG(MAX_TRAINERS_COUNT - 1));
+    FlagClear(EVENT_FLAGS_EXT_START + 1);
     MG_CHECK(TrySavingData(SAVE_NORMAL) == SAVE_STATUS_OK);
     MG_CHECK(gSaveCounter == NEWEST_COUNTER + 1);
     MG_CHECK(FileSize(path) == (s32)sizeof(FLASH_BASE));
