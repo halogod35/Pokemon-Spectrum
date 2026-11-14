@@ -45,11 +45,10 @@
 #define POKEBLOCKS_COUNT 40
 #define OBJECT_EVENTS_COUNT 16
 #define MAIL_COUNT (10 + PARTY_SIZE)
-#ifndef VER_64BIT
+// PS-079 (BUG-015): 20 on every build. The port had halved this on 64-bit ("quick hack for getting
+// saves to work": SaveBlock1 no longer fit its 4 sectors there); since save format 2 (PS-070) it has
+// 6 sectors, and the save layout must be the same on 32- and 64-bit builds.
 #define SECRET_BASES_COUNT 20
-#else
-#define SECRET_BASES_COUNT 10
-#endif
 #define POKE_NEWS_COUNT 16
 #define PC_ITEMS_COUNT 50
 #define BAG_ITEMS_COUNT 30

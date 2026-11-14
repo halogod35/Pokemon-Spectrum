@@ -1105,7 +1105,10 @@ struct SaveBlock1
     /*0x4487*/ struct ExternalEventData externalEventData;
     /*0x449B*/ struct ExternalEventFlags externalEventFlags;
     /*0x44B0*/ struct Roamer roamer;
-    /*0x44CC*/ struct EnigmaBerry enigmaBerry;
+    // PS-079 (BUG-015): EnigmaBerry holds two pointer slots (8-byte aligned on 64-bit), so it
+    // must start at a multiple of 8 on every build: 0x46D0 on PC (save.c asserts it).
+    u8 padding_ps079_enigma[4];
+    /*0x44CC*/ struct EnigmaBerry enigmaBerry; // PC: 0x46D0, 0x40 bytes
     /*0x4500*/ struct MysteryGiftSave mysteryGift;
     /*0x486C*/ u8 unused_3598[0x180];
     /*0x49EC*/ u32 trainerHillTimes[NUM_TRAINER_HILL_MODES];
@@ -1118,7 +1121,12 @@ struct SaveBlock1
     /*0x502E*/ u8 unused_3D5A[10];
     /*0x5038*/ struct TrainerHillSave trainerHill;
     /*0x5044*/ struct WaldaPhrase waldaPhrase;
-    // sizeof: 0x505C (PS-070; 0x3D88 before save format 2)
+    // PS-079 (BUG-015): the offsets above are GBA offsets; on PC everything from flags[] on is
+    // 0x200 further because an ObjectEventTemplate is 0x20 bytes there (0x18 on the GBA). This
+    // pad makes the natural size a multiple of 8, so the 64-bit build (alignment 8) and the
+    // 32-bit builds (alignment 4) agree on sizeof: 0x5270 on every PC build (save.c asserts it).
+    u8 padding_ps079[4];
+    // sizeof: 0x5270 on PC (PS-079, save format 3); 0x505C on the GBA (PS-070; 0x3D88 before save format 2)
 };
 
 extern struct SaveBlock1 *gSaveBlock1Ptr;
