@@ -16,6 +16,7 @@
 #endif
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_syswm.h> // PS-076: the window handle for the drag audio hook
 
 #include "global.h"
 #include "platform.h"
@@ -141,41 +142,62 @@ static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
 // and the main loop below stops: the game freezes (unchanged) and the audio queue, about
 // PLATFORM_AUDIO_DEFAULT_QUEUE_MS long, ran dry, so the music faded out until the mouse button
 // was released. SDL 2.0.16 sends no event of its own during that loop (nothing at all while the
-// title bar is held still), so this uses SDL's Windows message hook instead: it sees every
-// message the modal loop dispatches, on the main thread. WM_ENTERSIZEMOVE / WM_ENTERMENULOOP
-// start a timer, each WM_TIMER tick pumps the sound engine exactly as the main loop does, and
-// WM_EXITSIZEMOVE / WM_EXITMENULOOP stop the timer. The music follows the audio clock (the
-// sequencer runs inside AudioUpdate), so it plays on while the picture stands still. No thread,
-// no game state touched (AD-4). Linux window managers move the window themselves and never
-// block the loop, so this is Windows only.
+// title bar is held still), and its SDL_SetWindowsMessageHook only runs from SDL's own
+// PeekMessage loop, which the modal loop bypasses (it dispatches straight to the window
+// procedure). So the window procedure itself is subclassed: WM_ENTERSIZEMOVE / WM_ENTERMENULOOP
+// start a timer, each WM_TIMER tick (delivered by the modal loop, on the main thread) pumps the
+// sound engine exactly as the main loop does, and WM_EXITSIZEMOVE / WM_EXITMENULOOP stop the
+// timer. Everything else goes to SDL's procedure unchanged. The music follows the audio clock
+// (the sequencer runs inside AudioUpdate), so it plays on while the picture stands still. No
+// thread, no game state touched (AD-4). Linux window managers move the window themselves and
+// never block the loop, so this is Windows only.
 #define DRAG_AUDIO_TIMER_ID   0x5053 // "PS"
 #define DRAG_AUDIO_TIMER_MS   8      // Windows rounds this up to its timer resolution (10-16 ms)
 
+static WNDPROC sSdlWindowProc;
 static bool sDragAudioPumping = false;
 
-static void SDLCALL DragAudioMessageHook(void *userdata, void *hWnd, unsigned int message, Uint64 wParam, Sint64 lParam)
+static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    (void)userdata;
-    (void)lParam;
     switch (message)
     {
     case WM_ENTERSIZEMOVE:
     case WM_ENTERMENULOOP:
-        SetTimer((HWND)hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
+        SetTimer(hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
         break;
     case WM_EXITSIZEMOVE:
     case WM_EXITMENULOOP:
-        KillTimer((HWND)hWnd, DRAG_AUDIO_TIMER_ID);
+        KillTimer(hWnd, DRAG_AUDIO_TIMER_ID);
         break;
     case WM_TIMER:
-        if (wParam == DRAG_AUDIO_TIMER_ID && !sDragAudioPumping)
+        if (wParam == DRAG_AUDIO_TIMER_ID)
         {
-            sDragAudioPumping = true;
-            Platform_AudioPump(paused);
-            sDragAudioPumping = false;
+            if (!sDragAudioPumping)
+            {
+                sDragAudioPumping = true;
+                Platform_AudioPump(paused);
+                sDragAudioPumping = false;
+            }
+            return 0;
         }
         break;
     }
+    return CallWindowProc(sSdlWindowProc, hWnd, message, wParam, lParam);
+}
+
+static void InstallDragAudioHook(SDL_Window *window)
+{
+    SDL_SysWMinfo info;
+
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_WINDOWS)
+    {
+        printf("[audio] drag hook not installed: %s\n", SDL_GetError());
+        return;
+    }
+    sSdlWindowProc = (WNDPROC)SetWindowLongPtr(info.info.win.window, GWLP_WNDPROC, (LONG_PTR)DragAudioWindowProc);
+    if (sSdlWindowProc == NULL)
+        printf("[audio] drag hook not installed: SetWindowLongPtr failed (%lu)\n", (unsigned long)GetLastError());
 }
 #endif
 
@@ -222,9 +244,6 @@ int main(int argc, char **argv)
         return 1;
     }
     Platform_InputLoadConfig(); // PS-066: pokemon-spectrum.ini next to the executable
-#ifdef _WIN32
-    SDL_SetWindowsMessageHook(DragAudioMessageHook, NULL); // PS-076: music keeps playing while the window is dragged
-#endif
 
     sdlWindow = SDL_CreateWindow(gPlatformArgs.windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISPLAY_WIDTH * videoScale, DISPLAY_HEIGHT * videoScale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (sdlWindow == NULL)
@@ -232,6 +251,10 @@ int main(int argc, char **argv)
         DBGPRINTF("Window could not be created! SDL_Error: %s\n", SDL_GetError());
         return 1;
     }
+
+#ifdef _WIN32
+    InstallDragAudioHook(sdlWindow); // PS-076: the music keeps playing while the window is dragged
+#endif
 
     sdlRenderer = SDL_CreateRenderer(sdlWindow, -1, SDL_RENDERER_PRESENTVSYNC);
     if (sdlRenderer == NULL)
