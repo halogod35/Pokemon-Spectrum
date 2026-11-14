@@ -1733,11 +1733,17 @@ static void ErrorMsg_MoveCloserToPartner(void)
 static void ErrorMsg_CheckConnections(void)
 {
     LoadBgTiles(0, sCommErrorBg_Gfx, 0x20, 0);
+    // MP: PS-077. The wired screen never placed the top window on the background (the GBA had
+    // nothing to print there), so PS-048's "A Button: Continue from last save" hint, printed into
+    // it at state 130, was invisible. Place it, blank, like the wireless screen does.
+    FillWindowPixelBuffer(WIN_LINK_ERROR_TOP, PIXEL_FILL(0));
     FillWindowPixelBuffer(WIN_LINK_ERROR_MID, PIXEL_FILL(0));
     FillWindowPixelBuffer(WIN_LINK_ERROR_BOTTOM, PIXEL_FILL(0));
     AddTextPrinterParameterized3(WIN_LINK_ERROR_MID, FONT_SHORT_COPY_1, 2, 0, sTextColors, 0, gText_CommErrorCheckConnections);
+    PutWindowTilemap(WIN_LINK_ERROR_TOP);
     PutWindowTilemap(WIN_LINK_ERROR_MID);
     PutWindowTilemap(WIN_LINK_ERROR_BOTTOM);
+    CopyWindowToVram(WIN_LINK_ERROR_TOP, COPYWIN_FULL);
     CopyWindowToVram(WIN_LINK_ERROR_MID, COPYWIN_NONE); // Does nothing
     CopyWindowToVram(WIN_LINK_ERROR_BOTTOM, COPYWIN_FULL);
 }
