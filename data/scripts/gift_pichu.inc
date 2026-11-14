@@ -70,3 +70,6 @@ sText_FullParty:
 	.string "Oh, your party appears to be full.\p"
 	.string "Please come see me after storing\n"
 	.string "a POKéMON on a PC.$"
+
+@ PS-080: end label, so C code can send the script with its real size (End - Start)
+MysteryGiftScript_SurfPichu_End::
