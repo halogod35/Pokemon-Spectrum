@@ -343,9 +343,15 @@ bool32 MysteryGift_TrySaveStamp(const u16 *stamp)
 #define GAME_DATA_VALID_GIFT_TYPE_1 (1 << 2)
 #define GAME_DATA_VALID_GIFT_TYPE_2 (1 << 9)
 
+// PS-080: the GBA ROM header is not linked into the PC build (src/rom_header.s), so the game
+// code and version the Mystery Gift server used to read from it are constants here.
+static const u8 sMysteryGiftGameCode[GAME_CODE_LENGTH] = {'B', 'P', 'E', 'E'};
+#define MYSTERY_GIFT_SOFTWARE_VERSION 0
+
 void MysteryGift_LoadLinkGameData(struct MysteryGiftLinkGameData *data, bool32 isWonderNews)
 {
-#ifndef PORTABLE
+    // PS-080: this used to be stubbed out on PC, so the client sent an all-zero block and the
+    // server's MysteryGift_ValidateLinkGameData refused every gift ("can't accept").
     int i;
     CpuFill32(0, data, sizeof(*data));
     data->validationVar = GAME_DATA_VALID_VAR;
@@ -384,11 +390,8 @@ void MysteryGift_LoadLinkGameData(struct MysteryGiftLinkGameData *data, bool32 i
     for (i = 0; i < EASY_CHAT_BATTLE_WORDS_COUNT; i++)
         data->easyChatProfile[i] = gSaveBlock1Ptr->easyChatProfile[i];
 
-    memcpy(data->romHeaderGameCode, RomHeaderGameCode, GAME_CODE_LENGTH);
-    data->romHeaderSoftwareVersion = RomHeaderSoftwareVersion;
-#else
-    return;
-#endif
+    memcpy(data->romHeaderGameCode, sMysteryGiftGameCode, GAME_CODE_LENGTH); // PS-080
+    data->romHeaderSoftwareVersion = MYSTERY_GIFT_SOFTWARE_VERSION;          // PS-080
 }
 
 bool32 MysteryGift_ValidateLinkGameData(const struct MysteryGiftLinkGameData *data, bool32 isWonderNews)
