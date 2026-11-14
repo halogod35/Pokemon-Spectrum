@@ -32,6 +32,18 @@ You can resize the window and the picture scales with it. In fullscreen the pict
 
 The game saves to `pokemon-spectrum.sav` next to its exe file. The same save works with the 32-bit and 64-bit builds, on Windows and Linux. Saves from versions before 0.3.1 are not supported: the game refuses them with a message and leaves the file alone, so move it away and start a new game.
 
+**Mystery Gift**
+
+The four event tickets can be received in the game, the way the original Wireless Adapter events worked, with no network needed:
+
+1. Get the Pokédex, then answer the questionnaire at a Poké Mart counter with the phrase **LINK TOGETHER WITH ALL** and save. MYSTERY GIFT appears on the title menu.
+2. MYSTERY GIFT → Wonder Cards → Wireless Communication. You receive a Wonder Card and the game saves.
+3. Go upstairs in any Pokémon Center and talk to the man in green. He hands over the ticket.
+4. Come back for the next card: the Eon Ticket (Southern Island, Latias or Latios), then the Aurora Ticket (Birth Island, Deoxys), the Mystic Ticket (Navel Rock, Lugia and Ho-Oh) and the Old Sea Map (Faraway Island, Mew). One card at a time, as in the original.
+5. After the Hall of Fame, the ferry attendant at Lilycove Harbor takes you to the islands.
+
+The card texts are our own; the islands, the ferry and the man's dialogue are the game's.
+
 **Xbox-style controller, Windows only**
 
 | Controller | GBA button |
@@ -68,17 +80,13 @@ FastForward = RT
 
 Nothing here is decided or scheduled. These are the open ideas, with the options discussed for each.
 
-### Mystery Gift and event tickets
-On PC, Mystery Gift always says "The Wireless Adapter is not connected." The four event islands are already in the game and fully playable: Southern Island (Latias/Latios), Birth Island (Deoxys), Navel Rock (Lugia/Ho-Oh) and Faraway Island (Mew). Only a way to get the tickets is missing.
-- **Built-in distributor (recommended base):** the game plays the part of Nintendo's distribution machine. The real Mystery Gift screens work again: you receive a Wonder Card, and the green Mystery Gift man in a Pokémon Center hands over the ticket. All four tickets, fully authentic.
+### More Mystery Gift
+The built-in distributor (see "Mystery Gift" above) is the base for these:
 - **Daily lottery:** once per real day, Mystery Gift gives a random prize: Master Ball, Rare Candy, vitamins, sometimes a ticket. "Come back tomorrow!" if you try again. Needs a prize list, odds, and a rule against changing the PC clock to get extra draws.
-- **Eon Ticket only:** switch on the game's own hidden Eon Ticket hand-out. Tiny change, 100% original.
 - **Monthly events:** the distributor offers a different ticket each month, like the real events.
 - **Wonder News:** use the in-game news screens for release notes or event announcements.
 - **Gift folder:** drop gift files next to the game for fan events. Needs our own safe file format.
-- **Gifts between friends:** pass a Wonder Card to another player online. The largest and riskiest option, only useful after one of the above.
-- **Simple unlock:** a menu option or command-line switch that just puts the tickets in your bag. Quick, but no ceremony.
-- Any of these first needs three small fixes in the Mystery Gift code: a 64-bit address bug, a missing data stub, and a security hole that must be closed.
+- **Gifts between friends:** pass a Wonder Card to another player online. The largest and riskiest option.
 
 ### Ruby/Sapphire graphics
 - **Graphics pack:** an optional folder of your own Ruby/Sapphire images, chosen when the game is built. Players with either look can still play together. No Ruby/Sapphire files would be stored in this project.

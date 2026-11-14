@@ -1123,12 +1123,12 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
                         action = ACTION_NEW_GAME;
                         break;
                     case 2:
+                        // PS-080: MYSTERY GIFT works without a Wireless Adapter on PC. The
+                        // Mystery Gift screen talks to the built-in distributor over an
+                        // in-process link (mystery_gift_distributor.c), so the adapter check
+                        // that used to turn this into "The Wireless Adapter is not connected."
+                        // is gone. The menu item itself still needs FLAG_SYS_MYSTERY_GIFT_ENABLE.
                         action = ACTION_MYSTERY_GIFT;
-                        if (!wirelessAdapterConnected)
-                        {
-                            action = ACTION_INVALID;
-                            gTasks[taskId].tMenuType = HAS_NO_SAVED_GAME;
-                        }
                         break;
                     case 3:
                         action = ACTION_OPTION;

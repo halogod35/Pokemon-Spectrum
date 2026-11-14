@@ -34,6 +34,29 @@ void MysterGiftServer_CreateForCard(void)
     MysteryGiftServer_Init(sServer, gMysteryGiftServerScript_SendWonderCard, 0, 1);
 }
 
+// PS-080: the built-in distributor (mystery_gift_distributor.c) runs the server in-process
+// on a distributor script, through the loopback link.
+void MysterGiftServer_CreateForScript(const struct MysteryGiftServerCmd *script)
+{
+    MysterGiftServer_Destroy();
+    sServer = AllocZeroed(sizeof(*sServer));
+    MysteryGiftServer_Init(sServer, script, 0, 1);
+}
+
+bool32 MysterGiftServer_IsActive(void)
+{
+    return sServer != NULL;
+}
+
+// PS-080: frees a server that did not get to SVR_RETURN (the session was aborted).
+void MysterGiftServer_Destroy(void)
+{
+    if (sServer == NULL)
+        return;
+    MysteryGiftServer_Free(sServer);
+    FREE_AND_SET_NULL(sServer);
+}
+
 u32 MysterGiftServer_Run(u16 *endVal)
 {
     u32 result;

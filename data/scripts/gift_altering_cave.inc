@@ -21,3 +21,6 @@ sText_MysteryGiftAlteringCave:
 	.string "the ALTERING CAVE on ROUTE 103.\p"
 	.string "Perhaps it would be worthwhile for\n"
 	.string "you to investigate this rumor.$"
+
+@ PS-080: end label, so C code can send the script with its real size (End - Start)
+MysteryGiftScript_AlteringCave_End::

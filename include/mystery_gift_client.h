@@ -85,6 +85,9 @@ struct MysteryGiftClient
 
 void MysteryGiftClient_Create(bool32 isWonderNews);
 u32 MysteryGiftClient_Run(u16 *endVal);
+// PS-080: frees a client that did not get to CLI_RETURN (the loopback session was aborted).
+void MysteryGiftClient_Destroy(void);
+bool32 MysteryGiftClient_IsActive(void);
 void MysteryGiftClient_AdvanceState(void);
 void * MysteryGiftClient_GetMsg(void);
 void MysteryGiftClient_SetParam(u32 val);

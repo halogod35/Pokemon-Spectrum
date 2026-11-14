@@ -96,5 +96,15 @@ struct MysteryGiftServer
 void MysterGiftServer_CreateForCard(void);
 void MysterGiftServer_CreateForNews(void);
 u32 MysterGiftServer_Run(u16 *endVal);
+// PS-080: the built-in distributor runs the server on one of its own scripts, in-process.
+void MysterGiftServer_CreateForScript(const struct MysteryGiftServerCmd *script);
+bool32 MysterGiftServer_IsActive(void);
+void MysterGiftServer_Destroy(void);
+
+// PS-080: distributor scripts (mystery_gift_scripts.c)
+extern const struct MysteryGiftServerCmd gMysteryGiftServerScript_NoMoreGifts[];
+extern const struct MysteryGiftServerCmd gMysteryGiftServerScript_NoNews[];
+extern struct MysteryGiftServerCmd gMysteryGiftServerScript_DistributeCard[];
+void MysteryGiftScripts_SetDistributedGift(const struct WonderCard *card, const u8 *script, u32 scriptSize);
 
 #endif //GUARD_MYSTERY_GIFT_SERVER_H

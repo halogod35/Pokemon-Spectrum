@@ -43,3 +43,6 @@ sText_MysteryGiftBattleCountCard_WonPrize:
 	.string "three battles!\p"
 	.string "We hope you will be inspired to\n"
 	.string "battle some more.$"
+
+@ PS-080: end label, so C code can send the script with its real size (End - Start)
+MysteryGiftScript_BattleCard_End::
