@@ -199,8 +199,10 @@ static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wPar
         // same timer, WM_EXITSIZEMOVE ends it; the end below covers a click without a drag.
         LRESULT result;
 
+        printf("[drag TEST] nc press at %u ms\n", (unsigned)SDL_GetTicks()); // TEST ONLY
         DragAudioBegin(hWnd);
         result = CallWindowProc(sSdlWindowProc, hWnd, message, wParam, lParam);
+        printf("[drag TEST] nc press done at %u ms\n", (unsigned)SDL_GetTicks()); // TEST ONLY
         DragAudioEnd(hWnd);
         return result;
     }
