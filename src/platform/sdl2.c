@@ -53,6 +53,7 @@ double simTime = 0;
 double lastGameTime = 0;
 double curGameTime = 0;
 double fixedTimestep = 1.0 / 60.0; // 16.666667ms
+#define MAX_CATCHUP_TICKS 4 // PS-076: game ticks replayed at most after a stall (about 67 ms)
 double timeScale = 1.0;
 struct SiiRtcInfo internalClock;
 
@@ -155,7 +156,17 @@ static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
 #define DRAG_AUDIO_TIMER_MS   8      // Windows rounds this up to its timer resolution (10-16 ms)
 
 static WNDPROC sSdlWindowProc;
+static bool sInModalLoop = false;
 static bool sDragAudioPumping = false;
+
+static void DragAudioPump(void)
+{
+    if (sDragAudioPumping)
+        return;
+    sDragAudioPumping = true;
+    Platform_AudioPump(paused);
+    sDragAudioPumping = false;
+}
 
 static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -163,23 +174,31 @@ static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wPar
     {
     case WM_ENTERSIZEMOVE:
     case WM_ENTERMENULOOP:
+        sInModalLoop = true;
         SetTimer(hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
+        // Fill the queue now: the main loop last pumped before its vsync wait, so about a third
+        // of the queue is already gone, and the first timer tick can be 30 ms away while the sound
+        // card takes 24 ms at a time. That was one underrun at the start of every drag.
+        DragAudioPump();
         break;
     case WM_EXITSIZEMOVE:
     case WM_EXITMENULOOP:
+        sInModalLoop = false;
         KillTimer(hWnd, DRAG_AUDIO_TIMER_ID);
         break;
     case WM_TIMER:
         if (wParam == DRAG_AUDIO_TIMER_ID)
         {
-            if (!sDragAudioPumping)
-            {
-                sDragAudioPumping = true;
-                Platform_AudioPump(paused);
-                sDragAudioPumping = false;
-            }
+            DragAudioPump();
             return 0;
         }
+        break;
+    default:
+        // While the modal loop runs, every message it dispatches (mouse moves, WM_MOVING,
+        // WM_SIZING, ...) is a chance to top the queue up between timer ticks. The pump is a
+        // few comparisons when the queue is full.
+        if (sInModalLoop)
+            DragAudioPump();
         break;
     }
     return CallWindowProc(sSdlWindowProc, hWnd, message, wParam, lParam);
@@ -350,6 +369,12 @@ int main(int argc, char **argv)
         if (!paused)
         {
             accumulator += deltaTime;
+            // PS-076: after a stall (a window drag or resize on Windows, a slow save, the
+            // debugger) catch up by a few frames at most instead of running every missed tick
+            // back to back: a 5 s drag used to replay 300 ticks in one go, which fast-forwarded
+            // the game and starved the audio queue (one underrun at the end of every drag).
+            if (accumulator > fixedTimestep * MAX_CATCHUP_TICKS)
+                accumulator = fixedTimestep * MAX_CATCHUP_TICKS;
 
             isGameStepDrawn = false;
 
