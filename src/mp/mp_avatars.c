@@ -18,7 +18,8 @@
 //  - Not solid, not interactive, no reflection, never repaints the player's palette: hooks in
 //    event_object_movement.c. Avatars whose palette differs from the local player's (Brendan
 //    seen by May, underwater...) get their own sprite palette (MpEnsurePalette).
-//  - Never saved: MP_RemoveRemoteAvatars() runs at the start of SaveObjectEvents().
+//  - Never saved: SaveObjectEvents() leaves avatar object events out of the copy (PS-075);
+//    MP_RemoveRemoteAvatars() runs when the object list is reloaded from the save (LoadObjectEvents).
 //  - Lifetimes: object events are wiped by every map load (ResetObjectEvents) and keep their
 //    data across battles / menus (SpawnObjectEventsOnReturnToField re-creates their sprites).
 //    So on every field entry each tracked avatar is re-validated by localId + map, then

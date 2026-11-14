@@ -200,15 +200,15 @@ void SaveObjectEvents(void)
 {
     int i;
 
-    // MP: PS-031. Every copy of gObjectEvents into the save passes here (START > SAVE,
-    // battle / frontier saves, DoMossdeepGymWarp): remove the remote avatars first. They are
-    // re-created on the next field tick. The filter below stays as the PS-014 backstop.
-    MP_RemoveRemoteAvatars();
+    // MP: PS-075 (BUG-010). The remote avatars stay on the map while the game saves (START > SAVE,
+    // the save before a trade or battle, frontier saves, DoMossdeepGymWarp); they are only left
+    // out of the copy below. PS-031 used to remove them here, which made them vanish the moment
+    // a trade or battle was confirmed, and a running script kept them from respawning until the
+    // field came back. The copy filter alone keeps AD-10 (no remote data in the save).
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
         gSaveBlock1Ptr->objectEvents[i] = gObjectEvents[i];
-        // MP: never write a remote player's avatar into the save (AD-10). This is a safety
-        // net; PS-031 must still remove its avatars before any save (see PS-014 Handoff).
+        // MP: never write a remote player's avatar into the save (AD-10).
         if (gObjectEvents[i].active
          && gObjectEvents[i].localId >= MP_REMOTE_AVATAR_LOCALID_FIRST
          && gObjectEvents[i].localId <= MP_REMOTE_AVATAR_LOCALID_LAST)
@@ -220,6 +220,10 @@ void LoadObjectEvents(void)
 {
     int i;
 
+    // MP: PS-075. The object list is about to be replaced from the save (continue, or the reload
+    // after a link error): tear the remote avatars down first so no sprite or palette is left
+    // behind; they are re-created on the next field tick from the latest presence.
+    MP_RemoveRemoteAvatars();
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
         gObjectEvents[i] = gSaveBlock1Ptr->objectEvents[i];
 }
