@@ -12,7 +12,7 @@
 // v0.2.0 and earlier (the field was unused filler there, so such files read 0); 2 = the
 // layout in docs/save-format.md. No migration until 1.0.0 (PS-069 policy). Defined here
 // rather than in save.h because sdl2.c cannot include save.h (main.h's gIntrTable clashes).
-#define SAVE_FORMAT_VERSION 2
+#define SAVE_FORMAT_VERSION 3 // PS-079 (BUG-015): the same SaveBlock1 layout on 32- and 64-bit builds
 
 #ifndef PORTABLE
 #define FLASH_BASE ((u8 *)0xE000000)

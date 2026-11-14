@@ -80,6 +80,13 @@ struct
 STATIC_ASSERT(sizeof(struct SaveBlock2) <= SECTOR_DATA_SIZE, SaveBlock2FreeSpace);
 STATIC_ASSERT(sizeof(struct SaveBlock1) <= SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1), SaveBlock1FreeSpace);
 STATIC_ASSERT(sizeof(struct PokemonStorage) <= SECTOR_DATA_SIZE * (SECTOR_ID_PKMN_STORAGE_END - SECTOR_ID_PKMN_STORAGE_START + 1), PokemonStorageFreeSpace);
+// PS-079 (BUG-015): the save layout is the same on every PC build (32/64-bit, Linux/Windows), so
+// a .sav moves between them. These numbers are the layout: a change here is a new save format.
+STATIC_ASSERT(sizeof(struct ObjectEventTemplate) == 0x20, ObjectEventTemplateSize);
+STATIC_ASSERT(offsetof(struct SaveBlock1, objectEventTemplates) == 0xC70, ObjectEventTemplatesOffset);
+STATIC_ASSERT(sizeof(struct SaveBlock1) == 0x5260, SaveBlock1Size);
+STATIC_ASSERT(sizeof(struct SaveBlock2) == 0xF2C, SaveBlock2Size);
+STATIC_ASSERT(sizeof(struct PokemonStorage) == 0x83D0, PokemonStorageSize);
 // PS-070: the slot ids, the special sectors and the PC flash must agree.
 STATIC_ASSERT(SECTOR_ID_PKMN_STORAGE_END + 1 == NUM_SECTORS_PER_SLOT, SlotSectorCount);
 STATIC_ASSERT(NUM_SECTORS_PER_SLOT * NUM_SAVE_SLOTS == SECTOR_ID_HOF_1, SpecialSectorsAfterSlots);

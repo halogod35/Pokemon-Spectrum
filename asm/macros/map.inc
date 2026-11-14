@@ -37,9 +37,10 @@
 	.short \trainer_type
 	.short \sight_radius_tree_etc
 	ptrvalue \script
+	space32 4  /* BUG-015 (PS-079): the script slot is 8 bytes on every build, see ObjectEventTemplate */
 	.short \event_flag
 	.space 2  /* Padding*/
-	space64 4
+	.space 4  /* Padding on every build (BUG-015): sizeof(struct ObjectEventTemplate) == 0x20 */
 	inc _num_npcs
 	.endm
 
@@ -55,7 +56,7 @@
 	.space 3  /* Padding*/
 	.2byte \target_map_id & 0xFF  /* map num*/
 	.2byte \target_map_id >> 8    /* map group*/
-	.space 8  /* Padding*/
+	.space 16  /* Padding (BUG-015: 0x20 bytes, like object_event)*/
 	inc _num_npcs
 	.endm
 
