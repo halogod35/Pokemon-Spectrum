@@ -168,27 +168,51 @@ static void DragAudioPump(void)
     sDragAudioPumping = false;
 }
 
+// The main loop is (or is about to be) blocked: deep queue, timer, and fill the queue now.
+static void DragAudioBegin(HWND hWnd)
+{
+    sInModalLoop = true;
+    SetTimer(hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
+    Platform_AudioSetDeepQueue(TRUE);
+    DragAudioPump();
+}
+
+static void DragAudioEnd(HWND hWnd)
+{
+    sInModalLoop = false;
+    KillTimer(hWnd, DRAG_AUDIO_TIMER_ID);
+    Platform_AudioSetDeepQueue(FALSE); // what is queued still plays out over the loop's restart
+}
+
 static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+    case WM_NCLBUTTONDOWN:
+    {
+        // A press on the title bar, a border or a caption button. Windows handles the whole
+        // thing inside the default procedure, i.e. inside this CallWindowProc: first a wait for
+        // the mouse to move past the drag threshold (or be released), only then the modal loop
+        // with its WM_ENTERSIZEMOVE. That wait blocked us for 50-150 ms with no message of ours
+        // (the timing log showed every remaining underrun there, including plain clicks), so
+        // start pumping before handing the press over. Nested: WM_ENTERSIZEMOVE re-arms the
+        // same timer, WM_EXITSIZEMOVE ends it; the end below covers a click without a drag.
+        LRESULT result;
+
+        DragAudioBegin(hWnd);
+        result = CallWindowProc(sSdlWindowProc, hWnd, message, wParam, lParam);
+        DragAudioEnd(hWnd);
+        return result;
+    }
     case WM_ENTERSIZEMOVE:
     case WM_ENTERMENULOOP:
         printf("[drag TEST] enter %s at %u ms\n", message == WM_ENTERSIZEMOVE ? "sizemove" : "menuloop", (unsigned)SDL_GetTicks()); // TEST ONLY
-        sInModalLoop = true;
-        SetTimer(hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
-        Platform_AudioSetDeepQueue(TRUE);
-        // Fill the queue now: the main loop last pumped before its vsync wait, so about a third
-        // of the queue is already gone, and the first timer tick can be 30 ms away while the sound
-        // card takes 24 ms at a time. That was one underrun at the start of every drag.
-        DragAudioPump();
+        DragAudioBegin(hWnd);
         break;
     case WM_EXITSIZEMOVE:
     case WM_EXITMENULOOP:
         printf("[drag TEST] exit %s at %u ms\n", message == WM_EXITSIZEMOVE ? "sizemove" : "menuloop", (unsigned)SDL_GetTicks()); // TEST ONLY
-        sInModalLoop = false;
-        KillTimer(hWnd, DRAG_AUDIO_TIMER_ID);
-        Platform_AudioSetDeepQueue(FALSE); // what is queued still plays out over the loop's restart
+        DragAudioEnd(hWnd);
         break;
     case WM_TIMER:
         if (wParam == DRAG_AUDIO_TIMER_ID)

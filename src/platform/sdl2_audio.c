@@ -43,6 +43,7 @@
 #define AUDIO_MAX_CATCHUP       8       // GBA frames produced per loop iteration at most
 #define AUDIO_DEEP_QUEUE_MS     200     // PS-076: queue target while the main loop is blocked (window drag)
 #define AUDIO_DEEP_QUEUE_FRAMES ((u32)((u64)AUDIO_DEEP_QUEUE_MS * AUDIO_RATE / 1000))
+#define AUDIO_DEEP_MAX_CATCHUP  16      // PS-076: one pump may fill the deep queue from empty (12 frames)
 #define AUDIO_FADE_FRAMES       64      // 1.5 ms fade out / in around a gap
 #define AUDIO_LEGACY_LOW_MARK   2000    // v0.1.0: one AudioUpdate() per loop while fewer are queued
 
@@ -469,7 +470,7 @@ void Platform_AudioPump(bool8 paused)
             // window re-layout) before it pumps again.
             u32 target = sDeepQueue ? AUDIO_DEEP_QUEUE_FRAMES : sTargetFrames;
 
-            for (n = 0; n < AUDIO_MAX_CATCHUP && level < target; n++)
+            for (n = 0; n < (sDeepQueue ? AUDIO_DEEP_MAX_CATCHUP : AUDIO_MAX_CATCHUP) && level < target; n++)
             {
                 if (!ProduceFrame())
                     break;
