@@ -174,6 +174,7 @@ static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wPar
     {
     case WM_ENTERSIZEMOVE:
     case WM_ENTERMENULOOP:
+        printf("[drag TEST] enter %s at %u ms\n", message == WM_ENTERSIZEMOVE ? "sizemove" : "menuloop", (unsigned)SDL_GetTicks()); // TEST ONLY
         sInModalLoop = true;
         SetTimer(hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
         Platform_AudioSetDeepQueue(TRUE);
@@ -184,6 +185,7 @@ static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wPar
         break;
     case WM_EXITSIZEMOVE:
     case WM_EXITMENULOOP:
+        printf("[drag TEST] exit %s at %u ms\n", message == WM_EXITSIZEMOVE ? "sizemove" : "menuloop", (unsigned)SDL_GetTicks()); // TEST ONLY
         sInModalLoop = false;
         KillTimer(hWnd, DRAG_AUDIO_TIMER_ID);
         Platform_AudioSetDeepQueue(FALSE); // what is queued still plays out over the loop's restart
@@ -191,6 +193,7 @@ static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wPar
     case WM_TIMER:
         if (wParam == DRAG_AUDIO_TIMER_ID)
         {
+            { static bool first = true; if (sInModalLoop && first) { printf("[drag TEST] first timer tick at %u ms\n", (unsigned)SDL_GetTicks()); first = false; } if (!sInModalLoop) first = true; } // TEST ONLY
             DragAudioPump();
             return 0;
         }
@@ -367,6 +370,7 @@ int main(int argc, char **argv)
         curGameTime = SDL_GetPerformanceCounter();
         deltaTime = (double)((curGameTime - lastGameTime) / (double)SDL_GetPerformanceFrequency());
         deltaTime *= timeScale; //apply speedup
+        if (deltaTime > 0.05) printf("[loop TEST] iteration gap %.0f ms at %u ms\n", deltaTime * 1000.0, (unsigned)SDL_GetTicks()); // TEST ONLY
 
         if (!paused)
         {

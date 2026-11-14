@@ -73,6 +73,7 @@ static bool8 sOpen;
 static bool8 sLegacy;           // --audio-legacy
 static u32 sTargetFrames;       // --audio-queue-ms in stereo samples
 static bool8 sDeepQueue;        // PS-076: fill to AUDIO_DEEP_QUEUE_FRAMES instead (window drag)
+static double sTestSinceMs; // TEST ONLY
 static bool8 sStarted;          // the sound engine has produced a frame
 static bool8 sEngineOn;         // the last AudioUpdate() produced a frame
 static u32 sProducedFrames;     // GBA frames queued, total
@@ -427,6 +428,8 @@ void Platform_AudioPump(bool8 paused)
     {
         double ms = TicksToSeconds(now - sLastPumpTicks) * 1000.0;
 
+        sTestSinceMs = ms; // TEST ONLY
+        if (ms > 30.0) printf("[audio TEST] pump gap %.1f ms, queue %u ms before, deep=%d\n", ms, (unsigned)(RingLevel() * 1000 / AUDIO_RATE), (int)sDeepQueue); // TEST ONLY
         if (ms > STATS_STALL_MS)
         {
             sWindow.stalls++;
@@ -485,6 +488,7 @@ void Platform_AudioPump(bool8 paused)
         underruns = sCbUnderruns;
         SDL_UnlockAudioDevice(sDevice);
         sWindow.underruns += underruns - sUnderrunsSeen;
+        if (underruns != sUnderrunsSeen) printf("[audio TEST] underrun +%u at %u ms: %.1f ms since last pump, queue now %u ms, deep=%d\n", (unsigned)(underruns - sUnderrunsSeen), (unsigned)SDL_GetTicks(), sTestSinceMs, (unsigned)(RingLevel() * 1000 / AUDIO_RATE), (int)sDeepQueue); // TEST ONLY
         sUnderrunsSeen = underruns;
     }
 
