@@ -30,6 +30,7 @@
 #include "event_data.h"
 #include "link_rfu.h"
 #include "wonder_news.h"
+#include "mystery_gift_distributor.h" // PS-080
 #include "constants/cable_club.h"
 
 enum {
@@ -1106,6 +1107,7 @@ enum {
     MG_STATE_SERVER_RESULT_MSG,
     MG_STATE_SERVER_ERROR,
     MG_STATE_EXIT,
+    MG_STATE_CLIENT_FRIEND_UNAVAILABLE, // PS-080: "Friend" needs a wireless adapter; the PC has none
 };
 
 static void CreateMysteryGiftTask(void)
@@ -1131,6 +1133,8 @@ static void Task_MysteryGift(u8 taskId)
     struct MysteryGiftTaskData *data = (void *)gTasks[taskId].data;
     u32 successMsg, input;
     const u8 *msg;
+
+    MysteryGiftDistributor_Tick(); // PS-080: the in-process server runs one step per frame
 
     switch (data->state)
     {
@@ -1222,31 +1226,29 @@ static void Task_MysteryGift(u8 taskId)
         *gStringVar2 = EOS;
         *gStringVar3 = EOS;
 
-        switch (data->isWonderNews)
+        // PS-080: no wireless adapter on PC. "Wireless Communication" talks to the built-in
+        // distributor over the in-process loopback link instead of
+        // CreateTask_LinkMysteryGiftOverWireless (pure RFU: SetWirelessCommType1, OpenLink,
+        // beacon scan, ...). "Friend" (CreateTask_LinkMysteryGiftWithFriend) has no PC path
+        // in this card and gets the game's own "not connected" message.
+        if (data->sourceIsFriend == TRUE)
         {
-        case FALSE:
-            if (data->sourceIsFriend == TRUE)
-                CreateTask_LinkMysteryGiftWithFriend(ACTIVITY_WONDER_CARD);
-            else if (data->sourceIsFriend == FALSE)
-                CreateTask_LinkMysteryGiftOverWireless(ACTIVITY_WONDER_CARD);
-            break;
-        case TRUE:
-            if (data->sourceIsFriend == TRUE)
-                CreateTask_LinkMysteryGiftWithFriend(ACTIVITY_WONDER_NEWS);
-            else if (data->sourceIsFriend == FALSE)
-                CreateTask_LinkMysteryGiftOverWireless(ACTIVITY_WONDER_NEWS);
+            data->state = MG_STATE_CLIENT_FRIEND_UNAVAILABLE;
             break;
         }
+        MysteryGiftDistributor_Start(data->isWonderNews);
         data->state = MG_STATE_CLIENT_LINK_WAIT;
         break;
     case MG_STATE_CLIENT_LINK_WAIT:
-        if (gReceivedRemoteLinkPlayers)
+        // PS-080: was "wait for gReceivedRemoteLinkPlayers, or LINKUP_FAILED". The loopback
+        // link is up as soon as the distributor started; the client is created on it.
+        if (MysteryGiftDistributor_IsRunning())
         {
             ClearScreenInBg0(TRUE);
             data->state = MG_STATE_CLIENT_COMMUNICATING;
             MysteryGiftClient_Create(data->isWonderNews);
         }
-        else if (gSpecialVar_Result == LINKUP_FAILED)
+        else
         {
             // Link failed, return to link start menu
             ClearScreenInBg0(TRUE);
@@ -1258,10 +1260,20 @@ static void Task_MysteryGift(u8 taskId)
         data->state = MG_STATE_CLIENT_LINK;
         break;
     case MG_STATE_CLIENT_LINK:
+        if (MysteryGiftDistributor_Failed())
+        {
+            // PS-080: a block was refused on the loopback (size, ident or CRC). The wireless
+            // link would call LinkRfu_FatalError here; on PC the session is torn down and the
+            // game's communication error message is shown.
+            MysteryGiftDistributor_Stop();
+            data->state = MG_STATE_CLIENT_ERROR;
+            break;
+        }
         switch (MysteryGiftClient_Run(&data->var))
         {
         case CLI_RET_END:
-            Rfu_SetCloseLinkCallback();
+            // PS-080: no Rfu_SetCloseLinkCallback(); MG_STATE_CLIENT_LINK_END lets the
+            // distributor's server finish instead.
             data->msgId = data->var;
             data->state = MG_STATE_CLIENT_LINK_END;
             break;
@@ -1351,7 +1363,9 @@ static void Task_MysteryGift(u8 taskId)
         }
         break;
     case MG_STATE_CLIENT_LINK_END:
-        if (gReceivedRemoteLinkPlayers == 0)
+        // PS-080: was "wait for gReceivedRemoteLinkPlayers == 0" after the RFU close. The
+        // distributor ends the session once its server has read the client's READY_END.
+        if (MysteryGiftDistributor_Finish())
         {
             DestroyWirelessStatusIndicatorSprite();
             data->state = MG_STATE_CLIENT_COMM_COMPLETED;
@@ -1430,20 +1444,11 @@ static void Task_MysteryGift(u8 taskId)
     {
         // A Wonder Card/News has been selected, handle its menu
         u32 result;
-        if (!data->isWonderNews)
-        {
-            if (IsSendingSavedWonderCardAllowed())
-                result = HandleGiftSelectMenu(&data->textState, &data->var, data->isWonderNews, FALSE);
-            else
-                result = HandleGiftSelectMenu(&data->textState, &data->var, data->isWonderNews, TRUE);
-        }
-        else
-        {
-            if (IsSendingSavedWonderNewsAllowed())
-                result = HandleGiftSelectMenu(&data->textState, &data->var, data->isWonderNews, FALSE);
-            else
-                result = HandleGiftSelectMenu(&data->textState, &data->var, data->isWonderNews, TRUE);
-        }
+        // PS-080: "Send" is never offered on PC. It links to a friend over the wireless adapter
+        // (CreateTask_SendMysteryGift, Rfu_SetCloseLinkCallback), which the PC cannot run; the
+        // distributor's cards are SEND_TYPE_DISALLOWED anyway. The game's own menu without the
+        // Send item (Receive / Toss) is used for every card and news.
+        result = HandleGiftSelectMenu(&data->textState, &data->var, data->isWonderNews, TRUE);
         switch (result)
         {
         case 0: // Receive
@@ -1607,10 +1612,20 @@ static void Task_MysteryGift(u8 taskId)
         }
         break;
     case MG_STATE_EXIT:
+        MysteryGiftDistributor_Stop(); // PS-080: nothing to do unless a session was left behind
         CloseLink();
         Free(data->clientMsg);
         DestroyTask(taskId);
         SetMainCallback2(MainCB_FreeAllBuffersAndReturnToInitTitleScreen);
+        break;
+    case MG_STATE_CLIENT_FRIEND_UNAVAILABLE:
+        // PS-080: the game's own message for a missing adapter, then back to the source prompt
+        // (as the LINKUP_FAILED branch of MG_STATE_CLIENT_LINK_WAIT did).
+        if (PrintMysteryGiftMenuMessage(&data->textState, gText_WirelessNotConnected))
+        {
+            ClearScreenInBg0(TRUE);
+            data->state = MG_STATE_SOURCE_PROMPT;
+        }
         break;
     }
 }

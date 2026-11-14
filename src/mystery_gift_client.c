@@ -35,9 +35,24 @@ extern const struct MysteryGiftClientCmd gMysteryGiftClientScript_Init[];
 
 void MysteryGiftClient_Create(bool32 isWonderNews)
 {
+    MysteryGiftClient_Destroy(); // PS-080: never leak a client that was left behind
     sClient = AllocZeroed(sizeof(*sClient));
     MysteryGiftClient_Init(sClient, 1, 0);
     sClient->isWonderNews = isWonderNews;
+}
+
+// PS-080: frees a client that did not get to CLI_RETURN (the loopback session was aborted).
+void MysteryGiftClient_Destroy(void)
+{
+    if (sClient == NULL)
+        return;
+    MysteryGiftClient_Free(sClient);
+    FREE_AND_SET_NULL(sClient);
+}
+
+bool32 MysteryGiftClient_IsActive(void)
+{
+    return sClient != NULL;
 }
 
 u32 MysteryGiftClient_Run(u16 *endVal)

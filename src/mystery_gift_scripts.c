@@ -215,3 +215,33 @@ const struct MysteryGiftServerCmd gMysteryGiftServerScript_SendWonderCard[] = {
     {SVR_GOTO_IF_EQ, HAS_NO_CARD, sServerScript_SendCard},
     {SVR_GOTO, .ptr = sServerScript_HasCard} // HAS_SAME_CARD
 };
+
+
+//==================================
+// PS-080: built-in distributor scripts
+//==================================
+// The distributor (mystery_gift_distributor.c) plays the part of the distribution machine
+// over the in-process loopback link. Its messages go through the dynamic message path
+// (SVR_LOAD_MSG -> CLI_COPY_MSG, CLIENT_MAX_MSG_SIZE bytes) on the failure branch, so the
+// client shows the text and nothing is saved.
+
+static const u8 sText_NoMoreGifts[] = _("There are no more gifts\nright now.");
+static const u8 sText_NoNews[] = _("There is no WONDER NEWS\nright now.");
+
+const struct MysteryGiftServerCmd gMysteryGiftServerScript_NoMoreGifts[] = {
+    {SVR_LOAD_CLIENT_SCRIPT, PTR_ARG(sClientScript_DynamicError)},
+    {SVR_SEND},
+    {SVR_LOAD_MSG, PTR_ARG(sText_NoMoreGifts)},
+    {SVR_SEND},
+    {SVR_RECV, MG_LINKID_READY_END},
+    {SVR_RETURN, SVR_MSG_NOTHING_SENT}
+};
+
+const struct MysteryGiftServerCmd gMysteryGiftServerScript_NoNews[] = {
+    {SVR_LOAD_CLIENT_SCRIPT, PTR_ARG(sClientScript_DynamicError)},
+    {SVR_SEND},
+    {SVR_LOAD_MSG, PTR_ARG(sText_NoNews)},
+    {SVR_SEND},
+    {SVR_RECV, MG_LINKID_READY_END},
+    {SVR_RETURN, SVR_MSG_NOTHING_SENT}
+};
