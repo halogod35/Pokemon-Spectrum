@@ -136,6 +136,47 @@ static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
                 "Pokemon Spectrum crash", MB_OK | MB_ICONERROR);
     return EXCEPTION_CONTINUE_SEARCH;
 }
+
+// PS-076. While the window is dragged or resized, Windows runs a modal loop inside SDL_PollEvent()
+// and the main loop below stops: the game freezes (unchanged) and the audio queue, about
+// PLATFORM_AUDIO_DEFAULT_QUEUE_MS long, ran dry, so the music faded out until the mouse button
+// was released. SDL 2.0.16 sends no event of its own during that loop (nothing at all while the
+// title bar is held still), so this uses SDL's Windows message hook instead: it sees every
+// message the modal loop dispatches, on the main thread. WM_ENTERSIZEMOVE / WM_ENTERMENULOOP
+// start a timer, each WM_TIMER tick pumps the sound engine exactly as the main loop does, and
+// WM_EXITSIZEMOVE / WM_EXITMENULOOP stop the timer. The music follows the audio clock (the
+// sequencer runs inside AudioUpdate), so it plays on while the picture stands still. No thread,
+// no game state touched (AD-4). Linux window managers move the window themselves and never
+// block the loop, so this is Windows only.
+#define DRAG_AUDIO_TIMER_ID   0x5053 // "PS"
+#define DRAG_AUDIO_TIMER_MS   8      // Windows rounds this up to its timer resolution (10-16 ms)
+
+static bool sDragAudioPumping = false;
+
+static void SDLCALL DragAudioMessageHook(void *userdata, void *hWnd, unsigned int message, Uint64 wParam, Sint64 lParam)
+{
+    (void)userdata;
+    (void)lParam;
+    switch (message)
+    {
+    case WM_ENTERSIZEMOVE:
+    case WM_ENTERMENULOOP:
+        SetTimer((HWND)hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
+        break;
+    case WM_EXITSIZEMOVE:
+    case WM_EXITMENULOOP:
+        KillTimer((HWND)hWnd, DRAG_AUDIO_TIMER_ID);
+        break;
+    case WM_TIMER:
+        if (wParam == DRAG_AUDIO_TIMER_ID && !sDragAudioPumping)
+        {
+            sDragAudioPumping = true;
+            Platform_AudioPump(paused);
+            sDragAudioPumping = false;
+        }
+        break;
+    }
+}
 #endif
 
 int main(int argc, char **argv)
@@ -181,6 +222,9 @@ int main(int argc, char **argv)
         return 1;
     }
     Platform_InputLoadConfig(); // PS-066: pokemon-spectrum.ini next to the executable
+#ifdef _WIN32
+    SDL_SetWindowsMessageHook(DragAudioMessageHook, NULL); // PS-076: music keeps playing while the window is dragged
+#endif
 
     sdlWindow = SDL_CreateWindow(gPlatformArgs.windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISPLAY_WIDTH * videoScale, DISPLAY_HEIGHT * videoScale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (sdlWindow == NULL)
