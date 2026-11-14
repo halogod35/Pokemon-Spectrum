@@ -37,17 +37,19 @@ EonTicket_Obtained:
 	release
 	end
 
+@ The two hand-out texts are the game's own Eon Ticket lines (MysteryGift_Text_TheresATicketForYou
+@ and MysteryGift_Text_TryUsingItAtLilycovePort in data/text/questionnaire.inc), word for word.
 sText_EonTicketForYou:
 	.string "Thank you for using the MYSTERY\n"
-	.string "GIFT System.\p"
+	.string "EVENT System.\p"
 	.string "You must be {PLAYER}.\n"
-	.string "A ticket has arrived for you.$"
+	.string "There is a ticket here for you.$"
 
 sText_EonTicketUseAtPort:
-	.string "It can be used at the LILYCOVE CITY\n"
-	.string "port.\p"
-	.string "The ship will take you somewhere\n"
-	.string "you have never been.$"
+	.string "It appears to be for use at\n"
+	.string "the LILYCOVE CITY port.\p"
+	.string "Why not give it a try and see what\n"
+	.string "it is about?$"
 
 sText_EonTicketThankYou:
 	.string "Thank you for using the MYSTERY\n"
