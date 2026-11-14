@@ -41,6 +41,8 @@
 #define AUDIO_BYTES_PER_SAMPLE  (AUDIO_CHANNELS * sizeof(float))
 #define AUDIO_RING_FRAMES       16384   // power of two, 390 ms
 #define AUDIO_MAX_CATCHUP       8       // GBA frames produced per loop iteration at most
+#define AUDIO_DEEP_QUEUE_MS     200     // PS-076: queue target while the main loop is blocked (window drag)
+#define AUDIO_DEEP_QUEUE_FRAMES ((u32)((u64)AUDIO_DEEP_QUEUE_MS * AUDIO_RATE / 1000))
 #define AUDIO_FADE_FRAMES       64      // 1.5 ms fade out / in around a gap
 #define AUDIO_LEGACY_LOW_MARK   2000    // v0.1.0: one AudioUpdate() per loop while fewer are queued
 
@@ -70,6 +72,7 @@ struct AudioStatsWindow
 static bool8 sOpen;
 static bool8 sLegacy;           // --audio-legacy
 static u32 sTargetFrames;       // --audio-queue-ms in stereo samples
+static bool8 sDeepQueue;        // PS-076: fill to AUDIO_DEEP_QUEUE_FRAMES instead (window drag)
 static bool8 sStarted;          // the sound engine has produced a frame
 static bool8 sEngineOn;         // the last AudioUpdate() produced a frame
 static u32 sProducedFrames;     // GBA frames queued, total
@@ -409,6 +412,12 @@ static bool8 ProduceFrame(void)
     return sEngineOn;
 }
 
+// PS-076: see AUDIO_DEEP_QUEUE_MS. Switched on while Windows runs its window move/size loop.
+void Platform_AudioSetDeepQueue(bool8 on)
+{
+    sDeepQueue = on;
+}
+
 void Platform_AudioPump(bool8 paused)
 {
     u64 now = SDL_GetPerformanceCounter();
@@ -451,8 +460,13 @@ void Platform_AudioPump(bool8 paused)
         else
         {
             u32 n;
+            // PS-076: a deeper queue while the main loop is blocked (window drag / resize on
+            // Windows): the game is frozen, so latency does not matter, and the stored audio
+            // also carries the sound through the stall when the loop resumes (renderer reset,
+            // window re-layout) before it pumps again.
+            u32 target = sDeepQueue ? AUDIO_DEEP_QUEUE_FRAMES : sTargetFrames;
 
-            for (n = 0; n < AUDIO_MAX_CATCHUP && level < sTargetFrames; n++)
+            for (n = 0; n < AUDIO_MAX_CATCHUP && level < target; n++)
             {
                 if (!ProduceFrame())
                     break;
