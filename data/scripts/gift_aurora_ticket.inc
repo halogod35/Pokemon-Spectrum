@@ -55,3 +55,6 @@ sText_AuroraTicketBagFull:
 	.string "Your BAG's KEY ITEMS POCKET is full.\p"
 	.string "Please store something on your PC,\n"
 	.string "then come back for this.$"
+
+@ PS-080: end label, so C code can send the script with its real size (End - Start)
+MysteryGiftScript_AuroraTicket_End::

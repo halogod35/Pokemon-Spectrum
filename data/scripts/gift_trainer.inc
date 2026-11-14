@@ -46,3 +46,6 @@ sText_MysteryGiftVisitingTrainerArrived:
 	.string "entering other passwords.\p"
 	.string "Try looking for other passwords\n"
 	.string "that may work.$"
+
+@ PS-080: end label, so C code can send the script with its real size (End - Start)
+MysteryGiftScript_VisitingTrainer_End::

@@ -19,3 +19,6 @@ sText_MysteryGiftStampCard:
 	.string "System.\p"
 	.string "You have {STR_VAR_1} more to collect to\n"
 	.string "fill your STAMP CARD.$"
+
+@ PS-080: end label, so C code can send the script with its real size (End - Start)
+MysteryGiftScript_StampCard_End::
