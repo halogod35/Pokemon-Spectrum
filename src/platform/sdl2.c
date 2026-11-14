@@ -16,6 +16,7 @@
 #endif
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_syswm.h> // PS-076: the window handle for the drag audio hook
 
 #include "global.h"
 #include "platform.h"
@@ -52,6 +53,7 @@ double simTime = 0;
 double lastGameTime = 0;
 double curGameTime = 0;
 double fixedTimestep = 1.0 / 60.0; // 16.666667ms
+#define MAX_CATCHUP_TICKS 4 // PS-076: game ticks replayed at most after a stall (about 67 ms)
 double timeScale = 1.0;
 struct SiiRtcInfo internalClock;
 
@@ -136,6 +138,112 @@ static LONG WINAPI MpCrashHandler(EXCEPTION_POINTERS *info)
                 "Pokemon Spectrum crash", MB_OK | MB_ICONERROR);
     return EXCEPTION_CONTINUE_SEARCH;
 }
+
+// PS-076. While the window is dragged or resized, Windows runs a modal loop inside SDL_PollEvent()
+// and the main loop below stops: the game freezes (unchanged) and the audio queue, about
+// PLATFORM_AUDIO_DEFAULT_QUEUE_MS long, ran dry, so the music faded out until the mouse button
+// was released. SDL 2.0.16 sends no event of its own during that loop (nothing at all while the
+// title bar is held still), and its SDL_SetWindowsMessageHook only runs from SDL's own
+// PeekMessage loop, which the modal loop bypasses (it dispatches straight to the window
+// procedure). So the window procedure itself is subclassed: WM_ENTERSIZEMOVE / WM_ENTERMENULOOP
+// start a timer, each WM_TIMER tick (delivered by the modal loop, on the main thread) pumps the
+// sound engine exactly as the main loop does, and WM_EXITSIZEMOVE / WM_EXITMENULOOP stop the
+// timer. Everything else goes to SDL's procedure unchanged. The music follows the audio clock
+// (the sequencer runs inside AudioUpdate), so it plays on while the picture stands still. No
+// thread, no game state touched (AD-4). Linux window managers move the window themselves and
+// never block the loop, so this is Windows only.
+#define DRAG_AUDIO_TIMER_ID   0x5053 // "PS"
+#define DRAG_AUDIO_TIMER_MS   8      // Windows rounds this up to its timer resolution (10-16 ms)
+
+static WNDPROC sSdlWindowProc;
+static bool sInModalLoop = false;
+static bool sDragAudioPumping = false;
+
+static void DragAudioPump(void)
+{
+    if (sDragAudioPumping)
+        return;
+    sDragAudioPumping = true;
+    Platform_AudioPump(paused);
+    sDragAudioPumping = false;
+}
+
+// The main loop is (or is about to be) blocked: deep queue, timer, and fill the queue now.
+static void DragAudioBegin(HWND hWnd)
+{
+    sInModalLoop = true;
+    SetTimer(hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
+    Platform_AudioSetDeepQueue(TRUE);
+    DragAudioPump();
+}
+
+static void DragAudioEnd(HWND hWnd)
+{
+    sInModalLoop = false;
+    KillTimer(hWnd, DRAG_AUDIO_TIMER_ID);
+    Platform_AudioSetDeepQueue(FALSE); // what is queued still plays out over the loop's restart
+}
+
+static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
+    case WM_NCLBUTTONDOWN:
+    {
+        // A press on the title bar, a border or a caption button. Windows handles the whole
+        // thing inside the default procedure, i.e. inside this CallWindowProc: first a wait for
+        // the mouse to move past the drag threshold (or be released), only then the modal loop
+        // with its WM_ENTERSIZEMOVE. That wait blocked us for 50-150 ms with no message of ours
+        // (the timing log showed every remaining underrun there, including plain clicks), so
+        // start pumping before handing the press over. Nested: WM_ENTERSIZEMOVE re-arms the
+        // same timer, WM_EXITSIZEMOVE ends it; the end below covers a click without a drag.
+        LRESULT result;
+
+        DragAudioBegin(hWnd);
+        result = CallWindowProc(sSdlWindowProc, hWnd, message, wParam, lParam);
+        DragAudioEnd(hWnd);
+        return result;
+    }
+    case WM_ENTERSIZEMOVE:
+    case WM_ENTERMENULOOP:
+        DragAudioBegin(hWnd);
+        break;
+    case WM_EXITSIZEMOVE:
+    case WM_EXITMENULOOP:
+        DragAudioEnd(hWnd);
+        break;
+    case WM_TIMER:
+        if (wParam == DRAG_AUDIO_TIMER_ID)
+        {
+            DragAudioPump();
+            return 0;
+        }
+        break;
+    default:
+        // While the modal loop runs, every message it dispatches (mouse moves, WM_MOVING,
+        // WM_SIZING, ...) is a chance to top the queue up between timer ticks. The pump is a
+        // few comparisons when the queue is full.
+        if (sInModalLoop)
+            DragAudioPump();
+        break;
+    }
+    return CallWindowProc(sSdlWindowProc, hWnd, message, wParam, lParam);
+}
+
+static void InstallDragAudioHook(SDL_Window *window)
+{
+    SDL_SysWMinfo info;
+
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_WINDOWS)
+    {
+        printf("[audio] drag hook not installed: %s\n", SDL_GetError());
+        return;
+    }
+    sSdlWindowProc = (WNDPROC)SetWindowLongPtr(info.info.win.window, GWLP_WNDPROC, (LONG_PTR)DragAudioWindowProc);
+    if (sSdlWindowProc == NULL)
+        printf("[audio] drag hook not installed: SetWindowLongPtr failed (%lu)\n", (unsigned long)GetLastError());
+}
 #endif
 
 int main(int argc, char **argv)
@@ -188,6 +296,10 @@ int main(int argc, char **argv)
         DBGPRINTF("Window could not be created! SDL_Error: %s\n", SDL_GetError());
         return 1;
     }
+
+#ifdef _WIN32
+    InstallDragAudioHook(sdlWindow); // PS-076: the music keeps playing while the window is dragged
+#endif
 
     sdlRenderer = SDL_CreateRenderer(sdlWindow, -1, SDL_RENDERER_PRESENTVSYNC);
     if (sdlRenderer == NULL)
@@ -283,6 +395,12 @@ int main(int argc, char **argv)
         if (!paused)
         {
             accumulator += deltaTime;
+            // PS-076: after a stall (a window drag or resize on Windows, a slow save, the
+            // debugger) catch up by a few frames at most instead of running every missed tick
+            // back to back: a 5 s drag used to replay 300 ticks in one go, which fast-forwarded
+            // the game and starved the audio queue (one underrun at the end of every drag).
+            if (accumulator > fixedTimestep * MAX_CATCHUP_TICKS)
+                accumulator = fixedTimestep * MAX_CATCHUP_TICKS;
 
             isGameStepDrawn = false;
 
