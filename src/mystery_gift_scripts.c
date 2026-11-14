@@ -245,3 +245,31 @@ const struct MysteryGiftServerCmd gMysteryGiftServerScript_NoNews[] = {
     {SVR_RECV, MG_LINKID_READY_END},
     {SVR_RETURN, SVR_MSG_NOTHING_SENT}
 };
+
+// The distributor's card script: like gMysteryGiftServerScript_SendWonderCard, but the card and
+// the RAM script come from the distributor's table instead of the save. The first two commands
+// are filled in by MysteryGiftScripts_SetDistributedGift() before each session: the gift is
+// chosen at run time, and a gift script's size (End - Start of two labels in data/mystery_gift.s)
+// is not a constant C can put in a static initializer. The rest is the game's own flow:
+// game data check, then SVR_CHECK_EXISTING_CARD for the toss prompt / "already have it" / send.
+struct MysteryGiftServerCmd gMysteryGiftServerScript_DistributeCard[] = {
+    {SVR_COPY_CARD, 0, NULL},      // [0] the Wonder Card
+    {SVR_SET_RAM_SCRIPT, 0, NULL}, // [1] the gift script and its size
+    {SVR_LOAD_CLIENT_SCRIPT, PTR_ARG(sClientScript_SendGameData)},
+    {SVR_SEND},
+    {SVR_RECV, MG_LINKID_GAME_DATA},
+    {SVR_COPY_GAME_DATA},
+    {SVR_CHECK_GAME_DATA_CARD},
+    {SVR_GOTO_IF_EQ, FALSE, sServerScript_CantSend},
+    {SVR_CHECK_EXISTING_CARD},
+    {SVR_GOTO_IF_EQ, HAS_DIFF_CARD, sServerScript_TossPrompt},
+    {SVR_GOTO_IF_EQ, HAS_NO_CARD, sServerScript_SendCard},
+    {SVR_GOTO, .ptr = sServerScript_HasCard} // HAS_SAME_CARD
+};
+
+void MysteryGiftScripts_SetDistributedGift(const struct WonderCard *card, const u8 *script, u32 scriptSize)
+{
+    gMysteryGiftServerScript_DistributeCard[0].ptr = card;
+    gMysteryGiftServerScript_DistributeCard[1].parameter = scriptSize;
+    gMysteryGiftServerScript_DistributeCard[1].ptr = script;
+}

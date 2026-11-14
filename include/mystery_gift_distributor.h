@@ -25,4 +25,25 @@ bool32 MysteryGiftDistributor_Finish(void);
 // Aborts: destroys the client and the server if they are still alive and stops the loopback.
 void MysteryGiftDistributor_Stop(void);
 
+// The gifts, in the order they are offered: Eon, Aurora, Mystic Ticket, Old Sea Map. The
+// distributor offers the first one the player does not own yet ("own" = the card's received
+// flag, the key item in the bag, or the island's ship flag, which is what the gift scripts
+// themselves check). When all are owned it sends the "no more gifts" message.
+struct MysteryGiftDistributorGift
+{
+    const struct WonderCard *card;
+    const u8 *script;    // the Wonder Card's RAM script (data/scripts/gift_*.inc)
+    const u8 *scriptEnd; // its end label; scriptEnd - script is the size sent
+    u16 item;
+    u16 receivedFlag;
+    u16 shipFlag;
+    bool8 latiIcon; // the icon follows VAR_ROAMER_POKEMON (the Lati that is not roaming)
+};
+
+u32 MysteryGiftDistributor_GetGiftCount(void);
+const struct MysteryGiftDistributorGift *MysteryGiftDistributor_GetGift(u32 index);
+bool32 MysteryGiftDistributor_IsGiftOwned(u32 index);
+// Index of the next gift to offer, or -1 when the player owns all of them.
+s32 MysteryGiftDistributor_NextGift(void);
+
 #endif //GUARD_MYSTERY_GIFT_DISTRIBUTOR_H
