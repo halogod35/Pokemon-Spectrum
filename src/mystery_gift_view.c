@@ -16,6 +16,7 @@
 #include "mystery_gift_view.h"
 #include "constants/rgb.h"
 #include "constants/mystery_gift.h"
+#define CARD_TEXT_MARGIN_X 4 // PS-080: left margin of the Wonder Card title, body and footer text (decomp: 0)
 
 struct WonderGraphics
 {
@@ -424,7 +425,9 @@ static void DrawCardWindow(u8 whichWindow)
     {
         // Print card title/subtitle
         s32 x;
-        AddTextPrinterParameterized3(windowId, FONT_SHORT_COPY_1, 0, 1, sCard_TextColorTable[sWonderCardData->gfx->titleTextPal], 0, sWonderCardData->titleText);
+        // PS-080: CARD_TEXT_MARGIN_X keeps the text off the card's inner edge (user request); the
+        // decomp printed it at x 0.
+        AddTextPrinterParameterized3(windowId, FONT_SHORT_COPY_1, CARD_TEXT_MARGIN_X, 1, sCard_TextColorTable[sWonderCardData->gfx->titleTextPal], 0, sWonderCardData->titleText);
         x = 160 - GetStringWidth(FONT_SHORT_COPY_1, sWonderCardData->subtitleText, GetFontAttribute(FONT_SHORT_COPY_1, FONTATTR_LETTER_SPACING));
         if (x < 0)
             x = 0;
@@ -438,11 +441,11 @@ static void DrawCardWindow(u8 whichWindow)
     case CARD_WIN_BODY:
         // Print body text
         for (; i < WONDER_CARD_BODY_TEXT_LINES; i++)
-            AddTextPrinterParameterized3(windowId, FONT_SHORT_COPY_1, 0, 16 * i + 2, sCard_TextColorTable[sWonderCardData->gfx->bodyTextPal], 0, sWonderCardData->bodyText[i]);
+            AddTextPrinterParameterized3(windowId, FONT_SHORT_COPY_1, CARD_TEXT_MARGIN_X, 16 * i + 2, sCard_TextColorTable[sWonderCardData->gfx->bodyTextPal], 0, sWonderCardData->bodyText[i]); // PS-080 margin
         break;
     case CARD_WIN_FOOTER:
         // Print footer line 1
-        AddTextPrinterParameterized3(windowId, FONT_SHORT_COPY_1, 0,
+        AddTextPrinterParameterized3(windowId, FONT_SHORT_COPY_1, CARD_TEXT_MARGIN_X, // PS-080 margin
                                      sCard_FooterTextOffsets[sWonderCardData->card.type],
                                      sCard_TextColorTable[sWonderCardData->gfx->footerTextPal],
                                      0, sWonderCardData->footerLine1Text);
@@ -452,7 +455,7 @@ static void DrawCardWindow(u8 whichWindow)
         {
             // Print gift text
             // Odd that CARD_TYPE_STAMP is not ignored, it has empty text for this
-            AddTextPrinterParameterized3(windowId, FONT_SHORT_COPY_1, 0,
+            AddTextPrinterParameterized3(windowId, FONT_SHORT_COPY_1, CARD_TEXT_MARGIN_X, // PS-080 margin
                                          16 + sCard_FooterTextOffsets[sWonderCardData->card.type],
                                          sCard_TextColorTable[sWonderCardData->gfx->footerTextPal],
                                          0, sWonderCardData->giftText);
