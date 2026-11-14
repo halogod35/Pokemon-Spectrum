@@ -1,12 +1,17 @@
 #include "global.h"
 #include "malloc.h"
-#include "decompress.h"
 #include "overworld.h"
 #include "script.h"
 #include "battle_tower.h"
 #include "mystery_gift.h"
-#include "mystery_event_script.h"
 #include "mystery_gift_client.h"
+
+// PS-080 (AD-9): nothing the client receives is ever executed. The decomp's client ran a
+// received Mystery Event script (CLI_RUN_MEVENT_SCRIPT), jumped into a received buffer as
+// machine code (CLI_RUN_BUFFER_SCRIPT) and copied a received e-Reader trainer straight into
+// SaveBlock2 (CLI_RECV_EREADER_TRAINER). Those instructions, and anything else the client does
+// not know, end the session with a communication error. The command index is bounded by the
+// script buffer, so a script without a CLI_RETURN cannot run off the end of it.
 
 enum {
     FUNC_INIT,
@@ -15,9 +20,10 @@ enum {
     FUNC_SEND,
     FUNC_RUN,
     FUNC_WAIT,
-    FUNC_RUN_MEVENT,
-    FUNC_RUN_BUFFER,
+    FUNC_COUNT
 };
+
+#define CLIENT_SCRIPT_MAX_CMDS (MG_LINK_BUFFER_SIZE / sizeof(struct MysteryGiftClientCmd))
 
 EWRAM_DATA static struct MysteryGiftClient *sClient = NULL;
 
@@ -132,10 +138,25 @@ static u32 Client_Send(struct MysteryGiftClient *client)
     return CLI_RET_ACTIVE;
 }
 
+// PS-080: ends the session as if the script had returned CLI_MSG_COMM_ERROR.
+static void Client_EndWithCommError(struct MysteryGiftClient *client)
+{
+    client->param = CLI_MSG_COMM_ERROR;
+    client->funcId = FUNC_DONE;
+    client->funcState = 0;
+}
+
 static u32 Client_Run(struct MysteryGiftClient *client)
 {
     // process command
-    struct MysteryGiftClientCmd *cmd = &client->script[client->cmdidx];
+    struct MysteryGiftClientCmd *cmd;
+
+    if (client->cmdidx >= CLIENT_SCRIPT_MAX_CMDS) // PS-080: ran off the end of the script buffer
+    {
+        Client_EndWithCommError(client);
+        return CLI_RET_ACTIVE;
+    }
+    cmd = &client->script[client->cmdidx];
     client->cmdidx++;
     switch (cmd->instr)
     {
@@ -221,24 +242,17 @@ static u32 Client_Run(struct MysteryGiftClient *client)
             MysteryGiftClient_InitSendWord(client, MG_LINKID_RESPONSE, TRUE);
         }
         break;
-    case CLI_RUN_MEVENT_SCRIPT:
-        client->funcId = FUNC_RUN_MEVENT;
-        client->funcState = 0;
-        break;
     case CLI_SAVE_STAMP:
         MysteryGift_TrySaveStamp(client->recvBuffer);
         break;
     case CLI_SAVE_RAM_SCRIPT:
         InitRamScript_NoObjectEvent(client->recvBuffer, sizeof(struct RamScriptData));
         break;
-    case CLI_RECV_EREADER_TRAINER:
-        memcpy(&gSaveBlock2Ptr->frontier.ereaderTrainer, client->recvBuffer, sizeof(gSaveBlock2Ptr->frontier.ereaderTrainer));
-        ValidateEReaderTrainer();
-        break;
-    case CLI_RUN_BUFFER_SCRIPT:
-        memcpy(gDecompressionBuffer, client->recvBuffer, MG_LINK_BUFFER_SIZE);
-        client->funcId = FUNC_RUN_BUFFER;
-        client->funcState = 0;
+    case CLI_RUN_MEVENT_SCRIPT:    // PS-080 (AD-9): received code is never run
+    case CLI_RECV_EREADER_TRAINER: // PS-080 (AD-9): received data never lands in SaveBlock2 unchecked
+    case CLI_RUN_BUFFER_SCRIPT:    // PS-080 (AD-9): received code is never run
+    default:                       // PS-080: unknown instruction
+        Client_EndWithCommError(client);
         break;
     }
 
@@ -255,48 +269,17 @@ static u32 Client_Wait(struct MysteryGiftClient *client)
     return CLI_RET_ACTIVE;
 }
 
-static u32 Client_RunMysteryEventScript(struct MysteryGiftClient *client)
-{
-    switch (client->funcState)
-    {
-    case 0:
-        InitMysteryEventScriptContext(client->recvBuffer);
-        client->funcState++;
-        break;
-    case 1:
-        if (!RunMysteryEventScriptContextCommand(&client->param))
-        {
-            client->funcId = FUNC_RUN;
-            client->funcState = 0;
-        }
-        break;
-    }
-    return CLI_RET_ACTIVE;
-}
-
-static u32 Client_RunBufferScript(struct MysteryGiftClient *client)
-{
-    // exec arbitrary code
-    u32 (*func)(u32 *, struct SaveBlock2 *, struct SaveBlock1 *) = (void *)gDecompressionBuffer;
-    if (func(&client->param, gSaveBlock2Ptr, gSaveBlock1Ptr) == 1)
-    {
-        client->funcId = FUNC_RUN;
-        client->funcState = 0;
-    }
-    return CLI_RET_ACTIVE;
-}
-
 static u32 MysteryGiftClient_CallFunc(struct MysteryGiftClient *client)
 {
-    u32 (*funcs[])(struct MysteryGiftClient *) = {
+    static u32 (*const funcs[FUNC_COUNT])(struct MysteryGiftClient *) = {
         [FUNC_INIT] = Client_Init,
         [FUNC_DONE] = Client_Done,
         [FUNC_RECV] = Client_Recv,
         [FUNC_SEND] = Client_Send,
         [FUNC_RUN]  = Client_Run,
         [FUNC_WAIT] = Client_Wait,
-        [FUNC_RUN_MEVENT] = Client_RunMysteryEventScript,
-        [FUNC_RUN_BUFFER] = Client_RunBufferScript
     };
+    if (client->funcId >= FUNC_COUNT) // PS-080: cannot happen, but never index past the table
+        return CLI_RET_END;
     return funcs[client->funcId](client);
 }
