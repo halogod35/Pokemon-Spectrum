@@ -1,5 +1,7 @@
 # Pokémon Spectrum
 
+A native PC port of Pokémon Emerald with online multiplayer: everyone plays their own save, and you see each other in the world.
+
 ## Controls
 
 **Game buttons**
@@ -21,28 +23,12 @@
 | **Space** (hold) | Fast-forward, 5× speed while held |
 | **Ctrl+P** | Pause / unpause |
 | **Ctrl+R** | Soft reset (restart the game) |
-| **F3** | Network overlay: upload/download, ping, packet loss |
+| **F3** | Network overlay: upload/download, ping, packet loss, audio queue |
 | **Alt+Enter** or double-click | Borderless fullscreen on / off |
 | Ctrl+V | Paste an IP address on the Join Game screen |
 | Backspace | Delete a character on the Join Game screen |
 
 You can resize the window and the picture scales with it. In fullscreen the picture keeps its shape, with black bars at the sides. The mouse pointer hides when the mouse is still over the game for a few seconds.
-
-**Save file**
-
-The game saves to `pokemon-spectrum.sav` next to its exe file. The same save works with the 32-bit and 64-bit builds, on Windows and Linux. Saves from versions before 0.3.1 are not supported: the game refuses them with a message and leaves the file alone, so move it away and start a new game.
-
-**Mystery Gift**
-
-The four event tickets can be received in the game, the way the original Wireless Adapter events worked, with no network needed:
-
-1. Get the Pokédex, then answer the questionnaire at a Poké Mart counter with the phrase **LINK TOGETHER WITH ALL** and save. MYSTERY GIFT appears on the title menu.
-2. MYSTERY GIFT → Wonder Cards → Wireless Communication. You receive a Wonder Card and the game saves.
-3. Go upstairs in any Pokémon Center and talk to the man in green. He hands over the ticket.
-4. Come back for the next card: the Eon Ticket (Southern Island, Latias or Latios), then the Aurora Ticket (Birth Island, Deoxys), the Mystic Ticket (Navel Rock, Lugia and Ho-Oh) and the Old Sea Map (Faraway Island, Mew). One card at a time, as in the original.
-5. After the Hall of Fame, the ferry attendant at Lilycove Harbor takes you to the islands.
-
-The card texts are our own; the islands, the ferry and the man's dialogue are the game's.
 
 **Xbox-style controller, Windows only**
 
@@ -75,6 +61,46 @@ FastForward = RT
 - Controller inputs: `A B X Y LB RB LT RT Start Back LS RS`, the D-pad (`DPadUp` …) and the left stick (`StickUp` …).
 - Delete the file to get the default controls back.
 - The hotkeys (Ctrl+R, Ctrl+P, F3, Alt+Enter) can't be changed.
+
+## New features
+
+What this game does that a Gen 3 cartridge or emulator doesn't.
+
+### Multiplayer: play together on single-player saves
+
+Each player runs the whole game on their own save file, like Diablo 2. The network only shares where everyone is and what they're doing, so nothing from another player ever ends up in your save except a trade you agreed to.
+
+- **Host or join** from **MULTIPLAYER** on the title menu, after choosing your save. The host opens UDP port 27500 and the screen shows the address friends should enter. Joining is by IP address, typed or pasted with Ctrl+V. Up to 4 players. To play over the internet, the host forwards UDP port 27500 on their router, or everyone uses a LAN or VPN.
+- **See each other.** Other players walk around on your map as avatars, through doors, over ledges, during cutscenes and menus. You get "joined" and "left" notices in the field.
+- **Interact.** Walk up to a player and press A: view their trainer card or Pokémon, or ask them to trade or battle. Trades and single or double battles run over a simulated link cable, several times faster than the original. Both saves commit a trade together, and a trade interrupted by a crash or disconnect is recovered.
+- **Players list.** START → PLAYERS shows everyone's name, location and badges, and holds LEAVE GAME. Leaving keeps you playing offline on the same save.
+- **Dropouts.** A lost connection reconnects by itself for about half a minute; the others see "lost signal" and "reconnected".
+- Pause and fast-forward are switched off while you're in a trade or battle, because the other player's game runs in step with yours.
+- Everyone needs the same version to play together.
+
+### Mystery Gift
+
+The four event tickets can be received in the game, the way the original Wireless Adapter events worked. Nothing is downloaded; the distribution runs inside the game.
+
+1. Get the Pokédex, then answer the questionnaire at a Poké Mart counter with the phrase **LINK TOGETHER WITH ALL** and save. MYSTERY GIFT appears on the title menu.
+2. MYSTERY GIFT → Wonder Cards → Wireless Communication. You receive a Wonder Card and the game saves.
+3. Go upstairs in any Pokémon Center and talk to the man in green. He hands over the ticket.
+4. Come back for the next card: the Eon Ticket (Southern Island, Latias or Latios), then the Aurora Ticket (Birth Island, Deoxys), the Mystic Ticket (Navel Rock, Lugia and Ho-Oh) and the Old Sea Map (Faraway Island, Mew). One card at a time, as in the original.
+5. After the Hall of Fame, the ferry attendant at Lilycove Harbor takes you to the islands.
+
+The card texts are our own; the islands, the ferry and the man's dialogue are the game's.
+
+### Real-time clock, berries and day and night
+
+The game follows your PC's clock, the way the battery clock in a cartridge did. The wall clock you set in your bedroom at the start is the game's time, and it starts at the PC's time, so just confirming it keeps the game in step with the real world.
+
+- **Berries grow while the game is closed.** Plant them, come back tomorrow.
+- **Daily events** happen once per real day: the Lilycove lottery, the Berry Master's wife, the shoal cave tides and the rest.
+- **Day and night.** Outdoors the world is tinted by the time of day: a soft morning from 4:00, normal daylight from 10:00, an orange evening from 17:00 and a dark blue night from 20:00, blending smoothly between them. Indoors, caves, battles and menus are untouched. **DAY/NIGHT ON/OFF** in the Options menu turns it off.
+
+### Save file
+
+The game saves to `pokemon-spectrum.sav` next to its exe file. The same save works with the 32-bit and 64-bit builds, on Windows and Linux. Saving is crash-safe: the new save replaces the old one only once it's completely written.
 
 ## Ideas under consideration
 
