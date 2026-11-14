@@ -104,9 +104,19 @@ struct ObjectEventTemplate
              //u16 padding2:8;
     /*0x0C*/ u16 trainerType;
     /*0x0E*/ u16 trainerRange_berryTreeId;
-    /*0x10*/ const u8 *script;
-    /*0x14*/ u16 flagId;
-    /*0x16*/ //u8 padding3[2];
+    // BUG-015 (PS-079). This struct is saved (SaveBlock1.objectEventTemplates), and the script
+    // pointer made it 0x18 bytes on 32-bit builds and 0x20 on 64-bit, so a save was tied to its
+    // bitness. The pointer now sits in an 8-byte slot and the tail padding is explicit: 0x20
+    // bytes on every build (save.c asserts it). The saved pointer value itself is never used:
+    // LoadSaveblockObjEventScripts() refreshes it from the map header on continue. The
+    // object_event macro in asm/macros/map.inc mirrors this layout.
+    /*0x10*/ union {
+                 const u8 *script;
+                 u64 scriptSlot;
+             };
+    /*0x18*/ u16 flagId;
+    /*0x1A*/ u16 padding3;
+    /*0x1C*/ u32 padding4;
 };
 
 struct WarpEvent

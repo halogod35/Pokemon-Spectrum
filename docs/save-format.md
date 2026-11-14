@@ -2,8 +2,13 @@
 
 Pokémon Spectrum keeps Emerald's save system (`src/save.c`: 4 KB flash sectors with a 128-byte
 footer, two alternating save slots, per-sector checksums) and mirrors the whole flash to one file,
-`pokemon-spectrum.sav` (`--save <path>` to choose another). This page documents **save format 2**
-(PS-070) and what changed from the vanilla layout (format 1, written by v0.2.0 and earlier).
+`pokemon-spectrum.sav` (`--save <path>` to choose another). This page documents **save format 3**
+(PS-079; format 2 was PS-070, written by v0.3.0) and what changed from the vanilla layout
+(format 1, written by v0.2.0 and earlier).
+
+Format 3 differs from format 2 only in `SaveBlock1`: the object event template is 0x20 bytes on
+every build and the block has 4 bytes of tail padding, so the **same `.sav` loads on the 32- and
+64-bit builds, Linux and Windows** (BUG-015). The flash layout and sector map are unchanged.
 
 **Saves from earlier versions are not supported: start a new game.** There is no migration until
 1.0.0 (PS-069 policy): the loader refuses any file that is not exactly one flash image of the
@@ -34,7 +39,7 @@ from where id 0 sits). Save counter N goes to slot N % 2.
 | Sector id (in slot) | Data | Size used |
 |---|---|---|
 | 0 | `struct SaveBlock2` | 0xF2C of 3968 bytes |
-| 1–6 | `struct SaveBlock1` (0x505C bytes on GBA, somewhat more on PC, see below; 6 chunks of 3968) | about 20.6 KB of 23808 bytes (about 3 KB spare) |
+| 1–6 | `struct SaveBlock1` (0x5260 bytes on every PC build, see below; 0x505C on the GBA; 6 chunks of 3968) | 21088 of 23808 bytes (2720 spare) |
 | 7–15 | `struct PokemonStorage` (0x83D0 bytes, 9 chunks) | 33744 of 35712 bytes |
 
 Format 1 had SaveBlock1 in 4 sectors (ids 1–4, 0x3D88 bytes), the boxes in ids 5–13, 14 sectors per
@@ -101,14 +106,25 @@ above 0x8015 instead of indexing out of bounds.
 ## SaveBlock1 layout
 
 Compared with format 1, only `flags[]` (0x12C → 0x600 bytes) and `vars[]` (0x200 → 0x1000 bytes)
-grew, in place. The offset comments in `include/global.h` are GBA offsets; the **PC layout
-differs** (the object event templates hold a pointer), and 32- and 64-bit builds have different
-`SaveBlock1` sizes (a save is tied to its bitness; that is pre-existing, BUG-015).
+grew, in place (format 2). The offset comments in `include/global.h` are GBA offsets; on PC
+everything from `flags[]` on sits 0x200 further, because `struct ObjectEventTemplate` is 0x20
+bytes there instead of 0x18.
+
+**Format 3 (PS-079, BUG-015):** that template holds a script pointer, which was 4 bytes on 32-bit
+builds and 8 on 64-bit, so the two builds had different layouts and a `.sav` could not move
+between them. The pointer now lives in an 8-byte slot with explicit tail padding (0x20 bytes
+everywhere; `asm/macros/map.inc` mirrors it for the map data), and `SaveBlock1` ends with 4 pad
+bytes so its size is a multiple of 8 whatever the build's alignment. `src/save.c` asserts at
+compile time: template 0x20, templates at 0xC70, `SaveBlock1` 0x5260, `SaveBlock2` 0xF2C,
+`PokemonStorage` 0x83D0. CI builds all four targets, so a layout that differs between them does
+not build. The saved pointer value is never used: `LoadSaveblockObjEventScripts()` refreshes it
+from the map header on continue.
 
 Growing SaveBlock1 or SaveBlock2 **at the end** within their sectors needs no new format: the
 loader zero-fills sectors before writing and the checksum is a word sum, so existing files keep
 validating and the new fields read as zero. Any other change (new sectors, fields in the middle,
 a different flash size) needs a new `SAVE_FORMAT_VERSION`; existing saves are then refused.
+Keep the asserts in `src/save.c` in step with any such change.
 
 ## Tests
 
