@@ -20,6 +20,7 @@
 #include "field_player_avatar.h"
 #include "gpu_regs.h"
 #include "main.h"
+#include "map_name_popup.h" // MP: PS-078
 #include "menu.h"
 #include "overworld.h"
 #include "palette.h"
@@ -278,11 +279,13 @@ void MpUi_Update(void)
 // Started only in free field control (from MpUi_TryShowFieldNotice, i.e. DoCB1_Overworld with
 // unlocked controls), never while a script runs or a message box or the map name pop-up is up.
 // The player keeps walking. It disappears at once if field controls get locked (script, start
-// menu, battle, warp), if the map name pop-up starts (it scrolls BG0), or if the field is left.
+// menu, battle, warp), if the map name pop-up starts, or if the field is left.
 //
 // Field BG0 tiles: the window uses 1..0x28. The map name pop-up is at 0x107, YES/NO at 0x125,
 // the start menu at 0x139 and the dialog box at 0x194, and none of them can be up at the same
-// time (they all lock controls or scroll BG0, which hides the toast first).
+// time. The pop-up (PS-078, BUG-018) is checked through IsMapNamePopUpActive(): it only scrolls
+// BG0 while sliding, so a BG0VOFS test alone let the toast draw over the pop-up during its hold
+// at the top of the screen (both windows cover the same top-left tiles of the tilemap).
 
 static const struct WindowTemplate sMpToastWindowTemplate =
 {
@@ -317,6 +320,7 @@ static void Task_MpToast(u8 taskId)
     if (tTimer >= MP_TOAST_FRAMES
      || ArePlayerFieldControlsLocked()
      || ScriptContext_IsEnabled()
+     || IsMapNamePopUpActive() // PS-078: the pop-up is about to be drawn over the same tiles
      || GetGpuReg(REG_OFFSET_BG0VOFS) != 0)
     {
         ClearStdWindowAndFrameToTransparent(tWindowId, TRUE);
@@ -338,6 +342,10 @@ static void MpUi_TryShowToast(void)
     if (sMpToastCount == 0 || FuncIsActiveTask(Task_MpToast))
         return;
     if (ScriptContext_IsEnabled() || !IsFieldMessageBoxHidden() || GetGpuReg(REG_OFFSET_BG0VOFS) != 0)
+        return;
+    // PS-078 (BUG-018): wait out the map name pop-up in every state, including its hold at the
+    // top of the screen where BG0 is not scrolled. The toast stays queued and shows afterwards.
+    if (IsMapNamePopUpActive())
         return;
 
     windowId = AddWindow(&sMpToastWindowTemplate);
