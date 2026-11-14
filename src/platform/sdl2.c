@@ -271,6 +271,9 @@ int main(int argc, char **argv)
     if (gPlatformArgs.saveSelftest) // MP: --save-selftest checks the crash-safe save I/O (PS-014)
         return RunSaveSelftest();
 
+    if (gPlatformArgs.mgSelftest) // PS-080: --mg-selftest runs the Mystery Gift distributor headless, no save file
+        return MysteryGiftSelftest_Run();
+
     // MP: --name is checked before anything opens (A-Z a-z 0-9, 1-7 chars)
     if (gPlatformArgs.hasName && !MP_SetNameOverride(gPlatformArgs.name))
     {
@@ -501,6 +504,7 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --mp-fake-build <id>    Test only: hash this build id instead of the real one (BUILD reject)\n"
         "  --debug-slow-save    Test only: pause %d ms per 4 KB sector while writing the save (kill test)\n"
         "  --save-selftest      Check the crash-safe save file I/O on <save>" SAVE_SELFTEST_SUFFIX ", print OK/FAILED and exit\n"
+        "  --mg-selftest        Run the Mystery Gift distributor self-test (no window, no save), print OK/FAILED and exit\n"
         "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
         "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
         "  --audio-stats        Log audio queue level, underruns, clipping and loop stalls every second\n"
@@ -744,6 +748,10 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--save-selftest") == 0) // MP: PS-014
         {
             gPlatformArgs.saveSelftest = TRUE;
+        }
+        else if (strcmp(arg, "--mg-selftest") == 0) // PS-080
+        {
+            gPlatformArgs.mgSelftest = TRUE;
         }
         else if (strcmp(arg, "--mp-fake-protocol") == 0) // MP: test the VERSION reject
         {

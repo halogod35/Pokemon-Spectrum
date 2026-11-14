@@ -67,6 +67,15 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: timeout 60 ./pokemon-spectrum${{ matrix.bits }} --save-selftest
 
+      # PS-080: the built-in Mystery Gift distributor, headless: the four ticket cards through the
+      # in-process loopback link (card and RAM script saved and valid, toss / already-have-it /
+      # no-more-gifts paths), gift script sizes, and refused blocks (bad size, ident, CRC).
+      - name: Mystery Gift self-test
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: timeout 60 ./pokemon-spectrum${{ matrix.bits }} --mg-selftest
+
       # BUG-002: boot smoke test. Runs the real game (no flags, fresh save) for 40 s under gdb with
       # dummy SDL drivers: boot, copyright screen, intro, title. A crash prints a backtrace and
       # fails the job. A clean timeout (the game is still running) passes.
