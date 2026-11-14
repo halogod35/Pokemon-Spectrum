@@ -1735,7 +1735,11 @@ static void ErrorMsg_CheckConnections(void)
     LoadBgTiles(0, sCommErrorBg_Gfx, 0x20, 0);
     FillWindowPixelBuffer(WIN_LINK_ERROR_MID, PIXEL_FILL(0));
     FillWindowPixelBuffer(WIN_LINK_ERROR_BOTTOM, PIXEL_FILL(0));
-    AddTextPrinterParameterized3(WIN_LINK_ERROR_MID, FONT_SHORT_COPY_1, 2, 0, sTextColors, 0, gText_CommErrorCheckConnections);
+    // MP: PS-077 (user ruling 2026-11-14). On PC the wired screen reads "Communication error…",
+    // a blank line, then "A Button: Continue from last save" once the screen is ready (printed
+    // into this same window at state 130). The GBA's "check all connections, turn the power
+    // OFF and ON" advice is gone: there is no cable and the game recovers itself.
+    AddTextPrinterParameterized3(WIN_LINK_ERROR_MID, FONT_SHORT_COPY_1, 2, 0, sTextColors, 0, gText_CommErrorEllipsis);
     PutWindowTilemap(WIN_LINK_ERROR_MID);
     PutWindowTilemap(WIN_LINK_ERROR_BOTTOM);
     CopyWindowToVram(WIN_LINK_ERROR_MID, COPYWIN_NONE); // Does nothing
@@ -1794,8 +1798,9 @@ static void CB2_PrintErrorMessage(void)
                 AddTextPrinterParameterized3(WIN_LINK_ERROR_TOP, FONT_SHORT_COPY_1, 2, 20, sTextColors, 0, gText_ABtnTitleScreen);
             else if (gWirelessCommType == 1)
                 AddTextPrinterParameterized3(WIN_LINK_ERROR_TOP, FONT_SHORT_COPY_1, 2, 20, sTextColors, 0, gText_ABtnRegistrationCounter);
-            else // MP: PS-048. The wired screen had no way out; on PC A reloads the last save.
-                AddTextPrinterParameterized3(WIN_LINK_ERROR_TOP, FONT_SHORT_COPY_1, 2, 20, sTextColors, 0, sText_MpABtnReloadSave);
+            else // MP: PS-048/PS-077. The wired screen had no way out; on PC A reloads the last save.
+                 // Two text rows (14 px each) below "Communication error…" in the middle window.
+                AddTextPrinterParameterized3(WIN_LINK_ERROR_MID, FONT_SHORT_COPY_1, 2, 28, sTextColors, 0, sText_MpABtnReloadSave);
             break;
     }
     if (gMain.state == 160)
