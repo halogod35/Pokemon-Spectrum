@@ -55,7 +55,10 @@ typedef u16 (*SpecialFunc)(void);
 typedef void (*NativeFunc)(void);
 
 EWRAM_DATA const u8 *gRamScriptRetAddr = NULL;
-static EWRAM_DATA u32 sAddressOffset = 0; // For relative addressing in vgoto etc., used by saved scripts (e.g. Mystery Event)
+// PS-080: uintptr_t, not u32. It is the difference of two full-width addresses (the script's
+// ROM/rodata copy minus its RAM copy); truncating it to 32 bits sends every vgoto/vmessage of a
+// saved Wonder Card script 4 GiB away on the 64-bit build.
+static EWRAM_DATA uintptr_t sAddressOffset = 0; // For relative addressing in vgoto etc., used by saved scripts (e.g. Mystery Event)
 static EWRAM_DATA u16 sPauseCounter = 0;
 static EWRAM_DATA u16 sMovingNpcId = 0;
 static EWRAM_DATA u16 sMovingNpcMapGroup = 0;
