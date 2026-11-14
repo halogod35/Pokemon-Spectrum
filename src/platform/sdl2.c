@@ -505,6 +505,7 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --debug-slow-save    Test only: pause %d ms per 4 KB sector while writing the save (kill test)\n"
         "  --save-selftest      Check the crash-safe save file I/O on <save>" SAVE_SELFTEST_SUFFIX ", print OK/FAILED and exit\n"
         "  --mg-selftest        Run the Mystery Gift distributor self-test (no window, no save), print OK/FAILED and exit\n"
+        "  --debug-mystery-gift Test only: on the title menu, set the Pokedex, Mystery Gift unlock and game clear flags\n"
         "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
         "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
         "  --audio-stats        Log audio queue level, underruns, clipping and loop stalls every second\n"
@@ -752,6 +753,10 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--mg-selftest") == 0) // PS-080
         {
             gPlatformArgs.mgSelftest = TRUE;
+        }
+        else if (strcmp(arg, "--debug-mystery-gift") == 0) // TEST ONLY (PS-080)
+        {
+            gPlatformArgs.debugMysteryGift = TRUE;
         }
         else if (strcmp(arg, "--mp-fake-protocol") == 0) // MP: test the VERSION reject
         {

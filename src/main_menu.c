@@ -7,6 +7,8 @@
 #include "data.h"
 #include "decompress.h"
 #include "event_data.h"
+#include "platform.h" // TEST ONLY (PS-080): --debug-mystery-gift
+#include "constants/flags.h"
 #include "field_effect.h"
 #include "gpu_regs.h"
 #include "graphics.h"
@@ -729,6 +731,12 @@ static void Task_MainMenuCheckSaveFile(u8 taskId)
         {
             case SAVE_STATUS_OK:
                 tMenuType = HAS_SAVED_GAME;
+                if (gPlatformArgs.debugMysteryGift) // TEST ONLY (PS-080): Pokedex, Mystery Gift unlock, game clear
+                {
+                    FlagSet(FLAG_SYS_POKEDEX_GET);
+                    FlagSet(FLAG_SYS_MYSTERY_GIFT_ENABLE);
+                    FlagSet(FLAG_SYS_GAME_CLEAR);
+                }
                 if (IsMysteryGiftEnabled())
                     tMenuType++;
                 gTasks[taskId].func = Task_MainMenuCheckBattery;

@@ -75,6 +75,7 @@ struct PlatformArgs
     bool8 debugSlowSave;                         // --debug-slow-save (MP: PS-014, kill-during-save test)
     bool8 saveSelftest;                          // --save-selftest (MP: PS-014)
     bool8 mgSelftest;                            // --mg-selftest (PS-080: Mystery Gift distributor, headless)
+    bool8 debugMysteryGift;                      // --debug-mystery-gift (TEST ONLY, PS-080 play-test)
     bool8 hasFakeProtocol;                       // --mp-fake-protocol given (MP: PS-012)
     u16 fakeProtocol;                            // --mp-fake-protocol <0..65535>
     char fakeBuild[PLATFORM_ARG_FAKE_BUILD_SIZE]; // --mp-fake-build <1..15 printable ASCII>, empty if not given
