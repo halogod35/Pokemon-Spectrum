@@ -29,6 +29,7 @@ its own save file and its own multiplayer role, without going through menus.
 | `--mp-fake-build <id>` | **Test only.** Hash `<id>` (1–15 printable ASCII) instead of the real build id, so a normal host answers `REJECT(BUILD)`. | off |
 | `--debug-slow-save` | **Test only.** Pause 50 ms after each 4 KB sector while the save file is written (1.8 s per file write since PS-070's 36-sector save; one in-game save writes the file twice, so about 3.6 s), so the process can be killed mid-save. Added by PS-014. | off |
 | `--save-selftest` | Check the crash-safe save I/O on `<save>.selftest` (never the real save) without a window, print `[save] selftest OK` / `FAILED`, and exit 0 / 1. Added by PS-014. | off |
+| `--mg-selftest` | Run the built-in Mystery Gift distributor headless (no window, no save file): the four ticket Wonder Cards through the in-process loopback link, the toss / already-have-it / no-more-gifts paths, the gift script sizes and refused blocks (bad size, ident, CRC). Prints `[mg] selftest OK` / `FAILED` and exits 0 / 1. Added by PS-080. | off |
 | `--title <text>` | Window title (max 127 bytes). | `Pokémon Spectrum`, `Pokémon Spectrum [HOST]` or `Pokémon Spectrum [CLIENT]` |
 | `--scale <n>` | Initial window scale, 1–10. | 1 |
 | `--audio-stats` | PS-058: log the audio numbers once per second (queue level, underruns, clipped samples, sample jumps, main loop stalls) to the console and to `pokemon-spectrum_audio.txt` in the working directory, plus a summary at exit. See "Audio (PS-058)" below. | off |
