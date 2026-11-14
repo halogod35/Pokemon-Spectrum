@@ -38,12 +38,14 @@ extern const u8 MysteryGiftScript_OldSeaMap_End[];
 // Texts are ours (the originals are not in the decomp): WONDER_CARD_TEXT_LENGTH (40) bytes per
 // line including the terminator, and about 32 characters fit the card's 200-pixel window.
 // SEND_TYPE_DISALLOWED: the cards are not passed on to a friend (no wireless on PC).
-#define TICKET_CARD(flag, species, id, bg) \
-    .flagId = (flag), .iconSpecies = (species), .idNumber = (id), \
+// idNumber stays 0: the view prints it after the subtitle when it is not ("Southern Island 1"),
+// and the card is identified by flagId anyway (user request, no number).
+#define TICKET_CARD(flag, species, bg) \
+    .flagId = (flag), .iconSpecies = (species), .idNumber = 0, \
     .type = CARD_TYPE_GIFT, .bgType = (bg), .sendType = SEND_TYPE_DISALLOWED, .maxStamps = 0
 
 static const struct WonderCard sCard_EonTicket = {
-    TICKET_CARD(WONDER_CARD_FLAG_OFFSET + 3, SPECIES_LATIOS, 1, 2),
+    TICKET_CARD(WONDER_CARD_FLAG_OFFSET + 3, SPECIES_LATIOS, 2),
     .titleText = _("EON TICKET"),
     .subtitleText = _("Southern Island"),
     .bodyText = {
@@ -57,7 +59,7 @@ static const struct WonderCard sCard_EonTicket = {
 };
 
 static const struct WonderCard sCard_AuroraTicket = {
-    TICKET_CARD(WONDER_CARD_FLAG_OFFSET + 0, SPECIES_DEOXYS, 2, 1),
+    TICKET_CARD(WONDER_CARD_FLAG_OFFSET + 0, SPECIES_DEOXYS, 1),
     .titleText = _("AURORA TICKET"),
     .subtitleText = _("Birth Island"),
     .bodyText = {
@@ -71,7 +73,7 @@ static const struct WonderCard sCard_AuroraTicket = {
 };
 
 static const struct WonderCard sCard_MysticTicket = {
-    TICKET_CARD(WONDER_CARD_FLAG_OFFSET + 1, SPECIES_LUGIA, 3, 5),
+    TICKET_CARD(WONDER_CARD_FLAG_OFFSET + 1, SPECIES_LUGIA, 5),
     .titleText = _("MYSTIC TICKET"),
     .subtitleText = _("Navel Rock"),
     .bodyText = {
@@ -85,7 +87,7 @@ static const struct WonderCard sCard_MysticTicket = {
 };
 
 static const struct WonderCard sCard_OldSeaMap = {
-    TICKET_CARD(WONDER_CARD_FLAG_OFFSET + 2, SPECIES_MEW, 4, 3),
+    TICKET_CARD(WONDER_CARD_FLAG_OFFSET + 2, SPECIES_MEW, 3),
     .titleText = _("OLD SEA MAP"),
     .subtitleText = _("Faraway Island"),
     .bodyText = {
