@@ -39,7 +39,7 @@ from where id 0 sits). Save counter N goes to slot N % 2.
 | Sector id (in slot) | Data | Size used |
 |---|---|---|
 | 0 | `struct SaveBlock2` | 0xF2C of 3968 bytes |
-| 1–6 | `struct SaveBlock1` (0x5260 bytes on every PC build, see below; 0x505C on the GBA; 6 chunks of 3968) | 21088 of 23808 bytes (2720 spare) |
+| 1–6 | `struct SaveBlock1` (0x5270 bytes on every PC build, see below; 0x505C on the GBA; 6 chunks of 3968) | 21104 of 23808 bytes (2704 spare) |
 | 7–15 | `struct PokemonStorage` (0x83D0 bytes, 9 chunks) | 33744 of 35712 bytes |
 
 Format 1 had SaveBlock1 in 4 sectors (ids 1–4, 0x3D88 bytes), the boxes in ids 5–13, 14 sectors per
@@ -110,15 +110,22 @@ grew, in place (format 2). The offset comments in `include/global.h` are GBA off
 everything from `flags[]` on sits 0x200 further, because `struct ObjectEventTemplate` is 0x20
 bytes there instead of 0x18.
 
-**Format 3 (PS-079, BUG-015):** that template holds a script pointer, which was 4 bytes on 32-bit
-builds and 8 on 64-bit, so the two builds had different layouts and a `.sav` could not move
-between them. The pointer now lives in an 8-byte slot with explicit tail padding (0x20 bytes
-everywhere; `asm/macros/map.inc` mirrors it for the map data), and `SaveBlock1` ends with 4 pad
-bytes so its size is a multiple of 8 whatever the build's alignment. `src/save.c` asserts at
-compile time: template 0x20, templates at 0xC70, `SaveBlock1` 0x5260, `SaveBlock2` 0xF2C,
-`PokemonStorage` 0x83D0. CI builds all four targets, so a layout that differs between them does
-not build. The saved pointer value is never used: `LoadSaveblockObjEventScripts()` refreshes it
-from the map header on continue.
+**Format 3 (PS-079, BUG-015):** three things made the 32- and 64-bit layouts differ, so a `.sav`
+could not move between them:
+- That template holds a script pointer (4 bytes on 32-bit, 8 on 64-bit). It now lives in an
+  8-byte slot with explicit tail padding: 0x20 bytes everywhere (`asm/macros/map.inc` mirrors it
+  for the map data). The saved value is never used: `LoadSaveblockObjEventScripts()` refreshes it
+  from the map header on continue.
+- `SECRET_BASES_COUNT` was 10 on 64-bit builds (an upstream "quick hack for getting saves to
+  work" from when SaveBlock1 had 4 sectors). It is 20 on every build again.
+- `SaveBlock1.enigmaBerry` (`struct Berry2`, cast to `struct Berry`) holds two description
+  pointers. Both structs now have 8-byte slots at 0x10 and 0x18 with explicit padding (0x28
+  bytes), and `enigmaBerry` sits at an 8-aligned offset (0x46D0) with 4 pad bytes before it.
+
+`SaveBlock1` ends with 4 pad bytes so its size is a multiple of 8 whatever the build's alignment.
+`src/save.c` asserts at compile time: template 0x20 at 0xC70, berry structs 0x28 with the slots
+at 0x10, `EnigmaBerry` 0x40 at 0x46D0, `SaveBlock1` 0x5270, `SaveBlock2` 0xF2C, `PokemonStorage`
+0x83D0. CI builds all four targets, so a layout that differs between them does not build.
 
 Growing SaveBlock1 or SaveBlock2 **at the end** within their sectors needs no new format: the
 loader zero-fills sectors before writing and the checksum is a word sum, so existing files keep
