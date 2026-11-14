@@ -28,6 +28,7 @@
 #include "mystery_gift_client.h"
 #include "mystery_gift_server.h"
 #include "mystery_gift_distributor.h"
+#include "constants/characters.h"
 #include "constants/flags.h"
 #include "constants/items.h"
 #include "constants/mystery_gift.h"
