@@ -104,5 +104,7 @@ void MysterGiftServer_Destroy(void);
 // PS-080: distributor scripts (mystery_gift_scripts.c)
 extern const struct MysteryGiftServerCmd gMysteryGiftServerScript_NoMoreGifts[];
 extern const struct MysteryGiftServerCmd gMysteryGiftServerScript_NoNews[];
+extern struct MysteryGiftServerCmd gMysteryGiftServerScript_DistributeCard[];
+void MysteryGiftScripts_SetDistributedGift(const struct WonderCard *card, const u8 *script, u32 scriptSize);
 
 #endif //GUARD_MYSTERY_GIFT_SERVER_H
