@@ -325,6 +325,15 @@ void HideMapNamePopUpWindow(void)
     }
 }
 
+// MP: PS-078. TRUE from ShowMapNamePopup() until the pop-up has slid out and been erased, in
+// every state of its task (including the hold at the top of the screen, when BG0 is not
+// scrolled). The multiplayer toast (src/mp/mp_ui.c) shares the top-left of BG0 with it and
+// waits for this to go FALSE.
+bool8 IsMapNamePopUpActive(void)
+{
+    return FuncIsActiveTask(Task_MapNamePopUpWindow);
+}
+
 static void ShowMapNamePopUpWindow(void)
 {
     u8 mapDisplayHeader[24];

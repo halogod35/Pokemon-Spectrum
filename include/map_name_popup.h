@@ -17,4 +17,5 @@ enum MapPopUp_Themes // PS-071: exported so the region table (src/region.c) can 
 // Exported ROM declarations
 void HideMapNamePopUpWindow(void);
 void ShowMapNamePopup(void);
+bool8 IsMapNamePopUpActive(void); // MP: PS-078
 #endif //GUARD_MAP_NAME_POPUP_H
