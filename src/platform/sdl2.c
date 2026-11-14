@@ -176,6 +176,7 @@ static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wPar
     case WM_ENTERMENULOOP:
         sInModalLoop = true;
         SetTimer(hWnd, DRAG_AUDIO_TIMER_ID, DRAG_AUDIO_TIMER_MS, NULL);
+        Platform_AudioSetDeepQueue(TRUE);
         // Fill the queue now: the main loop last pumped before its vsync wait, so about a third
         // of the queue is already gone, and the first timer tick can be 30 ms away while the sound
         // card takes 24 ms at a time. That was one underrun at the start of every drag.
@@ -185,6 +186,7 @@ static LRESULT CALLBACK DragAudioWindowProc(HWND hWnd, UINT message, WPARAM wPar
     case WM_EXITMENULOOP:
         sInModalLoop = false;
         KillTimer(hWnd, DRAG_AUDIO_TIMER_ID);
+        Platform_AudioSetDeepQueue(FALSE); // what is queued still plays out over the loop's restart
         break;
     case WM_TIMER:
         if (wParam == DRAG_AUDIO_TIMER_ID)

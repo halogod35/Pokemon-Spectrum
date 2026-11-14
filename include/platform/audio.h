@@ -10,6 +10,9 @@ void Platform_AudioOpen(void);
 // Once per main loop iteration: decides how many GBA audio frames to produce now, and
 // collects the --audio-stats numbers. `paused` is the Ctrl+P pause.
 void Platform_AudioPump(bool8 paused);
+// PS-076: while on, the pump fills a deeper queue (about 200 ms) because the main loop is
+// blocked by the window drag/resize loop on Windows and pumps from a timer there instead.
+void Platform_AudioSetDeepQueue(bool8 on);
 // Before SDL_Quit: closes the device, finishes the --audio-dump file, logs the summary.
 void Platform_AudioClose(void);
 
