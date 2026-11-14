@@ -692,13 +692,12 @@ void CB2_StartWallClock(void)
     LZ77UnCompVram(gWallClockStart_Tilemap, (u16 *)BG_SCREEN_ADDR(7));
 
     taskId = CreateTask(Task_SetClock_WaitFadeIn, 0);
-    gTasks[taskId].tHours = 10;
-    gTasks[taskId].tMinutes = 0;
+    // PS-073: the hands start at the PC's current time instead of 10:00. The clock has not been
+    // set yet, so the game clock equals the PC clock here; confirming keeps it that way, and
+    // day/night (PS-072) and berries follow real time unless the player chooses another time.
+    InitClockWithRtc(taskId);
     gTasks[taskId].tMoveDir = 0;
-    gTasks[taskId].tPeriod = 0;
     gTasks[taskId].tMoveSpeed = 0;
-    gTasks[taskId].tMinuteHandAngle = 0;
-    gTasks[taskId].tHourHandAngle = 300;
 
     spriteId = CreateSprite(&sSpriteTemplate_MinuteHand, 120, 80, 1);
     gSprites[spriteId].sTaskId = taskId;
