@@ -28,6 +28,10 @@
 
 You can resize the window and the picture scales with it. In fullscreen the picture keeps its shape, with black bars at the sides. The mouse pointer hides when the mouse is still over the game for a few seconds.
 
+**Save file**
+
+The game saves to `pokemon-spectrum.sav` next to its exe file. The same save works with the 32-bit and 64-bit builds, on Windows and Linux. Saves from versions before 0.3.1 are not supported: the game refuses them with a message and leaves the file alone, so move it away and start a new game.
+
 **Xbox-style controller, Windows only**
 
 | Controller | GBA button |
@@ -87,7 +91,6 @@ On PC, Mystery Gift always says "The Wireless Adapter is not connected." The fou
 - **Faster battles:** the faster link cable is enough for now. Two bigger steps if battles ever feel slow:
   - send battle commands directly, without the simulated cable;
   - run the whole battle on the host, with players only sending their choices (like Pokémon Showdown).
-- **Avatar blink:** other players' avatars disappear for about a second when a trade or battle starts.
 - **Lost players:** fade out the avatar of a player who lost their connection. Show a "Reconnecting…" marker that stays on screen, even in menus.
 - **Hosting options:** choose the port, and pick which network adapter to host on.
 - **More players:** only send each player the positions of players near them, if the player limit ever grows.
@@ -97,8 +100,8 @@ On PC, Mystery Gift always says "The Wireless Adapter is not connected." The fou
 - **Soft reset without closing the window:** reset the game in place instead of restarting the program.
 - **Sound:**
   - a limiter if loud battles with Pokémon cries ever distort;
-  - a filter if low "thumps" are heard at the end of notes;
-  - no sound gap while dragging the window (needs the game on its own thread).
+  - a filter if low "thumps" are heard at the end of notes.
+- **Console window:** clicking inside the game's console window freezes the game while text is selected there (a Windows console quirk). Turn that selection mode off at startup, or log to a file instead.
 - **Controllers on older or clean Windows:** start even when `XINPUT1_3.dll` is missing (Windows XP, some fresh installs), with controllers simply turned off.
 
 ### Developer housekeeping
