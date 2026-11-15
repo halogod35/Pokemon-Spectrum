@@ -290,7 +290,7 @@ static void PrintLeftColumnStats(void);
 static void BufferRightColumnStats(void);
 static void PrintRightColumnStats(void);
 static void PrintExpPointsNextLevel(void);
-static void PrintStatsBoxLabels(u8, u8); // PS-084
+static void PrintStatsBoxLabels(u8, u8, u8, u8, u8, u8); // PS-084
 static void PrintHiddenStatsPageText(void); // PS-084
 static void Task_PrintHiddenStatsPage(u8); // PS-084
 static void PrintHiddenStatsColumn(u8, u8, u8, u8, u8, u8); // PS-084
@@ -622,37 +622,37 @@ static const struct WindowTemplate sSummaryTemplate[] =
         .bg = 0,
         .tilemapLeft = 10,
         .tilemapTop = 4,
-        .width = 6,
+        .width = 7,
         .height = 6,
         .paletteNum = 6,
         .baseBlock = 702,
     },
     [PSS_LABEL_WINDOW_HIDDEN_STATS_EV_RIGHT] = {
         .bg = 0,
-        .tilemapLeft = 22,
+        .tilemapLeft = 20,
         .tilemapTop = 4,
-        .width = 5,
+        .width = 7,
         .height = 6,
         .paletteNum = 6,
-        .baseBlock = 738,
+        .baseBlock = 744,
     },
     [PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT] = {
         .bg = 0,
         .tilemapLeft = 10,
-        .tilemapTop = 11,
-        .width = 6,
+        .tilemapTop = 13,
+        .width = 7,
         .height = 6,
         .paletteNum = 6,
-        .baseBlock = 768,
+        .baseBlock = 786,
     },
     [PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT] = {
         .bg = 0,
-        .tilemapLeft = 22,
-        .tilemapTop = 11,
-        .width = 5,
+        .tilemapLeft = 20,
+        .tilemapTop = 13,
+        .width = 7,
         .height = 6,
         .paletteNum = 6,
-        .baseBlock = 804,
+        .baseBlock = 828,
     },
     [PSS_LABEL_WINDOW_END] = DUMMY_WIN_TEMPLATE
 };
@@ -773,14 +773,15 @@ static const struct WindowTemplate sPageMovesTemplate[] = // This is used for bo
         .baseBlock = 599,
     },
 };
-// PS-084: value windows of the Hidden Stats page, placed like the SKILLS stats box values (rows 4 and 11)
+// PS-084: value windows of the Hidden Stats page: both columns of each box have the same shape (7 label
+// tiles, then 3 value tiles); EV box at row 4, IV box at row 13
 static const struct WindowTemplate sPageHiddenStatsTemplate[] =
 {
     [PSS_DATA_WINDOW_HIDDEN_STATS_EV_LEFT] = {
         .bg = 0,
-        .tilemapLeft = 16,
+        .tilemapLeft = 17,
         .tilemapTop = 4,
-        .width = 6,
+        .width = 3,
         .height = 6,
         .paletteNum = 6,
         .baseBlock = 449,
@@ -792,25 +793,25 @@ static const struct WindowTemplate sPageHiddenStatsTemplate[] =
         .width = 3,
         .height = 6,
         .paletteNum = 6,
-        .baseBlock = 485,
+        .baseBlock = 467,
     },
     [PSS_DATA_WINDOW_HIDDEN_STATS_IV_LEFT] = {
         .bg = 0,
-        .tilemapLeft = 16,
-        .tilemapTop = 11,
-        .width = 6,
+        .tilemapLeft = 17,
+        .tilemapTop = 13,
+        .width = 3,
         .height = 6,
         .paletteNum = 6,
-        .baseBlock = 503,
+        .baseBlock = 485,
     },
     [PSS_DATA_WINDOW_HIDDEN_STATS_IV_RIGHT] = {
         .bg = 0,
         .tilemapLeft = 27,
-        .tilemapTop = 11,
+        .tilemapTop = 13,
         .width = 3,
         .height = 6,
         .paletteNum = 6,
-        .baseBlock = 539,
+        .baseBlock = 503,
     },
 };
 static const u8 sTextColors[][3] =
@@ -2959,10 +2960,11 @@ static void PrintPageNamesAndStats(void)
 
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_INFO_RENTAL, gText_RentalPkmn, 0, 1, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_INFO_TYPE, gText_TypeSlash, 0, 1, 0, 0);
-    // PS-084: the stats box labels are shared with the two boxes of the hidden stats page
-    PrintStatsBoxLabels(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_LEFT, PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_RIGHT);
-    PrintStatsBoxLabels(PSS_LABEL_WINDOW_HIDDEN_STATS_EV_LEFT, PSS_LABEL_WINDOW_HIDDEN_STATS_EV_RIGHT);
-    PrintStatsBoxLabels(PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT, PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT);
+    // PS-084: the stats box labels are shared with the two boxes of the hidden stats page. There the
+    // left green label panel starts 4 px into its window and is 46 px wide, the right one 50 px from x=0.
+    PrintStatsBoxLabels(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_LEFT, 6, 42, PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_RIGHT, 2, 36);
+    PrintStatsBoxLabels(PSS_LABEL_WINDOW_HIDDEN_STATS_EV_LEFT, 4, 46, PSS_LABEL_WINDOW_HIDDEN_STATS_EV_RIGHT, 0, 50);
+    PrintStatsBoxLabels(PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT, 4, 46, PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT, 0, 50);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_EXP, gText_ExpPoints, 6, 1, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_EXP, gText_NextLv, 6, 17, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATUS, gText_Status, 2, 1, 0, 1);
@@ -2972,22 +2974,23 @@ static void PrintPageNamesAndStats(void)
     PrintTextOnWindow(PSS_LABEL_WINDOW_MOVES_APPEAL_JAM, gText_Jam, 0, 17, 0, 1);
 }
 
-// PS-084: HP / ATTACK / DEFENSE centred in the left label window, SP. ATK / SP. DEF / SPEED in the right one
-static void PrintStatsBoxLabels(u8 leftWindowId, u8 rightWindowId)
+// PS-084: HP / ATTACK / DEFENSE centred in the left label window, SP. ATK / SP. DEF / SPEED in the right
+// one; each label is centred in the `width` px that start `x` px into its window (the green label panel).
+static void PrintStatsBoxLabels(u8 leftWindowId, u8 leftX, u8 leftWidth, u8 rightWindowId, u8 rightX, u8 rightWidth)
 {
     int statsXPos;
 
-    statsXPos = 6 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_HP4, 42);
+    statsXPos = leftX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_HP4, leftWidth);
     PrintTextOnWindow(leftWindowId, gText_HP4, statsXPos, 1, 0, 1);
-    statsXPos = 6 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Attack3, 42);
+    statsXPos = leftX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Attack3, leftWidth);
     PrintTextOnWindow(leftWindowId, gText_Attack3, statsXPos, 17, 0, 1);
-    statsXPos = 6 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Defense3, 42);
+    statsXPos = leftX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Defense3, leftWidth);
     PrintTextOnWindow(leftWindowId, gText_Defense3, statsXPos, 33, 0, 1);
-    statsXPos = 2 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_SpAtk4, 36);
+    statsXPos = rightX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_SpAtk4, rightWidth);
     PrintTextOnWindow(rightWindowId, gText_SpAtk4, statsXPos, 1, 0, 1);
-    statsXPos = 2 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_SpDef4, 36);
+    statsXPos = rightX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_SpDef4, rightWidth);
     PrintTextOnWindow(rightWindowId, gText_SpDef4, statsXPos, 17, 0, 1);
-    statsXPos = 2 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Speed2, 36);
+    statsXPos = rightX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Speed2, rightWidth);
     PrintTextOnWindow(rightWindowId, gText_Speed2, statsXPos, 33, 0, 1);
 }
 
@@ -3614,9 +3617,9 @@ static void Task_PrintHiddenStatsPage(u8 taskId)
     data[0]++;
 }
 
-// The SKILLS page prints its left column values as 7 characters from x=4 and its right column values as
-// 3 characters from x=2 (6 px per character), so these right edges put the digits in the same place.
-#define HIDDEN_STATS_LEFT_COLUMN_RIGHT_EDGE 46
+// Both value windows are 3 tiles wide; the SKILLS page prints its right column values as 3 characters
+// from x=2 (6 px per character), so this right edge puts the digits in the same place as there.
+#define HIDDEN_STATS_LEFT_COLUMN_RIGHT_EDGE 20
 #define HIDDEN_STATS_RIGHT_COLUMN_RIGHT_EDGE 20
 #define EV_DIGITS 3 // 0..255
 #define IV_DIGITS 2 // 0..31
