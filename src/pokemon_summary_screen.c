@@ -639,7 +639,7 @@ static const struct WindowTemplate sSummaryTemplate[] =
     [PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT] = {
         .bg = 0,
         .tilemapLeft = 10,
-        .tilemapTop = 13,
+        .tilemapTop = 12,
         .width = 7,
         .height = 6,
         .paletteNum = 6,
@@ -648,7 +648,7 @@ static const struct WindowTemplate sSummaryTemplate[] =
     [PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT] = {
         .bg = 0,
         .tilemapLeft = 20,
-        .tilemapTop = 13,
+        .tilemapTop = 12,
         .width = 7,
         .height = 6,
         .paletteNum = 6,
@@ -774,7 +774,7 @@ static const struct WindowTemplate sPageMovesTemplate[] = // This is used for bo
     },
 };
 // PS-084: value windows of the Hidden Stats page: both columns of each box have the same shape (7 label
-// tiles, then 3 value tiles); EV box at row 4, IV box at row 13
+// tiles, then 3 value tiles); EV box at row 4, IV box at row 12
 static const struct WindowTemplate sPageHiddenStatsTemplate[] =
 {
     [PSS_DATA_WINDOW_HIDDEN_STATS_EV_LEFT] = {
@@ -798,7 +798,7 @@ static const struct WindowTemplate sPageHiddenStatsTemplate[] =
     [PSS_DATA_WINDOW_HIDDEN_STATS_IV_LEFT] = {
         .bg = 0,
         .tilemapLeft = 17,
-        .tilemapTop = 13,
+        .tilemapTop = 12,
         .width = 3,
         .height = 6,
         .paletteNum = 6,
@@ -807,7 +807,7 @@ static const struct WindowTemplate sPageHiddenStatsTemplate[] =
     [PSS_DATA_WINDOW_HIDDEN_STATS_IV_RIGHT] = {
         .bg = 0,
         .tilemapLeft = 27,
-        .tilemapTop = 13,
+        .tilemapTop = 12,
         .width = 3,
         .height = 6,
         .paletteNum = 6,
