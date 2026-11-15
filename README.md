@@ -85,10 +85,14 @@ The four event tickets can be received in the game, the way the original Wireles
 1. Get the Pokédex, then answer the questionnaire at a Poké Mart counter with the phrase **LINK TOGETHER WITH ALL** and save. MYSTERY GIFT appears on the title menu.
 2. MYSTERY GIFT → Wonder Cards → Wireless Communication. You receive a Wonder Card and the game saves.
 3. Go upstairs in any Pokémon Center and talk to the man in green. He hands over the ticket.
-4. Come back for the next card: the Eon Ticket (Southern Island, Latias or Latios), then the Aurora Ticket (Birth Island, Deoxys), the Mystic Ticket (Navel Rock, Lugia and Ho-Oh) and the Old Sea Map (Faraway Island, Mew). One card at a time, as in the original.
+4. Come back for the next card: the Eon Ticket (Southern Island, Latias or Latios), then the Aurora Ticket (Birth Island, Deoxys in its Normal forme, see below), the Mystic Ticket (Navel Rock, Lugia and Ho-Oh) and the Old Sea Map (Faraway Island, Mew). One card at a time, as in the original.
 5. After the Hall of Fame, the ferry attendant at Lilycove Harbor takes you to the islands.
 
 The card texts are our own; the islands, the ferry and the man's dialogue are the game's.
+
+### Deoxys formes
+
+Deoxys has all four formes. The Birth Island Deoxys is the Normal forme (Emerald's own Deoxys was locked to the Speed forme). After the Hall of Fame, Prof. Cozmo in Fallarbor Town returns the Meteorite you once gave him; if you never gave it to him, you still have it. Use the METEORITE from the Bag (Key Items) on Deoxys to cycle Normal → Attack → Defense → Speed → Normal. Each forme has its own stats and its own level-up moves, taken from the game it came from (Ruby/Sapphire, FireRed, LeafGreen, Emerald); the Move Reminder in Fallarbor teaches the current forme's list. The Attack and Defense sprites are FireRed's and LeafGreen's; Prof. Cozmo's two new lines are our own.
 
 ### Real-time clock, berries and day and night
 

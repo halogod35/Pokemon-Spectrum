@@ -5,7 +5,7 @@ extern const u8 gMonIconPaletteIndices[];
 extern const u8 *const gMonIconTable[];
 extern const struct SpritePalette gMonIconPaletteTable[];
 
-const u8 *GetMonIconTiles(u16 species, bool32 handleDeoxys);
+const u8 *GetMonIconTiles(u16 species, bool32 handleDeoxys); // PS-082: handleDeoxys is ignored (formes are species)
 void TryLoadAllMonIconPalettesAtOffset(u16 offset);
 u8 GetValidMonIconPalIndex(u16 species);
 const u8 *GetMonIconPtr(u16 species, u32 personality, bool32 handleDeoxys);

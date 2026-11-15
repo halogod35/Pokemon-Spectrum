@@ -274,6 +274,9 @@ int main(int argc, char **argv)
     if (gPlatformArgs.mgSelftest) // PS-080: --mg-selftest runs the Mystery Gift distributor headless, no save file
         return MysteryGiftSelftest_Run();
 
+    if (gPlatformArgs.deoxysSelftest) // PS-082: --deoxys-selftest checks the Deoxys formes headless, no save file
+        return DeoxysSelftest_Run();
+
     // MP: --name is checked before anything opens (A-Z a-z 0-9, 1-7 chars)
     if (gPlatformArgs.hasName && !MP_SetNameOverride(gPlatformArgs.name))
     {
@@ -505,6 +508,7 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --debug-slow-save    Test only: pause %d ms per 4 KB sector while writing the save (kill test)\n"
         "  --save-selftest      Check the crash-safe save file I/O on <save>" SAVE_SELFTEST_SUFFIX ", print OK/FAILED and exit\n"
         "  --mg-selftest        Run the Mystery Gift distributor self-test (no window, no save), print OK/FAILED and exit\n"
+        "  --deoxys-selftest    Run the Deoxys formes self-test (no window, no save), print OK/FAILED and exit\n"
         "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
         "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
         "  --audio-stats        Log audio queue level, underruns, clipping and loop stalls every second\n"
@@ -752,6 +756,10 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--mg-selftest") == 0) // PS-080
         {
             gPlatformArgs.mgSelftest = TRUE;
+        }
+        else if (strcmp(arg, "--deoxys-selftest") == 0) // PS-082
+        {
+            gPlatformArgs.deoxysSelftest = TRUE;
         }
         else if (strcmp(arg, "--mp-fake-protocol") == 0) // MP: test the VERSION reject
         {

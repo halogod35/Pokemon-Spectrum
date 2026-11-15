@@ -17,6 +17,7 @@ u32 SaveSelftest_Format(const char *path);
 // PS-080, --mg-selftest (mystery_gift_selftest.c): the Mystery Gift distributor, headless.
 // Needs no save file and no window. Returns the process exit code: 0 OK, 1 FAILED.
 s32 MysteryGiftSelftest_Run(void);
+s32 DeoxysSelftest_Run(void); // PS-082
 // MP: PS-050 (src/platform/file_atomic.c). Crash-safe small files next to the save:
 // write "<path>.tmp", flush + sync, atomic replace. FALSE on any error (the old file stays).
 bool8 Platform_WriteFileAtomic(const char *path, const void *data, u32 size);
@@ -75,6 +76,7 @@ struct PlatformArgs
     bool8 debugSlowSave;                         // --debug-slow-save (MP: PS-014, kill-during-save test)
     bool8 saveSelftest;                          // --save-selftest (MP: PS-014)
     bool8 mgSelftest;                            // --mg-selftest (PS-080: Mystery Gift distributor, headless)
+    bool8 deoxysSelftest;                        // --deoxys-selftest (PS-082: Deoxys formes, headless)
     bool8 hasFakeProtocol;                       // --mp-fake-protocol given (MP: PS-012)
     u16 fakeProtocol;                            // --mp-fake-protocol <0..65535>
     char fakeBuild[PLATFORM_ARG_FAKE_BUILD_SIZE]; // --mp-fake-build <1..15 printable ASCII>, empty if not given

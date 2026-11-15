@@ -40,7 +40,20 @@ FallarborTown_CozmosHouse_EventScript_DeclineGiveMeteorite::
 	release
 	end
 
+@ PS-082: once the game is cleared, Prof. Cozmo hands the Meteorite back (once). It is then used from
+@ the Bag to change Deoxys's forme. Before that, and afterwards, his original line.
 FallarborTown_CozmosHouse_EventScript_GaveMeteorite::
+	goto_if_unset FLAG_SYS_GAME_CLEAR, FallarborTown_CozmosHouse_EventScript_HelpMyResearch
+	goto_if_set FLAG_RECEIVED_METEORITE_BACK, FallarborTown_CozmosHouse_EventScript_HelpMyResearch
+	msgbox FallarborTown_CozmosHouse_Text_ResearchIsDoneTakeItBack, MSGBOX_DEFAULT
+	giveitem ITEM_METEORITE
+	goto_if_eq VAR_RESULT, FALSE, Common_EventScript_ShowBagIsFull
+	setflag FLAG_RECEIVED_METEORITE_BACK
+	msgbox FallarborTown_CozmosHouse_Text_StirsPokemonFromSpace, MSGBOX_DEFAULT
+	release
+	end
+
+FallarborTown_CozmosHouse_EventScript_HelpMyResearch::
 	msgbox FallarborTown_CozmosHouse_Text_ReallyGoingToHelpMyResearch, MSGBOX_DEFAULT
 	release
 	end
@@ -92,6 +105,20 @@ FallarborTown_CozmosHouse_Text_ReallyGoingToHelpMyResearch:
 	.string "PROF. COZMO: Oh, I can't believe it.\n"
 	.string "This is really, really great!\p"
 	.string "This is really going to help my research!$"
+
+@ PS-082: our own lines
+FallarborTown_CozmosHouse_Text_ResearchIsDoneTakeItBack:
+	.string "PROF. COZMO: Oh, it's you!\p"
+	.string "My research on the METEORITE is\n"
+	.string "finally complete.\p"
+	.string "You're the one who brought it to me.\n"
+	.string "I would like you to have it back.$"
+
+FallarborTown_CozmosHouse_Text_StirsPokemonFromSpace:
+	.string "PROF. COZMO: They say it stirs a\n"
+	.string "certain POKéMON from space…\p"
+	.string "Try holding it up to one, if you ever\n"
+	.string "meet such a POKéMON!$"
 
 FallarborTown_CozmosHouse_Text_CrushedWithDisappointment:
 	.string "PROF. COZMO: Oh, but…\n"

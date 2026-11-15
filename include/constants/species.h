@@ -415,7 +415,12 @@
 #define SPECIES_JIRACHI 409
 #define SPECIES_DEOXYS 410
 #define SPECIES_CHIMECHO 411
-#define SPECIES_EGG 412
+// PS-082: Deoxys formes are separate species ids. SPECIES_DEOXYS is the Normal forme; these three
+// sit right before SPECIES_EGG so nothing a save stores (species < 412) moves.
+#define SPECIES_DEOXYS_ATTACK 412
+#define SPECIES_DEOXYS_DEFENSE 413
+#define SPECIES_DEOXYS_SPEED 414
+#define SPECIES_EGG 415
 
 #define NUM_SPECIES SPECIES_EGG
 

@@ -414,6 +414,9 @@ const struct CompressedSpriteSheet gMonStillFrontPicTable[] =
     SPECIES_SPRITE(LATIOS,        gMonStillFrontPic_Latios),
     SPECIES_SPRITE(JIRACHI,       gMonStillFrontPic_Jirachi),
     SPECIES_SPRITE(DEOXYS,        gMonStillFrontPic_Deoxys),
+    SPECIES_SPRITE(DEOXYS_ATTACK, gMonFrontPic_DeoxysAttack), // PS-082: single-frame sprites, same data as the front pic
+    SPECIES_SPRITE(DEOXYS_DEFENSE, gMonFrontPic_DeoxysDefense),
+    SPECIES_SPRITE(DEOXYS_SPEED,  gMonFrontPic_DeoxysSpeed),
     SPECIES_SPRITE(CHIMECHO,      gMonStillFrontPic_Chimecho),
     SPECIES_SPRITE(EGG,           gMonStillFrontPic_Egg),
     SPECIES_SPRITE(UNOWN_B,       gMonStillFrontPic_UnownB),

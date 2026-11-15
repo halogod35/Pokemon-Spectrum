@@ -134,5 +134,8 @@ const u16 gSpeciesIdToCryId[] =
     [SPECIES_LATIOS - 277] = 384,
     [SPECIES_JIRACHI - 277] = 385,
     [SPECIES_DEOXYS - 277] = 386,
+    [SPECIES_DEOXYS_ATTACK - 277] = 386, // PS-082: every forme has the Deoxys cry
+    [SPECIES_DEOXYS_DEFENSE - 277] = 386,
+    [SPECIES_DEOXYS_SPEED - 277] = 386,
     [SPECIES_CHIMECHO - 277] = 387,
 };

@@ -415,6 +415,9 @@ const struct MonCoords gMonBackPicCoords[] =
     [SPECIES_LATIOS]      = { .size = MON_COORDS_SIZE(64, 64), .y_offset =  3 },
     [SPECIES_JIRACHI]     = { .size = MON_COORDS_SIZE(64, 56), .y_offset =  5 },
     [SPECIES_DEOXYS]      = { .size = MON_COORDS_SIZE(64, 48), .y_offset =  9 },
+    [SPECIES_DEOXYS_ATTACK]  = { .size = MON_COORDS_SIZE(64, 56), .y_offset =  7 }, // PS-082: FR/LG values
+    [SPECIES_DEOXYS_DEFENSE] = { .size = MON_COORDS_SIZE(64, 56), .y_offset =  7 },
+    [SPECIES_DEOXYS_SPEED]   = { .size = MON_COORDS_SIZE(64, 48), .y_offset =  9 },
     [SPECIES_CHIMECHO]    = { .size = MON_COORDS_SIZE(32, 56), .y_offset =  7 },
     [SPECIES_EGG]         = { .size = MON_COORDS_SIZE(24, 48), .y_offset = 10 },
     [SPECIES_UNOWN_B]     = { .size = MON_COORDS_SIZE(40, 48), .y_offset =  9 },
