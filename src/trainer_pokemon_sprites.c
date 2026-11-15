@@ -227,7 +227,7 @@ u16 CreateMonPicSprite_Affine(u16 species, u32 otId, u32 personality, u8 flags, 
         Free(framePics);
         return 0xFFFF;
     }
-    if (DecompressPic(species, personality, flags, framePics, FALSE, FALSE))
+    if (DecompressPic(species, personality, flags, framePics, FALSE))
     {
         // debug trap?
         return 0xFFFF;
