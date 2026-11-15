@@ -37,6 +37,7 @@ CreateWaitableTimerExW GetFinalPathNameByHandleA GetFinalPathNameByHandleW RtlGe
 imports_of()
 {
     "$objdump" -p "$1" | awk '
+        /^The / { dll = "" }          # a new section (.pdata, .rsrc, exports): its hex lines are not imports
         /DLL Name:/ { dll = $3; next }
         dll != "" && $1 ~ /^[0-9a-f]+$/ {
             for (i = 2; i <= NF; i++)
