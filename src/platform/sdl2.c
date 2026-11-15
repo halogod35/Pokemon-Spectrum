@@ -509,6 +509,9 @@ static void PrintUsage(FILE *out, const char *programName)
         "  --save-selftest      Check the crash-safe save file I/O on <save>" SAVE_SELFTEST_SUFFIX ", print OK/FAILED and exit\n"
         "  --mg-selftest        Run the Mystery Gift distributor self-test (no window, no save), print OK/FAILED and exit\n"
         "  --deoxys-selftest    Run the Deoxys formes self-test (no window, no save), print OK/FAILED and exit\n"
+        "  --debug-deoxys       Test only: on the title menu, give a Lv30 Deoxys (if none), set game clear and\n"
+        "                       the gave-Meteorite-to-Cozmo flag so he hands it back\n"
+        "  --debug-meteorite    Test only: on the title menu, put the METEORITE in the Bag\n"
         "  --title <text>       Window title (default: \"" WINDOW_TITLE_BASE "\", plus [HOST]/[CLIENT])\n"
         "  --scale <n>          Initial window scale, 1-%d (default: 1)\n"
         "  --audio-stats        Log audio queue level, underruns, clipping and loop stalls every second\n"
@@ -760,6 +763,14 @@ static int ParsePlatformArgs(int argc, char **argv)
         else if (strcmp(arg, "--deoxys-selftest") == 0) // PS-082
         {
             gPlatformArgs.deoxysSelftest = TRUE;
+        }
+        else if (strcmp(arg, "--debug-deoxys") == 0) // TEST ONLY (PS-082)
+        {
+            gPlatformArgs.debugDeoxys = TRUE;
+        }
+        else if (strcmp(arg, "--debug-meteorite") == 0) // TEST ONLY (PS-082)
+        {
+            gPlatformArgs.debugMeteorite = TRUE;
         }
         else if (strcmp(arg, "--mp-fake-protocol") == 0) // MP: test the VERSION reject
         {

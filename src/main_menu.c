@@ -4,6 +4,11 @@
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "constants/trainers.h"
+#include "constants/flags.h" // TEST ONLY (PS-082): --debug-deoxys / --debug-meteorite
+#include "constants/items.h"
+#include "constants/species.h"
+#include "item.h"
+#include "platform.h"
 #include "data.h"
 #include "decompress.h"
 #include "event_data.h"
@@ -729,6 +734,30 @@ static void Task_MainMenuCheckSaveFile(u8 taskId)
         {
             case SAVE_STATUS_OK:
                 tMenuType = HAS_SAVED_GAME;
+                if (gPlatformArgs.debugDeoxys) // TEST ONLY (PS-082): Deoxys, game clear, Cozmo has the Meteorite
+                {
+                    bool32 hasDeoxys = FALSE;
+                    u32 i;
+
+                    for (i = 0; i < PARTY_SIZE; i++)
+                    {
+                        if (IsDeoxysForme(GetMonData(&gPlayerParty[i], MON_DATA_SPECIES)))
+                            hasDeoxys = TRUE;
+                    }
+                    if (!hasDeoxys)
+                    {
+                        struct Pokemon mon;
+                        bool32 isFateful = TRUE;
+
+                        CreateMon(&mon, SPECIES_DEOXYS, 30, USE_RANDOM_IVS, FALSE, 0, OT_ID_PLAYER_ID, 0);
+                        SetMonData(&mon, MON_DATA_MODERN_FATEFUL_ENCOUNTER, &isFateful);
+                        GiveMonToPlayer(&mon);
+                    }
+                    FlagSet(FLAG_SYS_GAME_CLEAR);
+                    FlagSet(FLAG_RECEIVED_TM_RETURN);
+                }
+                if (gPlatformArgs.debugMeteorite && !CheckBagHasItem(ITEM_METEORITE, 1)) // TEST ONLY (PS-082)
+                    AddBagItem(ITEM_METEORITE, 1);
                 if (IsMysteryGiftEnabled())
                     tMenuType++;
                 gTasks[taskId].func = Task_MainMenuCheckBattery;

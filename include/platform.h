@@ -77,6 +77,8 @@ struct PlatformArgs
     bool8 saveSelftest;                          // --save-selftest (MP: PS-014)
     bool8 mgSelftest;                            // --mg-selftest (PS-080: Mystery Gift distributor, headless)
     bool8 deoxysSelftest;                        // --deoxys-selftest (PS-082: Deoxys formes, headless)
+    bool8 debugDeoxys;                           // --debug-deoxys (TEST ONLY, PS-082 play-test)
+    bool8 debugMeteorite;                        // --debug-meteorite (TEST ONLY, PS-082 play-test)
     bool8 hasFakeProtocol;                       // --mp-fake-protocol given (MP: PS-012)
     u16 fakeProtocol;                            // --mp-fake-protocol <0..65535>
     char fakeBuild[PLATFORM_ARG_FAKE_BUILD_SIZE]; // --mp-fake-build <1..15 printable ASCII>, empty if not given
