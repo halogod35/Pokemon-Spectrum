@@ -314,11 +314,30 @@ int main(int argc, char **argv)
     InstallDragAudioHook(sdlWindow); // PS-076: the music keeps playing while the window is dragged
 #endif
 
+    // PS-083: vsync first; then any renderer without vsync; then SDL's software renderer, which is always
+    // there but never advertises vsync, so a vsync-only request skipped it. Windows XP without a working
+    // Direct3D or OpenGL driver ended here with "Couldn't find matching render driver". The main loop
+    // paces itself to 60 Hz, so vsync is a nicety, not a requirement.
     sdlRenderer = SDL_CreateRenderer(sdlWindow, -1, SDL_RENDERER_PRESENTVSYNC);
+    if (sdlRenderer == NULL)
+    {
+        printf("Renderer: no vsync renderer (%s), trying without vsync\n", SDL_GetError());
+        sdlRenderer = SDL_CreateRenderer(sdlWindow, -1, 0);
+    }
+    if (sdlRenderer == NULL)
+    {
+        printf("Renderer: no accelerated renderer (%s), using the software renderer\n", SDL_GetError());
+        sdlRenderer = SDL_CreateRenderer(sdlWindow, -1, SDL_RENDERER_SOFTWARE);
+    }
     if (sdlRenderer == NULL)
     {
         DBGPRINTF("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
         return 1;
+    }
+    {
+        SDL_RendererInfo rendererInfo;
+        if (SDL_GetRendererInfo(sdlRenderer, &rendererInfo) == 0)
+            printf("Renderer: %s%s\n", rendererInfo.name, (rendererInfo.flags & SDL_RENDERER_PRESENTVSYNC) ? " (vsync)" : "");
     }
 
     SDL_SetRenderDrawColor(sdlRenderer, 255, 255, 255, 255);
