@@ -104,6 +104,10 @@ The game follows your PC's clock, the way the battery clock in a cartridge did. 
 - **Daily events** happen once per real day: the Lilycove lottery, the Berry Master's wife, the shoal cave tides and the rest.
 - **Day and night.** Outdoors the world is tinted by the time of day: a soft morning from 4:00, normal daylight from 10:00, an orange evening from 17:00 and a dark blue night from 20:00, blending smoothly between them. Indoors, caves, battles and menus are untouched. **DAY/NIGHT ON/OFF** in the Options menu turns it off.
 
+### Summary screen
+
+- **Hidden stats.** A Pokémon's summary has a fifth page, HIDDEN STATS, after CONTEST MOVES: press Right once more to see its effort values (EVs) on top and its individual values (IVs) below.
+
 ### Save file
 
 The game saves to `pokemon-spectrum.sav` next to its exe file. The same save works with the 32-bit and 64-bit builds, on Windows and Linux. Saving is crash-safe: the new save replaces the old one only once it's completely written.
