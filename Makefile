@@ -125,7 +125,8 @@ ifeq ($(PORTABLE),1)
 
   ifeq ($(TARGET_OS),WINDOWS)
     OS_CFLAGS :=
-    OS_LFLAGS := -lwinmm -lxinput -Wl,-Map,pokemon-spectrum.map # MP: map file for the crash reporter (BUG-003)
+    # PS-083: no -lxinput. XInput is loaded at run time (sdl2.c) so the exe starts on Windows XP / without XINPUT1_3.dll.
+    OS_LFLAGS := -lwinmm -Wl,-Map,pokemon-spectrum.map # MP: map file for the crash reporter (BUG-003)
     BUILD_FEXTENSION := .exe
   else
     OS_CFLAGS :=

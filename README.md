@@ -41,6 +41,8 @@ You can resize the window and the picture scales with it. In fullscreen the pict
 | LB / RB | L / R |
 | D-pad or left stick | D-pad |
 
+Controllers need XInput, which Windows Vista and later have built in. On Windows XP, or on a Windows without the DirectX runtime, the game starts with controllers off; installing the [DirectX End-User Runtime (June 2010)](https://www.microsoft.com/en-us/download/details.aspx?id=8109) adds `xinput1_3.dll`, and a controller works there too.
+
 **Changing the controls**
 
 The first time the game starts, it creates `pokemon-spectrum.ini` next to the game's exe file. Open it in any text editor, change the keys or controller buttons, save, and restart the game:
@@ -140,7 +142,6 @@ The built-in distributor (see "Mystery Gift" above) is the base for these:
   - a limiter if loud battles with Pokémon cries ever distort;
   - a filter if low "thumps" are heard at the end of notes.
 - **Console window:** clicking inside the game's console window freezes the game while text is selected there (a Windows console quirk). Turn that selection mode off at startup, or log to a file instead.
-- **Controllers on older or clean Windows:** start even when `XINPUT1_3.dll` is missing (Windows XP, some fresh installs), with controllers simply turned off.
 
 ### Developer housekeeping
 - A debug build with memory-error checking (sanitizers).
