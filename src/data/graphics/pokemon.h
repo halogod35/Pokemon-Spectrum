@@ -2695,7 +2695,21 @@ const u32 gMonPalette_Deoxys[] = INCGFX_U32("graphics/pokemon/deoxys/normal.pal"
 const u32 gMonBackPic_Deoxys[] = INCGFX_U32("graphics/pokemon/deoxys/back.png", ".4bpp.lz");
 const u32 gMonShinyPalette_Deoxys[] = INCGFX_U32("graphics/pokemon/deoxys/shiny.pal", ".gbapal.lz");
 const u8 gMonIcon_Deoxys[] = INCGFX_U8("graphics/pokemon/deoxys/icon.png", ".4bpp");
-const u8 gMonIcon_DeoxysSpeed[] = INCGFX_U8("graphics/pokemon/deoxys/icon_speed.png", ".4bpp");
+// PS-082: one folder per forme. Attack and Defense are the FireRed / LeafGreen sprites and palettes;
+// Speed is Emerald's own second frame and shares Emerald's Deoxys palettes.
+const u32 gMonFrontPic_DeoxysAttack[] = INCGFX_U32("graphics/pokemon/deoxys/attack/anim_front.png", ".4bpp.lz");
+const u32 gMonBackPic_DeoxysAttack[] = INCGFX_U32("graphics/pokemon/deoxys/attack/back.png", ".4bpp.lz");
+const u32 gMonPalette_DeoxysAttack[] = INCGFX_U32("graphics/pokemon/deoxys/attack/normal.pal", ".gbapal.lz");
+const u32 gMonShinyPalette_DeoxysAttack[] = INCGFX_U32("graphics/pokemon/deoxys/attack/shiny.pal", ".gbapal.lz");
+const u8 gMonIcon_DeoxysAttack[] = INCGFX_U8("graphics/pokemon/deoxys/attack/icon.png", ".4bpp");
+const u32 gMonFrontPic_DeoxysDefense[] = INCGFX_U32("graphics/pokemon/deoxys/defense/anim_front.png", ".4bpp.lz");
+const u32 gMonBackPic_DeoxysDefense[] = INCGFX_U32("graphics/pokemon/deoxys/defense/back.png", ".4bpp.lz");
+const u32 gMonPalette_DeoxysDefense[] = INCGFX_U32("graphics/pokemon/deoxys/defense/normal.pal", ".gbapal.lz");
+const u32 gMonShinyPalette_DeoxysDefense[] = INCGFX_U32("graphics/pokemon/deoxys/defense/shiny.pal", ".gbapal.lz");
+const u8 gMonIcon_DeoxysDefense[] = INCGFX_U8("graphics/pokemon/deoxys/defense/icon.png", ".4bpp");
+const u32 gMonFrontPic_DeoxysSpeed[] = INCGFX_U32("graphics/pokemon/deoxys/speed/anim_front.png", ".4bpp.lz");
+const u32 gMonBackPic_DeoxysSpeed[] = INCGFX_U32("graphics/pokemon/deoxys/speed/back.png", ".4bpp.lz");
+const u8 gMonIcon_DeoxysSpeed[] = INCGFX_U8("graphics/pokemon/deoxys/speed/icon.png", ".4bpp");
 const u8 gMonIcon_DeoxysSpeedWide[] = INCGFX_U8("graphics/pokemon/deoxys/icon_speed_wide.png", ".4bpp"); // Unused
 
 // Probably the leftover space from the other Deoxys forms

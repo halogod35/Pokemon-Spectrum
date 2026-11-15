@@ -3929,12 +3929,8 @@ static bool8 SetUpFieldMove_Dive(void)
 
 static void CreatePartyMonIconSprite(struct Pokemon *mon, struct PartyMenuBox *menuBox, u32 slot)
 {
-    bool32 handleDeoxys = TRUE;
+    bool32 handleDeoxys = TRUE; // PS-082: no longer read by the icon loader, every Deoxys forme is a species
     u16 species2;
-
-    // If in a multi battle, show partners Deoxys icon as Normal forme
-    if (IsMultiBattle() == TRUE && gMain.inBattle)
-        handleDeoxys = (sMultiBattlePartnersPartyMask[slot] ^ handleDeoxys) ? TRUE : FALSE;
 
     species2 = GetMonData(mon, MON_DATA_SPECIES_OR_EGG);
     CreatePartyMonIconSpriteParameterized(species2, GetMonData(mon, MON_DATA_PERSONALITY), menuBox, 1, handleDeoxys);
@@ -5247,6 +5243,64 @@ void ItemUseCB_EvolutionStone(u8 taskId, TaskFunc task)
         RemoveBagItem(gSpecialVar_ItemId, 1);
         FreePartyPointers();
     }
+}
+
+// PS-082: the Meteorite (key item, never consumed) used from the Bag on a Deoxys of any forme sets the
+// next forme's species: Normal -> Attack -> Defense -> Speed -> Normal. Stats are recalculated and the
+// slot's icon is redrawn. Anything else gets the standard "won't have any effect".
+static const u8 sText_DeoxysTransformed[] = _("{STR_VAR_1} transformed\ninto its {STR_VAR_2} Forme!{PAUSE_UNTIL_PRESS}");
+static const u8 sText_DeoxysFormeNormal[] = _("NORMAL");
+static const u8 sText_DeoxysFormeAttack[] = _("ATTACK");
+static const u8 sText_DeoxysFormeDefense[] = _("DEFENSE");
+static const u8 sText_DeoxysFormeSpeed[] = _("SPEED");
+
+static const u8 *GetDeoxysFormeName(u16 species)
+{
+    switch (species)
+    {
+    case SPECIES_DEOXYS_ATTACK:
+        return sText_DeoxysFormeAttack;
+    case SPECIES_DEOXYS_DEFENSE:
+        return sText_DeoxysFormeDefense;
+    case SPECIES_DEOXYS_SPEED:
+        return sText_DeoxysFormeSpeed;
+    default:
+        return sText_DeoxysFormeNormal;
+    }
+}
+
+void ItemUseCB_Meteorite(u8 taskId, TaskFunc task)
+{
+    struct Pokemon *mon = &gPlayerParty[gPartyMenu.slotId];
+    struct PartyMenuBox *menuBox = &sPartyMenuBoxes[gPartyMenu.slotId];
+    u16 nextSpecies = GetNextDeoxysForme(GetMonData(mon, MON_DATA_SPECIES_OR_EGG)); // an egg is never a Deoxys
+
+    if (nextSpecies == SPECIES_NONE)
+    {
+        PlaySE(SE_SELECT);
+        gPartyMenuUseExitCallback = FALSE;
+        DisplayPartyMenuMessage(gText_WontHaveEffect, TRUE);
+        ScheduleBgCopyTilemapToVram(2);
+        gTasks[taskId].func = task;
+        return;
+    }
+
+    PlaySE(SE_USE_ITEM);
+    SetMonData(mon, MON_DATA_SPECIES, &nextSpecies);
+    CalculateMonStats(mon);
+
+    // The icon sprite belongs to the old forme: replace it and keep the slot's "selected" bounce.
+    FreeAndDestroyMonIconSprite(&gSprites[menuBox->monSpriteId]);
+    CreatePartyMonIconSprite(mon, menuBox, gPartyMenu.slotId);
+    AnimatePartySlot(gPartyMenu.slotId, 1);
+
+    gPartyMenuUseExitCallback = TRUE;
+    GetMonNickname(mon, gStringVar1);
+    StringCopy(gStringVar2, GetDeoxysFormeName(nextSpecies));
+    StringExpandPlaceholders(gStringVar4, sText_DeoxysTransformed);
+    DisplayPartyMenuMessage(gStringVar4, TRUE);
+    ScheduleBgCopyTilemapToVram(2);
+    gTasks[taskId].func = task;
 }
 
 u8 GetItemEffectType(u16 item)

@@ -434,6 +434,9 @@ const u8 *const gMonIconTable[] =
     [SPECIES_LATIOS] = gMonIcon_Latios,
     [SPECIES_JIRACHI] = gMonIcon_Jirachi,
     [SPECIES_DEOXYS] = gMonIcon_Deoxys,
+    [SPECIES_DEOXYS_ATTACK] = gMonIcon_DeoxysAttack, // PS-082
+    [SPECIES_DEOXYS_DEFENSE] = gMonIcon_DeoxysDefense,
+    [SPECIES_DEOXYS_SPEED] = gMonIcon_DeoxysSpeed,
     [SPECIES_CHIMECHO] = gMonIcon_Chimecho,
     [SPECIES_EGG] = gMonIcon_Egg,
     [SPECIES_UNOWN_B] = gMonIcon_UnownB,
@@ -878,6 +881,9 @@ const u8 gMonIconPaletteIndices[] =
     [SPECIES_LATIOS] = 2,
     [SPECIES_JIRACHI] = 0,
     [SPECIES_DEOXYS] = 0,
+    [SPECIES_DEOXYS_ATTACK] = 0, // PS-082
+    [SPECIES_DEOXYS_DEFENSE] = 0,
+    [SPECIES_DEOXYS_SPEED] = 0,
     [SPECIES_CHIMECHO] = 0,
     [SPECIES_EGG] = 1,
     [SPECIES_UNOWN_B] = 0,
@@ -1185,14 +1191,11 @@ void SpriteCB_MonIcon(struct Sprite *sprite)
     UpdateMonIconFrame(sprite);
 }
 
+// PS-082: every Deoxys forme is its own species with its own icon, so the handleDeoxys argument no
+// longer selects anything. It stays in the signature only because ~25 call sites pass it; it is ignored.
 const u8 *GetMonIconTiles(u16 species, bool32 handleDeoxys)
 {
-    const u8 *iconSprite = gMonIconTable[species];
-    if (species == SPECIES_DEOXYS && handleDeoxys == TRUE)
-    {
-        iconSprite = (const u8 *)(0x400 + iconSprite); // use the specific Deoxys form icon (Speed in this case)
-    }
-    return iconSprite;
+    return gMonIconTable[species];
 }
 
 void TryLoadAllMonIconPalettesAtOffset(u16 offset)

@@ -76,6 +76,15 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: timeout 60 ./pokemon-spectrum${{ matrix.bits }} --mg-selftest
 
+      # PS-082: Deoxys formes, headless: a new Deoxys is the Normal forme with the Normal stats, the
+      # Meteorite cycle is Attack -> Defense -> Speed -> Normal with each forme's stats and level-up
+      # moves, all four share dex number 386, have sprites and icons, and a non-Deoxys is left alone.
+      - name: Deoxys formes self-test
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: timeout 60 ./pokemon-spectrum${{ matrix.bits }} --deoxys-selftest
+
       # BUG-002: boot smoke test. Runs the real game (no flags, fresh save) for 40 s under gdb with
       # dummy SDL drivers: boot, copyright screen, intro, title. A crash prints a backtrace and
       # fails the job. A clean timeout (the game is still running) passes.

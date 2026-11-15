@@ -775,6 +775,13 @@ void ItemUseOutOfBattle_RareCandy(u8 taskId)
     SetUpItemUseCallback(taskId);
 }
 
+// PS-082: the Meteorite opens the party menu like a Rare Candy; used on a Deoxys it cycles the forme.
+void ItemUseOutOfBattle_Meteorite(u8 taskId)
+{
+    gItemUseCB = ItemUseCB_Meteorite;
+    SetUpItemUseCallback(taskId);
+}
+
 void ItemUseOutOfBattle_TMHM(u8 taskId)
 {
     if (gSpecialVar_ItemId >= ITEM_HM01)

@@ -518,6 +518,9 @@ static const u16 sSpeciesToHoennPokedexNum[NUM_SPECIES - 1] =
     SPECIES_TO_HOENN(LATIOS),
     SPECIES_TO_HOENN(JIRACHI),
     SPECIES_TO_HOENN(DEOXYS),
+    [SPECIES_DEOXYS_ATTACK - 1] = HOENN_DEX_DEOXYS, // PS-082: the formes share Hoenn dex number 202
+    [SPECIES_DEOXYS_DEFENSE - 1] = HOENN_DEX_DEOXYS,
+    [SPECIES_DEOXYS_SPEED - 1] = HOENN_DEX_DEOXYS,
     SPECIES_TO_HOENN(CHIMECHO),
 };
 
@@ -934,6 +937,9 @@ static const u16 sSpeciesToNationalPokedexNum[NUM_SPECIES - 1] =
     SPECIES_TO_NATIONAL(LATIOS),
     SPECIES_TO_NATIONAL(JIRACHI),
     SPECIES_TO_NATIONAL(DEOXYS),
+    [SPECIES_DEOXYS_ATTACK - 1] = NATIONAL_DEX_DEOXYS, // PS-082: the formes share dex number 386
+    [SPECIES_DEOXYS_DEFENSE - 1] = NATIONAL_DEX_DEOXYS,
+    [SPECIES_DEOXYS_SPEED - 1] = NATIONAL_DEX_DEOXYS,
     SPECIES_TO_NATIONAL(CHIMECHO),
 };
 
@@ -1790,6 +1796,9 @@ static const u8 sMonFrontAnimIdsTable[NUM_SPECIES - 1] =
     [SPECIES_LATIOS - 1]      = ANIM_V_SHAKE,
     [SPECIES_JIRACHI - 1]     = ANIM_SWING_CONVEX,
     [SPECIES_DEOXYS - 1]      = ANIM_H_PIVOT,
+    [SPECIES_DEOXYS_ATTACK - 1]  = ANIM_H_PIVOT, // PS-082
+    [SPECIES_DEOXYS_DEFENSE - 1] = ANIM_H_PIVOT,
+    [SPECIES_DEOXYS_SPEED - 1]   = ANIM_H_PIVOT,
     [SPECIES_CHIMECHO - 1]    = ANIM_H_SLIDE_WOBBLE,
 };
 
@@ -1881,16 +1890,6 @@ const u8 gStatStageRatios[MAX_STAT_STAGE + 1][2] =
     {30, 10}, // +4
     {35, 10}, // +5
     {40, 10}, // +6, MAX_STAT_STAGE
-};
-
-static const u16 sDeoxysBaseStats[] =
-{
-    [STAT_HP]    = 50,
-    [STAT_ATK]   = 95,
-    [STAT_DEF]   = 90,
-    [STAT_SPEED] = 180,
-    [STAT_SPATK] = 95,
-    [STAT_SPDEF] = 90,
 };
 
 // The classes used by other players in the Union Room.
@@ -2639,106 +2638,31 @@ static void CreateEventMon(struct Pokemon *mon, u16 species, u8 level, u8 fixedI
     SetMonData(mon, MON_DATA_MODERN_FATEFUL_ENCOUNTER, &isModernFatefulEncounter);
 }
 
-// If FALSE, should load this game's Deoxys form. If TRUE, should load normal Deoxys form
-bool8 ShouldIgnoreDeoxysForm(u8 caseId, u8 battler)
+// PS-082: Deoxys formes are separate species ids (SPECIES_DEOXYS is the Normal forme), so the
+// Emerald cross-version hack (Speed stats computed at read time, the Normal frame drawn for link
+// partners) is gone. The Meteorite cycles Normal -> Attack -> Defense -> Speed -> Normal.
+// Returns SPECIES_NONE for anything that is not a Deoxys.
+u16 GetNextDeoxysForme(u16 species)
 {
-    switch (caseId)
+    switch (species)
     {
-    case 0:
+    case SPECIES_DEOXYS:
+        return SPECIES_DEOXYS_ATTACK;
+    case SPECIES_DEOXYS_ATTACK:
+        return SPECIES_DEOXYS_DEFENSE;
+    case SPECIES_DEOXYS_DEFENSE:
+        return SPECIES_DEOXYS_SPEED;
+    case SPECIES_DEOXYS_SPEED:
+        return SPECIES_DEOXYS;
     default:
-        return FALSE;
-    case 1: // Player's side in battle
-        if (!(gBattleTypeFlags & BATTLE_TYPE_MULTI))
-            return FALSE;
-        if (!gMain.inBattle)
-            return FALSE;
-        if (gLinkPlayers[GetMultiplayerId()].id == battler)
-            return FALSE;
-        break;
-    case 2:
-        break;
-    case 3: // Summary Screen
-        if (!(gBattleTypeFlags & BATTLE_TYPE_MULTI))
-            return FALSE;
-        if (!gMain.inBattle)
-            return FALSE;
-        if (battler == 1 || battler == 4 || battler == 5)
-            return TRUE;
-        return FALSE;
-    case 4:
-        break;
-    case 5: // In move animation, e.g. in Role Play or Snatch
-        if (gBattleTypeFlags & BATTLE_TYPE_LINK)
-        {
-            if (!gMain.inBattle)
-                return FALSE;
-            if (gBattleTypeFlags & BATTLE_TYPE_MULTI)
-            {
-                if (gLinkPlayers[GetMultiplayerId()].id == battler)
-                    return FALSE;
-            }
-            else
-            {
-                if (GetBattlerSide(battler) == B_SIDE_PLAYER)
-                    return FALSE;
-            }
-        }
-        else
-        {
-            if (!gMain.inBattle)
-                return FALSE;
-            if (GetBattlerSide(battler) == B_SIDE_PLAYER)
-                return FALSE;
-        }
-        break;
+        return SPECIES_NONE;
     }
-
-    return TRUE;
 }
 
-static u16 GetDeoxysStat(struct Pokemon *mon, s32 statId)
+// PS-082: TRUE for any of the four Deoxys formes.
+bool8 IsDeoxysForme(u16 species)
 {
-    s32 ivVal, evVal;
-    u16 statValue = 0;
-    u8 nature;
-
-    if (gBattleTypeFlags & BATTLE_TYPE_LINK_IN_BATTLE || GetMonData(mon, MON_DATA_SPECIES, NULL) != SPECIES_DEOXYS)
-        return 0;
-
-    ivVal = GetMonData(mon, MON_DATA_HP_IV + statId, NULL);
-    evVal = GetMonData(mon, MON_DATA_HP_EV + statId, NULL);
-    statValue = ((sDeoxysBaseStats[statId] * 2 + ivVal + evVal / 4) * mon->level) / 100 + 5;
-    nature = GetNature(mon);
-    statValue = ModifyStatByNature(nature, statValue, (u8)statId);
-    return statValue;
-}
-
-void SetDeoxysStats(void)
-{
-    s32 i, value;
-
-    for (i = 0; i < PARTY_SIZE; i++)
-    {
-        struct Pokemon *mon = &gPlayerParty[i];
-
-        if (GetMonData(mon, MON_DATA_SPECIES, NULL) != SPECIES_DEOXYS)
-            continue;
-
-        value = GetMonData(mon, MON_DATA_ATK, NULL);
-        SetMonData(mon, MON_DATA_ATK, &value);
-
-        value = GetMonData(mon, MON_DATA_DEF, NULL);
-        SetMonData(mon, MON_DATA_DEF, &value);
-
-        value = GetMonData(mon, MON_DATA_SPEED, NULL);
-        SetMonData(mon, MON_DATA_SPEED, &value);
-
-        value = GetMonData(mon, MON_DATA_SPATK, NULL);
-        SetMonData(mon, MON_DATA_SPATK, &value);
-
-        value = GetMonData(mon, MON_DATA_SPDEF, NULL);
-        SetMonData(mon, MON_DATA_SPDEF, &value);
-    }
+    return GetNextDeoxysForme(species) != SPECIES_NONE;
 }
 
 u16 GetUnionRoomTrainerPic(void)
@@ -3658,30 +3582,20 @@ u32 GetMonData3(struct Pokemon *mon, s32 field, u8 *data)
     case MON_DATA_MAX_HP:
         ret = mon->maxHP;
         break;
-    case MON_DATA_ATK:
-        ret = GetDeoxysStat(mon, STAT_ATK);
-        if (!ret)
-            ret = mon->attack;
+    case MON_DATA_ATK: // PS-082: no Deoxys override any more, the stored stats are the forme's
+        ret = mon->attack;
         break;
     case MON_DATA_DEF:
-        ret = GetDeoxysStat(mon, STAT_DEF);
-        if (!ret)
-            ret = mon->defense;
+        ret = mon->defense;
         break;
     case MON_DATA_SPEED:
-        ret = GetDeoxysStat(mon, STAT_SPEED);
-        if (!ret)
-            ret = mon->speed;
+        ret = mon->speed;
         break;
     case MON_DATA_SPATK:
-        ret = GetDeoxysStat(mon, STAT_SPATK);
-        if (!ret)
-            ret = mon->spAttack;
+        ret = mon->spAttack;
         break;
     case MON_DATA_SPDEF:
-        ret = GetDeoxysStat(mon, STAT_SPDEF);
-        if (!ret)
-            ret = mon->spDefense;
+        ret = mon->spDefense;
         break;
     case MON_DATA_ATK2:
         ret = mon->attack;
@@ -6982,7 +6896,7 @@ const u8 *GetTrainerNameFromId(u16 trainerId)
 bool8 HasTwoFramesAnimation(u16 species)
 {
     return (species != SPECIES_CASTFORM
-         && species != SPECIES_DEOXYS
+         && !IsDeoxysForme(species) // PS-082: single-frame sprites with an affine animation, all four formes
          && species != SPECIES_SPINDA
          && species != SPECIES_UNOWN);
 }
