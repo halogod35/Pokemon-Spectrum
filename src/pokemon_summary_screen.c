@@ -53,6 +53,7 @@ enum {
     PSS_PAGE_SKILLS,
     PSS_PAGE_BATTLE_MOVES,
     PSS_PAGE_CONTEST_MOVES,
+    PSS_PAGE_HIDDEN_STATS, // PS-084: EVs and IVs
     PSS_PAGE_COUNT,
 };
 
@@ -87,7 +88,14 @@ enum {
 #define PSS_LABEL_WINDOW_PORTRAIT_DEX_NUMBER 17
 #define PSS_LABEL_WINDOW_PORTRAIT_NICKNAME 18 // The upper name
 #define PSS_LABEL_WINDOW_PORTRAIT_SPECIES 19 // The lower name
-#define PSS_LABEL_WINDOW_END 20
+
+// PS-084: Hidden stats screen (EVs and IVs); appended so the ids above keep their numbers
+#define PSS_LABEL_WINDOW_HIDDEN_STATS_TITLE 20
+#define PSS_LABEL_WINDOW_HIDDEN_STATS_EV_LEFT 21 // HP, Attack, Defense
+#define PSS_LABEL_WINDOW_HIDDEN_STATS_EV_RIGHT 22 // Sp. Attack, Sp. Defense, Speed
+#define PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT 23
+#define PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT 24
+#define PSS_LABEL_WINDOW_END 25
 
 // Dynamic fields for the Pokémon Info page
 #define PSS_DATA_WINDOW_INFO_ORIGINAL_TRAINER 0
@@ -106,6 +114,12 @@ enum {
 #define PSS_DATA_WINDOW_MOVE_NAMES 0
 #define PSS_DATA_WINDOW_MOVE_PP 1
 #define PSS_DATA_WINDOW_MOVE_DESCRIPTION 2
+
+// PS-084: Dynamic fields for the Hidden Stats page
+#define PSS_DATA_WINDOW_HIDDEN_STATS_EV_LEFT 0 // HP, Attack, Defense EVs
+#define PSS_DATA_WINDOW_HIDDEN_STATS_EV_RIGHT 1 // Sp. Attack, Sp. Defense, Speed EVs
+#define PSS_DATA_WINDOW_HIDDEN_STATS_IV_LEFT 2 // HP, Attack, Defense IVs
+#define PSS_DATA_WINDOW_HIDDEN_STATS_IV_RIGHT 3 // Sp. Attack, Sp. Defense, Speed IVs
 
 #define MOVE_SELECTOR_SPRITES_COUNT 10
 #define TYPE_ICON_SPRITE_COUNT (MAX_MON_MOVES + 1)
@@ -276,6 +290,14 @@ static void PrintLeftColumnStats(void);
 static void BufferRightColumnStats(void);
 static void PrintRightColumnStats(void);
 static void PrintExpPointsNextLevel(void);
+static void PrintStatsBoxLabels(u8, u8, u8, u8, u8, u8); // PS-084
+static void PrintHiddenStatsPageText(void); // PS-084
+static void Task_PrintHiddenStatsPage(u8); // PS-084
+static void PrintHiddenStatsColumn(u8, u8, u8, u8, u8, u8); // PS-084
+static void PrintEvsLeftColumn(void); // PS-084
+static void PrintEvsRightColumn(void); // PS-084
+static void PrintIvsLeftColumn(void); // PS-084
+static void PrintIvsRightColumn(void); // PS-084
 static void PrintBattleMoves(void);
 static void Task_PrintBattleMoves(u8);
 static void PrintMoveNameAndPP(u8);
@@ -586,6 +608,52 @@ static const struct WindowTemplate sSummaryTemplate[] =
         .paletteNum = 6,
         .baseBlock = 413,
     },
+    // PS-084: Hidden Stats page. The page data windows use blocks 449..679, so these start above them.
+    [PSS_LABEL_WINDOW_HIDDEN_STATS_TITLE] = {
+        .bg = 0,
+        .tilemapLeft = 0,
+        .tilemapTop = 0,
+        .width = 11,
+        .height = 2,
+        .paletteNum = 6,
+        .baseBlock = 680,
+    },
+    [PSS_LABEL_WINDOW_HIDDEN_STATS_EV_LEFT] = {
+        .bg = 0,
+        .tilemapLeft = 10,
+        .tilemapTop = 4,
+        .width = 7,
+        .height = 6,
+        .paletteNum = 6,
+        .baseBlock = 702,
+    },
+    [PSS_LABEL_WINDOW_HIDDEN_STATS_EV_RIGHT] = {
+        .bg = 0,
+        .tilemapLeft = 20,
+        .tilemapTop = 4,
+        .width = 7,
+        .height = 6,
+        .paletteNum = 6,
+        .baseBlock = 744,
+    },
+    [PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT] = {
+        .bg = 0,
+        .tilemapLeft = 10,
+        .tilemapTop = 12,
+        .width = 7,
+        .height = 6,
+        .paletteNum = 6,
+        .baseBlock = 786,
+    },
+    [PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT] = {
+        .bg = 0,
+        .tilemapLeft = 20,
+        .tilemapTop = 12,
+        .width = 7,
+        .height = 6,
+        .paletteNum = 6,
+        .baseBlock = 828,
+    },
     [PSS_LABEL_WINDOW_END] = DUMMY_WIN_TEMPLATE
 };
 static const struct WindowTemplate sPageInfoTemplate[] =
@@ -705,6 +773,47 @@ static const struct WindowTemplate sPageMovesTemplate[] = // This is used for bo
         .baseBlock = 599,
     },
 };
+// PS-084: value windows of the Hidden Stats page: both columns of each box have the same shape (7 label
+// tiles, then 3 value tiles); EV box at row 4, IV box at row 12
+static const struct WindowTemplate sPageHiddenStatsTemplate[] =
+{
+    [PSS_DATA_WINDOW_HIDDEN_STATS_EV_LEFT] = {
+        .bg = 0,
+        .tilemapLeft = 17,
+        .tilemapTop = 4,
+        .width = 3,
+        .height = 6,
+        .paletteNum = 6,
+        .baseBlock = 449,
+    },
+    [PSS_DATA_WINDOW_HIDDEN_STATS_EV_RIGHT] = {
+        .bg = 0,
+        .tilemapLeft = 27,
+        .tilemapTop = 4,
+        .width = 3,
+        .height = 6,
+        .paletteNum = 6,
+        .baseBlock = 467,
+    },
+    [PSS_DATA_WINDOW_HIDDEN_STATS_IV_LEFT] = {
+        .bg = 0,
+        .tilemapLeft = 17,
+        .tilemapTop = 12,
+        .width = 3,
+        .height = 6,
+        .paletteNum = 6,
+        .baseBlock = 485,
+    },
+    [PSS_DATA_WINDOW_HIDDEN_STATS_IV_RIGHT] = {
+        .bg = 0,
+        .tilemapLeft = 27,
+        .tilemapTop = 12,
+        .width = 3,
+        .height = 6,
+        .paletteNum = 6,
+        .baseBlock = 503,
+    },
+};
 static const u8 sTextColors[][3] =
 {
     {0, 1, 2},
@@ -732,7 +841,8 @@ static void (*const sTextPrinterFunctions[])(void) =
     [PSS_PAGE_INFO] = PrintInfoPageText,
     [PSS_PAGE_SKILLS] = PrintSkillsPageText,
     [PSS_PAGE_BATTLE_MOVES] = PrintBattleMoves,
-    [PSS_PAGE_CONTEST_MOVES] = PrintContestMoves
+    [PSS_PAGE_CONTEST_MOVES] = PrintContestMoves,
+    [PSS_PAGE_HIDDEN_STATS] = PrintHiddenStatsPageText // PS-084
 };
 
 static const TaskFunc sTextPrinterTasks[] =
@@ -740,7 +850,8 @@ static const TaskFunc sTextPrinterTasks[] =
     [PSS_PAGE_INFO] = Task_PrintInfoPage,
     [PSS_PAGE_SKILLS] = Task_PrintSkillsPage,
     [PSS_PAGE_BATTLE_MOVES] = Task_PrintBattleMoves,
-    [PSS_PAGE_CONTEST_MOVES] = Task_PrintContestMoves
+    [PSS_PAGE_CONTEST_MOVES] = Task_PrintContestMoves,
+    [PSS_PAGE_HIDDEN_STATS] = Task_PrintHiddenStatsPage // PS-084
 };
 
 static const u8 sMemoNatureTextColor[] = _("{COLOR LIGHT_RED}{SHADOW GREEN}");
@@ -1125,7 +1236,7 @@ void ShowPokemonSummaryScreen(u8 mode, void *mons, u8 monIndex, u8 maxMonIndex, 
         break;
     case SUMMARY_MODE_SELECT_MOVE:
         sMonSummaryScreen->minPageIndex = PSS_PAGE_BATTLE_MOVES;
-        sMonSummaryScreen->maxPageIndex = PSS_PAGE_COUNT - 1;
+        sMonSummaryScreen->maxPageIndex = PSS_PAGE_CONTEST_MOVES; // PS-084: move selection never reaches the hidden stats page
         sMonSummaryScreen->lockMonFlag = TRUE;
         break;
     }
@@ -1344,32 +1455,36 @@ static bool8 DecompressGraphics(void)
         LZDecompressWram(gSummaryPage_ContestMoves_Tilemap, sMonSummaryScreen->bgTilemapBuffers[PSS_PAGE_CONTEST_MOVES][1]);
         sMonSummaryScreen->switchCounter++;
         break;
-    case 6:
+    case 6: // PS-084
+        LZDecompressWram(gSummaryPage_HiddenStats_Tilemap, sMonSummaryScreen->bgTilemapBuffers[PSS_PAGE_HIDDEN_STATS][1]);
+        sMonSummaryScreen->switchCounter++;
+        break;
+    case 7:
         LoadCompressedPalette(gSummaryScreen_Pal, BG_PLTT_ID(0), 8 * PLTT_SIZE_4BPP);
         LoadPalette(&gPPTextPalette, BG_PLTT_ID(8) + 1, PLTT_SIZEOF(16 - 1));
         sMonSummaryScreen->switchCounter++;
         break;
-    case 7:
+    case 8:
         LoadCompressedSpriteSheet(&sSpriteSheet_MoveTypes);
         sMonSummaryScreen->switchCounter++;
         break;
-    case 8:
+    case 9:
         LoadCompressedSpriteSheet(&sMoveSelectorSpriteSheet);
         sMonSummaryScreen->switchCounter++;
         break;
-    case 9:
+    case 10:
         LoadCompressedSpriteSheet(&sStatusIconsSpriteSheet);
         sMonSummaryScreen->switchCounter++;
         break;
-    case 10:
+    case 11:
         LoadCompressedSpritePalette(&sStatusIconsSpritePalette);
         sMonSummaryScreen->switchCounter++;
         break;
-    case 11:
+    case 12:
         LoadCompressedSpritePalette(&sMoveSelectorSpritePal);
         sMonSummaryScreen->switchCounter++;
         break;
-    case 12:
+    case 13:
         LoadCompressedPalette(gMoveTypes_Pal, OBJ_PLTT_ID(13), 3 * PLTT_SIZE_4BPP);
         sMonSummaryScreen->switchCounter = 0;
         return TRUE;
@@ -1532,7 +1647,8 @@ static void Task_HandleInput(u8 taskId)
         }
         else if (JOY_NEW(A_BUTTON))
         {
-            if (sMonSummaryScreen->currPageIndex != PSS_PAGE_SKILLS)
+            // PS-084: A does nothing on the hidden stats page, as on SKILLS
+            if (sMonSummaryScreen->currPageIndex != PSS_PAGE_SKILLS && sMonSummaryScreen->currPageIndex != PSS_PAGE_HIDDEN_STATS)
             {
                 if (sMonSummaryScreen->currPageIndex == PSS_PAGE_INFO)
                 {
@@ -2814,12 +2930,12 @@ static void PrintPageNamesAndStats(void)
 {
     int stringXPos;
     int iconXPos;
-    int statsXPos;
 
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_INFO_TITLE, gText_PkmnInfo, 2, 1, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_TITLE, gText_PkmnSkills, 2, 1, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_BATTLE_MOVES_TITLE, gText_BattleMoves, 2, 1, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_CONTEST_MOVES_TITLE, gText_ContestMoves, 2, 1, 0, 1);
+    PrintTextOnWindow(PSS_LABEL_WINDOW_HIDDEN_STATS_TITLE, gText_HiddenStats, 2, 1, 0, 1); // PS-084
 
     stringXPos = GetStringRightAlignXOffset(FONT_NORMAL, gText_Cancel2, 62);
     iconXPos = stringXPos - 16;
@@ -2844,18 +2960,11 @@ static void PrintPageNamesAndStats(void)
 
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_INFO_RENTAL, gText_RentalPkmn, 0, 1, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_INFO_TYPE, gText_TypeSlash, 0, 1, 0, 0);
-    statsXPos = 6 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_HP4, 42);
-    PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_LEFT, gText_HP4, statsXPos, 1, 0, 1);
-    statsXPos = 6 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Attack3, 42);
-    PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_LEFT, gText_Attack3, statsXPos, 17, 0, 1);
-    statsXPos = 6 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Defense3, 42);
-    PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_LEFT, gText_Defense3, statsXPos, 33, 0, 1);
-    statsXPos = 2 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_SpAtk4, 36);
-    PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_RIGHT, gText_SpAtk4, statsXPos, 1, 0, 1);
-    statsXPos = 2 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_SpDef4, 36);
-    PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_RIGHT, gText_SpDef4, statsXPos, 17, 0, 1);
-    statsXPos = 2 + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Speed2, 36);
-    PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_RIGHT, gText_Speed2, statsXPos, 33, 0, 1);
+    // PS-084: the stats box labels are shared with the two boxes of the hidden stats page. There the
+    // left green label panel starts 4 px into its window and is 46 px wide, the right one 50 px from x=0.
+    PrintStatsBoxLabels(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_LEFT, 6, 42, PSS_LABEL_WINDOW_POKEMON_SKILLS_STATS_RIGHT, 2, 36);
+    PrintStatsBoxLabels(PSS_LABEL_WINDOW_HIDDEN_STATS_EV_LEFT, 4, 46, PSS_LABEL_WINDOW_HIDDEN_STATS_EV_RIGHT, 0, 50);
+    PrintStatsBoxLabels(PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT, 4, 46, PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT, 0, 50);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_EXP, gText_ExpPoints, 6, 1, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_EXP, gText_NextLv, 6, 17, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_POKEMON_SKILLS_STATUS, gText_Status, 2, 1, 0, 1);
@@ -2863,6 +2972,26 @@ static void PrintPageNamesAndStats(void)
     PrintTextOnWindow(PSS_LABEL_WINDOW_MOVES_POWER_ACC, gText_Accuracy2, 0, 17, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_MOVES_APPEAL_JAM, gText_Appeal, 0, 1, 0, 1);
     PrintTextOnWindow(PSS_LABEL_WINDOW_MOVES_APPEAL_JAM, gText_Jam, 0, 17, 0, 1);
+}
+
+// PS-084: HP / ATTACK / DEFENSE centred in the left label window, SP. ATK / SP. DEF / SPEED in the right
+// one; each label is centred in the `width` px that start `x` px into its window (the green label panel).
+static void PrintStatsBoxLabels(u8 leftWindowId, u8 leftX, u8 leftWidth, u8 rightWindowId, u8 rightX, u8 rightWidth)
+{
+    int statsXPos;
+
+    statsXPos = leftX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_HP4, leftWidth);
+    PrintTextOnWindow(leftWindowId, gText_HP4, statsXPos, 1, 0, 1);
+    statsXPos = leftX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Attack3, leftWidth);
+    PrintTextOnWindow(leftWindowId, gText_Attack3, statsXPos, 17, 0, 1);
+    statsXPos = leftX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Defense3, leftWidth);
+    PrintTextOnWindow(leftWindowId, gText_Defense3, statsXPos, 33, 0, 1);
+    statsXPos = rightX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_SpAtk4, rightWidth);
+    PrintTextOnWindow(rightWindowId, gText_SpAtk4, statsXPos, 1, 0, 1);
+    statsXPos = rightX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_SpDef4, rightWidth);
+    PrintTextOnWindow(rightWindowId, gText_SpDef4, statsXPos, 17, 0, 1);
+    statsXPos = rightX + GetStringCenterAlignXOffset(FONT_NORMAL, gText_Speed2, rightWidth);
+    PrintTextOnWindow(rightWindowId, gText_Speed2, statsXPos, 33, 0, 1);
 }
 
 static void PutPageWindowTilemaps(u8 page)
@@ -2873,6 +3002,7 @@ static void PutPageWindowTilemaps(u8 page)
     ClearWindowTilemap(PSS_LABEL_WINDOW_POKEMON_SKILLS_TITLE);
     ClearWindowTilemap(PSS_LABEL_WINDOW_BATTLE_MOVES_TITLE);
     ClearWindowTilemap(PSS_LABEL_WINDOW_CONTEST_MOVES_TITLE);
+    ClearWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_TITLE); // PS-084
 
     switch (page)
     {
@@ -2912,6 +3042,13 @@ static void PutPageWindowTilemaps(u8 page)
         {
             PutWindowTilemap(PSS_LABEL_WINDOW_PROMPT_INFO);
         }
+        break;
+    case PSS_PAGE_HIDDEN_STATS: // PS-084: no button prompt, like SKILLS
+        PutWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_TITLE);
+        PutWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_EV_LEFT);
+        PutWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_EV_RIGHT);
+        PutWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT);
+        PutWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT);
         break;
     }
 
@@ -2959,6 +3096,12 @@ static void ClearPageWindowTilemaps(u8 page)
         {
             ClearWindowTilemap(PSS_LABEL_WINDOW_PROMPT_INFO);
         }
+        break;
+    case PSS_PAGE_HIDDEN_STATS: // PS-084
+        ClearWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_EV_LEFT);
+        ClearWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_EV_RIGHT);
+        ClearWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_IV_LEFT);
+        ClearWindowTilemap(PSS_LABEL_WINDOW_HIDDEN_STATS_IV_RIGHT);
         break;
     }
 
@@ -3438,6 +3581,93 @@ static void PrintExpPointsNextLevel(void)
     ConvertIntToDecimalStringN(gStringVar1, expToNextLevel, STR_CONV_MODE_RIGHT_ALIGN, 6);
     x = GetStringRightAlignXOffset(FONT_NORMAL, gStringVar1, 42) + 2;
     PrintTextOnWindow(windowId, gStringVar1, x, 17, 0, 0);
+}
+
+// PS-084: Hidden Stats page. Top box = EVs, bottom box = IVs, read from currentMon at print time.
+static void PrintHiddenStatsPageText(void)
+{
+    PrintEvsLeftColumn();
+    PrintEvsRightColumn();
+    PrintIvsLeftColumn();
+    PrintIvsRightColumn();
+}
+
+static void Task_PrintHiddenStatsPage(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+
+    switch (data[0])
+    {
+    case 1:
+        PrintEvsLeftColumn();
+        break;
+    case 2:
+        PrintEvsRightColumn();
+        break;
+    case 3:
+        PrintIvsLeftColumn();
+        break;
+    case 4:
+        PrintIvsRightColumn();
+        break;
+    case 5:
+        DestroyTask(taskId);
+        return;
+    }
+    data[0]++;
+}
+
+// Both value windows are 3 tiles wide; the SKILLS page prints its right column values as 3 characters
+// from x=2 (6 px per character), so this right edge puts the digits in the same place as there.
+#define HIDDEN_STATS_LEFT_COLUMN_RIGHT_EDGE 20
+#define HIDDEN_STATS_RIGHT_COLUMN_RIGHT_EDGE 20
+#define EV_DIGITS 3 // 0..255
+#define IV_DIGITS 2 // 0..31
+
+// Prints three stat values as the three lines of a stats box column, right-aligned.
+static void PrintHiddenStatsColumn(u8 templateId, u8 rightEdge, u8 digits, u8 statField1, u8 statField2, u8 statField3)
+{
+    struct Pokemon *mon = &sMonSummaryScreen->currentMon;
+    u8 windowId = AddWindowFromTemplateList(sPageHiddenStatsTemplate, templateId);
+    int x;
+
+    ConvertIntToDecimalStringN(gStringVar1, GetMonData(mon, statField1), STR_CONV_MODE_RIGHT_ALIGN, digits);
+    ConvertIntToDecimalStringN(gStringVar2, GetMonData(mon, statField2), STR_CONV_MODE_RIGHT_ALIGN, digits);
+    ConvertIntToDecimalStringN(gStringVar3, GetMonData(mon, statField3), STR_CONV_MODE_RIGHT_ALIGN, digits);
+
+    DynamicPlaceholderTextUtil_Reset();
+    DynamicPlaceholderTextUtil_SetPlaceholderPtr(0, gStringVar1);
+    DynamicPlaceholderTextUtil_SetPlaceholderPtr(1, gStringVar2);
+    DynamicPlaceholderTextUtil_SetPlaceholderPtr(2, gStringVar3);
+    DynamicPlaceholderTextUtil_ExpandPlaceholders(gStringVar4, sStatsRightColumnLayout);
+
+    // Every line is the same width (digits and padding are both 6 px), so one line sets the x of all three.
+    x = GetStringRightAlignXOffset(FONT_NORMAL, gStringVar1, rightEdge);
+    PrintTextOnWindow(windowId, gStringVar4, x, 1, 0, 0);
+}
+
+static void PrintEvsLeftColumn(void)
+{
+    PrintHiddenStatsColumn(PSS_DATA_WINDOW_HIDDEN_STATS_EV_LEFT, HIDDEN_STATS_LEFT_COLUMN_RIGHT_EDGE, EV_DIGITS,
+                           MON_DATA_HP_EV, MON_DATA_ATK_EV, MON_DATA_DEF_EV);
+}
+
+static void PrintEvsRightColumn(void)
+{
+    PrintHiddenStatsColumn(PSS_DATA_WINDOW_HIDDEN_STATS_EV_RIGHT, HIDDEN_STATS_RIGHT_COLUMN_RIGHT_EDGE, EV_DIGITS,
+                           MON_DATA_SPATK_EV, MON_DATA_SPDEF_EV, MON_DATA_SPEED_EV);
+}
+
+static void PrintIvsLeftColumn(void)
+{
+    PrintHiddenStatsColumn(PSS_DATA_WINDOW_HIDDEN_STATS_IV_LEFT, HIDDEN_STATS_LEFT_COLUMN_RIGHT_EDGE, IV_DIGITS,
+                           MON_DATA_HP_IV, MON_DATA_ATK_IV, MON_DATA_DEF_IV);
+}
+
+static void PrintIvsRightColumn(void)
+{
+    PrintHiddenStatsColumn(PSS_DATA_WINDOW_HIDDEN_STATS_IV_RIGHT, HIDDEN_STATS_RIGHT_COLUMN_RIGHT_EDGE, IV_DIGITS,
+                           MON_DATA_SPATK_IV, MON_DATA_SPDEF_IV, MON_DATA_SPEED_IV);
 }
 
 static void PrintBattleMoves(void)
@@ -4053,7 +4283,8 @@ static void CreateMoveSelectorSprites(u8 idArrayStart)
     u8 i;
     u8 *spriteIds = &sMonSummaryScreen->spriteIds[idArrayStart];
 
-    if (sMonSummaryScreen->currPageIndex >= PSS_PAGE_BATTLE_MOVES)
+    // PS-084: only the two moves pages have a move selector; the hidden stats page comes after them
+    if (sMonSummaryScreen->currPageIndex >= PSS_PAGE_BATTLE_MOVES && sMonSummaryScreen->currPageIndex <= PSS_PAGE_CONTEST_MOVES)
     {
         u8 subpriority = 0;
         if (idArrayStart == SPRITE_ARR_ID_MOVE_SELECTOR1)
