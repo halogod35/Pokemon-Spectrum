@@ -4052,6 +4052,7 @@ extern const u32 gSummaryPage_InfoEgg_Tilemap[];
 extern const u32 gSummaryPage_Skills_Tilemap[];
 extern const u32 gSummaryPage_BattleMoves_Tilemap[];
 extern const u32 gSummaryPage_ContestMoves_Tilemap[];
+extern const u32 gSummaryPage_HiddenStats_Tilemap[]; // PS-084
 extern const u16 gPPTextPalette[];
 extern const u32 gMoveTypes_Pal[];
 
