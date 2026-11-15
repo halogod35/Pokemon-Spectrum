@@ -30,7 +30,7 @@ A native PC port of Pokémon Emerald with online multiplayer: everyone plays the
 
 You can resize the window and the picture scales with it. In fullscreen the picture keeps its shape, with black bars at the sides. The mouse pointer hides when the mouse is still over the game for a few seconds.
 
-**Xbox-style controller, Windows only**
+**Xbox-style controller**
 
 | Controller | GBA button |
 |---|---|
@@ -41,7 +41,7 @@ You can resize the window and the picture scales with it. In fullscreen the pict
 | LB / RB | L / R |
 | D-pad or left stick | D-pad |
 
-Controllers need XInput, which Windows Vista and later have built in. On Windows XP, or on a Windows without the DirectX runtime, the game starts with controllers off; installing the [DirectX End-User Runtime (June 2010)](https://www.microsoft.com/en-us/download/details.aspx?id=8109) adds `xinput1_3.dll`, and a controller works there too.
+On Windows the game uses XInput, which Windows Vista and later have built in. On Windows XP, or on a Windows without the DirectX runtime, installing the [DirectX End-User Runtime (June 2010)](https://www.microsoft.com/en-us/download/details.aspx?id=8109) adds `xinput1_3.dll`. On Linux, and on a Windows without XInput, the game uses SDL's game-controller support instead, which knows most pads (Xbox, PlayStation, 8BitDo, Switch Pro) over USB and Bluetooth. The console prints `Controllers: … connected` when a pad is found; a pad it reports as having no mapping can be given one through the `SDL_GAMECONTROLLERCONFIG` environment variable.
 
 **Changing the controls**
 

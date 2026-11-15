@@ -94,6 +94,8 @@ static void UpdateInternalClock(void);
 #ifdef _WIN32
 static void PlatformLoadXInput(void); // PS-083: run-time XInput loader, called once from main()
 #endif
+static void PlatformInitSdlControllers(void);             // PS-085: SDL game-controller backend, once from main()
+static void SdlControllerHandleEvent(const SDL_Event *event); // PS-085: controller hot-plug, from ProcessEvents()
 
 #ifdef _WIN32
 // MP: crash reporter (BUG-003). On an unhandled exception, print the faulting address and a
@@ -300,8 +302,9 @@ int main(int argc, char **argv)
     }
     Platform_InputLoadConfig(); // PS-066: pokemon-spectrum.ini next to the executable
 #ifdef _WIN32
-    PlatformLoadXInput(); // PS-083: once at startup; prints which XInput DLL was found, or that controllers are off
+    PlatformLoadXInput(); // PS-083: once at startup; prints which XInput DLL was found, or that SDL takes the pads
 #endif
+    PlatformInitSdlControllers(); // PS-085: SDL's game-controller API on Linux, and on Windows without an XInput DLL
 
     sdlWindow = SDL_CreateWindow(gPlatformArgs.windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISPLAY_WIDTH * videoScale, DISPLAY_HEIGHT * videoScale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (sdlWindow == NULL)
@@ -1428,6 +1431,11 @@ void ProcessEvents(void)
         case SDL_QUIT:
             isRunning = false;
             break;
+        case SDL_CONTROLLERDEVICEADDED:   // PS-085: controller hot-plug (also the pads present at startup,
+        case SDL_CONTROLLERDEVICEREMOVED: // SDL queues their ADDED events at init, before the first frame)
+        case SDL_JOYDEVICEADDED:
+            SdlControllerHandleEvent(&event);
+            break;
         case SDL_KEYDOWN: // PS-066: hotkeys only; the game buttons are polled below
             // PS-063: Alt+Enter is fullscreen, not Start.
             if ((event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)
@@ -1497,11 +1505,28 @@ void ProcessEvents(void)
     }
 }
 
+// PS-085: the tail shared by both controller backends (XInput below, SDL game controllers further down), so
+// the ini [controller] mapping and the fast-forward rule cannot drift between them. Called only while a pad
+// is connected: with no pad, timeScale stays the keyboard's (ProcessEvents), as before.
+static u16 MapPadInputs(u32 padInputs)
+{
+    bool8 padFastForward;
+    u16 gamepadKeys = Platform_InputMapPad(padInputs, &padFastForward); // PS-066: pokemon-spectrum.ini
+
+    // Speedup. 'speedUp' is the keyboard's fast-forward (ProcessEvents).
+    // PS-058: the audio is no longer paused and flushed here. It keeps playing at normal speed,
+    // the same as with Space on the keyboard. (Pausing cut the sound with a click, and during a
+    // link the time lock reset timeScale every loop, which toggled the device on and off.)
+    timeScale = (padFastForward || speedUp) ? 5.0 : 1.0;
+    return gamepadKeys;
+}
+
 #ifdef _WIN32
 // PS-083: XInput is loaded at run time, not linked. The exe used to import XINPUT1_3.dll, which Windows XP
 // and a Windows without the DirectX runtime do not have, so the game refused to start there. Now the DLL
-// is looked up once at startup; when none is found sXInputGetState stays NULL and controllers are off.
-// <xinput.h> is still included for XINPUT_STATE and the XINPUT_GAMEPAD_* constants (header only).
+// is looked up once at startup; when none is found sXInputGetState stays NULL and the SDL game-controller
+// backend below takes over (PS-085). <xinput.h> is still included for XINPUT_STATE and the XINPUT_GAMEPAD_*
+// constants (header only).
 typedef DWORD (WINAPI *XInputGetStateFn)(DWORD dwUserIndex, XINPUT_STATE *pState);
 static XInputGetStateFn sXInputGetState = NULL;
 
@@ -1524,7 +1549,7 @@ static void PlatformLoadXInput(void)
         }
         FreeLibrary(module);
     }
-    printf("Controllers: no XInput DLL found (xinput1_4/1_3/9_1_0), controllers off\n");
+    printf("Controllers: no XInput DLL found (xinput1_4/1_3/9_1_0), using SDL's game-controller support\n"); // PS-085
 }
 
 #define STICK_THRESHOLD 0.5f
@@ -1545,8 +1570,7 @@ u16 GetXInputKeys()
         // PS-066: collect every controller input, then map them with pokemon-spectrum.ini.
         u32 padInputs = state.Gamepad.wButtons; // the PAD_* low bits are the XInput bits
         float xAxis = (float)state.Gamepad.sThumbLX / (float)SHRT_MAX;
-        float yAxis = (float)state.Gamepad.sThumbLY / (float)SHRT_MAX;
-        bool8 padFastForward;
+        float yAxis = (float)state.Gamepad.sThumbLY / (float)SHRT_MAX; // XInput: positive = up
 
         if (state.Gamepad.bLeftTrigger > 0x80)  padInputs |= PAD_LT;
         if (state.Gamepad.bRightTrigger > 0x80) padInputs |= PAD_RT;
@@ -1554,27 +1578,154 @@ u16 GetXInputKeys()
         if (xAxis >  STICK_THRESHOLD) padInputs |= PAD_STICK_RIGHT;
         if (yAxis < -STICK_THRESHOLD) padInputs |= PAD_STICK_DOWN;
         if (yAxis >  STICK_THRESHOLD) padInputs |= PAD_STICK_UP;
-        xinputKeys = Platform_InputMapPad(padInputs, &padFastForward);
-
-        // Speedup. 'speedUp' is the keyboard's fast-forward (ProcessEvents).
-        // PS-058: the audio is no longer paused and flushed here. It keeps playing at normal speed,
-        // the same as with Space on the keyboard. (Pausing cut the sound with a click, and during a
-        // link the time lock reset timeScale every loop, which toggled the device on and off.)
-        timeScale = (padFastForward || speedUp) ? 5.0 : 1.0;
+        xinputKeys = MapPadInputs(padInputs); // PS-085: shared with the SDL backend
     }
 
     return xinputKeys;
 }
 #endif // _WIN32
 
-u16 Platform_GetKeyInput(void)
+// PS-085: SDL game-controller backend. Used on Linux always, and on Windows only when no XInput DLL was
+// loaded (so Windows XP gets its DirectInput pads through SDL). Same PAD_* bits and the same ini mapping
+// as XInput. One pad at a time, the first one SDL reports, like XInput's player 0; hot-plug through the
+// SDL_CONTROLLERDEVICE* events in ProcessEvents(). SDL queues an ADDED event for every pad already
+// present when the subsystem starts, so the pads plugged in before the game are opened by the first
+// ProcessEvents() call, before the first frame. SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS stays at its
+// default (off). No mapping files: a pad SDL does not know is reported on the console, and the
+// SDL_GAMECONTROLLERCONFIG environment variable is SDL's standard way to add a mapping.
+// Only SDL 2.0.16 API here: the Windows build compiles against the vendored 2.0.16 headers.
+#define SDL_AXIS_THRESHOLD 16384 // half of the Sint16 axis range, like STICK_THRESHOLD and the XInput triggers (> 0x80)
+
+static bool sSdlControllersEnabled = false;      // the SDL_INIT_GAMECONTROLLER subsystem is up
+static SDL_GameController *sSdlController = NULL; // the pad we hold, or NULL
+static SDL_JoystickID sSdlControllerId = -1;      // its instance id, for the REMOVED event
+static char sSdlControllerName[64];               // its name, for the disconnected line (SDL has forgotten it by then)
+
+static bool UseSdlControllers(void)
 {
 #ifdef _WIN32
-    u16 gamepadKeys = GetXInputKeys();
-    return (gamepadKeys != 0) ? gamepadKeys : keys;
+    return sXInputGetState == NULL; // XInput present: unchanged behaviour, SDL's controller subsystem is not even started
+#else
+    return true;
 #endif
+}
 
-    return keys;
+static void PlatformInitSdlControllers(void)
+{
+    if (!UseSdlControllers())
+        return;
+    // Its own SDL_InitSubSystem call: a failure here (no udev, no input devices) must not stop the game.
+    if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) < 0)
+    {
+        printf("Controllers: SDL game-controller init failed (%s), controllers off\n", SDL_GetError());
+        return;
+    }
+    sSdlControllersEnabled = true;
+    printf("Controllers: SDL game-controller support (%d joystick%s present)\n", SDL_NumJoysticks(), SDL_NumJoysticks() == 1 ? "" : "s");
+}
+
+static void SdlControllerHandleEvent(const SDL_Event *event)
+{
+    if (!sSdlControllersEnabled)
+        return;
+    switch (event->type)
+    {
+    case SDL_CONTROLLERDEVICEADDED: // cdevice.which is a device index
+        if (sSdlController != NULL) // first pad wins; a second one is ignored until the first goes away
+            break;
+        sSdlController = SDL_GameControllerOpen(event->cdevice.which);
+        if (sSdlController == NULL)
+        {
+            printf("Controllers: could not open controller %d (%s)\n", (int)event->cdevice.which, SDL_GetError());
+            break;
+        }
+        sSdlControllerId = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(sSdlController));
+        {
+            const char *name = SDL_GameControllerName(sSdlController);
+
+            snprintf(sSdlControllerName, sizeof(sSdlControllerName), "%s", name != NULL ? name : "controller");
+            sSdlControllerName[sizeof(sSdlControllerName) - 1] = '\0';
+        }
+        printf("Controllers: %s connected\n", sSdlControllerName);
+        break;
+    case SDL_CONTROLLERDEVICEREMOVED: // cdevice.which is an instance id
+        if (sSdlController == NULL || event->cdevice.which != sSdlControllerId)
+            break;
+        printf("Controllers: %s disconnected\n", sSdlControllerName);
+        SDL_GameControllerClose(sSdlController);
+        sSdlController = NULL;
+        sSdlControllerId = -1;
+        break;
+    case SDL_JOYDEVICEADDED: // jdevice.which is a device index; a joystick SDL has no controller mapping for
+        if (!SDL_IsGameController(event->jdevice.which))
+        {
+            const char *name = SDL_JoystickNameForIndex(event->jdevice.which);
+
+            printf("Controllers: joystick \"%s\" has no game-controller mapping (set SDL_GAMECONTROLLERCONFIG to add one)\n",
+                   name != NULL ? name : "?");
+        }
+        break;
+    }
+}
+
+static u16 GetSdlControllerKeys(void)
+{
+    static const struct { SDL_GameControllerButton button; u32 pad; } sButtons[] =
+    {
+        { SDL_CONTROLLER_BUTTON_A,             PAD_A },
+        { SDL_CONTROLLER_BUTTON_B,             PAD_B },
+        { SDL_CONTROLLER_BUTTON_X,             PAD_X },
+        { SDL_CONTROLLER_BUTTON_Y,             PAD_Y },
+        { SDL_CONTROLLER_BUTTON_LEFTSHOULDER,  PAD_LB },
+        { SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, PAD_RB },
+        { SDL_CONTROLLER_BUTTON_START,         PAD_START },
+        { SDL_CONTROLLER_BUTTON_BACK,          PAD_BACK },
+        { SDL_CONTROLLER_BUTTON_LEFTSTICK,     PAD_LEFT_THUMB },
+        { SDL_CONTROLLER_BUTTON_RIGHTSTICK,    PAD_RIGHT_THUMB },
+        { SDL_CONTROLLER_BUTTON_DPAD_UP,       PAD_DPAD_UP },
+        { SDL_CONTROLLER_BUTTON_DPAD_DOWN,     PAD_DPAD_DOWN },
+        { SDL_CONTROLLER_BUTTON_DPAD_LEFT,     PAD_DPAD_LEFT },
+        { SDL_CONTROLLER_BUTTON_DPAD_RIGHT,    PAD_DPAD_RIGHT },
+    };
+    u32 padInputs = 0;
+    Sint16 xAxis, yAxis;
+    u32 i;
+
+    if (sSdlController == NULL)
+        return 0;
+
+    for (i = 0; i < ARRAY_COUNT(sButtons); i++)
+    {
+        if (SDL_GameControllerGetButton(sSdlController, sButtons[i].button))
+            padInputs |= sButtons[i].pad;
+    }
+    if (SDL_GameControllerGetAxis(sSdlController, SDL_CONTROLLER_AXIS_TRIGGERLEFT)  > SDL_AXIS_THRESHOLD) padInputs |= PAD_LT;
+    if (SDL_GameControllerGetAxis(sSdlController, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > SDL_AXIS_THRESHOLD) padInputs |= PAD_RT;
+    xAxis = SDL_GameControllerGetAxis(sSdlController, SDL_CONTROLLER_AXIS_LEFTX);
+    yAxis = SDL_GameControllerGetAxis(sSdlController, SDL_CONTROLLER_AXIS_LEFTY); // SDL: positive = down (XInput: up)
+    if (xAxis < -SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_LEFT;
+    if (xAxis >  SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_RIGHT;
+    if (yAxis < -SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_UP;
+    if (yAxis >  SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_DOWN;
+
+    return MapPadInputs(padInputs);
+}
+
+// One controller source per frame: XInput on a Windows that has it (unchanged), else SDL's game
+// controllers (Linux; Windows without an XInput DLL). The keyboard when the pad reports nothing.
+u16 Platform_GetKeyInput(void)
+{
+    u16 gamepadKeys;
+
+#ifdef _WIN32
+    if (sXInputGetState != NULL)
+        gamepadKeys = GetXInputKeys();
+    else
+        gamepadKeys = GetSdlControllerKeys(); // PS-085
+#else
+    gamepadKeys = GetSdlControllerKeys(); // PS-085
+#endif
+    return (gamepadKeys != 0) ? gamepadKeys : keys;
 }
 
 void VDraw(SDL_Texture *texture)
