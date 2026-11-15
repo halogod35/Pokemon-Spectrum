@@ -1587,19 +1587,28 @@ u16 GetXInputKeys()
 
 // PS-085: SDL game-controller backend. Used on Linux always, and on Windows only when no XInput DLL was
 // loaded (so Windows XP gets its DirectInput pads through SDL). Same PAD_* bits and the same ini mapping
-// as XInput. One pad at a time, the first one SDL reports, like XInput's player 0; hot-plug through the
-// SDL_CONTROLLERDEVICE* events in ProcessEvents(). SDL queues an ADDED event for every pad already
-// present when the subsystem starts, so the pads plugged in before the game are opened by the first
-// ProcessEvents() call, before the first frame. SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS stays at its
-// default (off). No mapping files: a pad SDL does not know is reported on the console, and the
-// SDL_GAMECONTROLLERCONFIG environment variable is SDL's standard way to add a mapping.
+// as XInput. Every game controller SDL reports is opened and polled, and their inputs are ORed: the user's
+// Linux box had two stale xboxdrv uinput pads ("Xbox Gamepad (userspace driver)") that send nothing registered
+// before the real 8BitDo pad, so "first pad wins" picked a dead one. Hot-plug through the SDL_CONTROLLERDEVICE*
+// events in ProcessEvents(). SDL queues an ADDED event for every pad already present when the subsystem
+// starts, so the pads plugged in before the game are opened by the first ProcessEvents() call, before the
+// first frame. SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS stays at its default (off). No mapping files: a pad
+// SDL does not know is reported on the console, and the SDL_GAMECONTROLLERCONFIG environment variable is
+// SDL's standard way to add a mapping.
 // Only SDL 2.0.16 API here: the Windows build compiles against the vendored 2.0.16 headers.
 #define SDL_AXIS_THRESHOLD 16384 // half of the Sint16 axis range, like STICK_THRESHOLD and the XInput triggers (> 0x80)
+#define SDL_CONTROLLER_SLOTS 8   // pads open at once; more are reported and ignored
 
-static bool sSdlControllersEnabled = false;      // the SDL_INIT_GAMECONTROLLER subsystem is up
-static SDL_GameController *sSdlController = NULL; // the pad we hold, or NULL
-static SDL_JoystickID sSdlControllerId = -1;      // its instance id, for the REMOVED event
-static char sSdlControllerName[64];               // its name, for the disconnected line (SDL has forgotten it by then)
+struct SdlControllerSlot
+{
+    SDL_GameController *controller; // NULL = free slot
+    SDL_JoystickID instanceId;      // for the REMOVED event
+    char name[64];                  // for the disconnected line (SDL has forgotten it by then)
+};
+
+static bool sSdlControllersEnabled = false; // the SDL_INIT_GAMECONTROLLER subsystem is up
+static struct SdlControllerSlot sSdlControllers[SDL_CONTROLLER_SLOTS];
+static u32 sSdlControllerCount = 0;         // open pads, 0..SDL_CONTROLLER_SLOTS
 
 static bool UseSdlControllers(void)
 {
@@ -1631,31 +1640,60 @@ static void SdlControllerHandleEvent(const SDL_Event *event)
     switch (event->type)
     {
     case SDL_CONTROLLERDEVICEADDED: // cdevice.which is a device index
-        if (sSdlController != NULL) // first pad wins; a second one is ignored until the first goes away
+    {
+        struct SdlControllerSlot *slot = NULL;
+        const char *name;
+        u32 i;
+
+        for (i = 0; i < SDL_CONTROLLER_SLOTS; i++)
+        {
+            if (sSdlControllers[i].controller == NULL)
+            {
+                slot = &sSdlControllers[i];
+                break;
+            }
+        }
+        if (slot == NULL) // table full: say so once per extra pad and ignore it
+        {
+            name = SDL_GameControllerNameForIndex(event->cdevice.which);
+            printf("Controllers: %s ignored, %d pads are already open\n", name != NULL ? name : "controller", SDL_CONTROLLER_SLOTS);
             break;
-        sSdlController = SDL_GameControllerOpen(event->cdevice.which);
-        if (sSdlController == NULL)
+        }
+        slot->controller = SDL_GameControllerOpen(event->cdevice.which);
+        if (slot->controller == NULL)
         {
             printf("Controllers: could not open controller %d (%s)\n", (int)event->cdevice.which, SDL_GetError());
             break;
         }
-        sSdlControllerId = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(sSdlController));
-        {
-            const char *name = SDL_GameControllerName(sSdlController);
-
-            snprintf(sSdlControllerName, sizeof(sSdlControllerName), "%s", name != NULL ? name : "controller");
-            sSdlControllerName[sizeof(sSdlControllerName) - 1] = '\0';
-        }
-        printf("Controllers: %s connected\n", sSdlControllerName);
+        slot->instanceId = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(slot->controller));
+        name = SDL_GameControllerName(slot->controller);
+        snprintf(slot->name, sizeof(slot->name), "%s", name != NULL ? name : "controller");
+        slot->name[sizeof(slot->name) - 1] = '\0';
+        sSdlControllerCount++;
+        printf("Controllers: %s connected (pad %u)\n", slot->name, (unsigned)(i + 1));
         break;
+    }
     case SDL_CONTROLLERDEVICEREMOVED: // cdevice.which is an instance id
-        if (sSdlController == NULL || event->cdevice.which != sSdlControllerId)
+    {
+        u32 i;
+
+        for (i = 0; i < SDL_CONTROLLER_SLOTS; i++)
+        {
+            struct SdlControllerSlot *slot = &sSdlControllers[i];
+
+            if (slot->controller == NULL || slot->instanceId != event->cdevice.which)
+                continue;
+            printf("Controllers: %s disconnected (pad %u)\n", slot->name, (unsigned)(i + 1));
+            SDL_GameControllerClose(slot->controller);
+            slot->controller = NULL;
+            slot->instanceId = -1;
+            slot->name[0] = '\0';
+            if (sSdlControllerCount > 0)
+                sSdlControllerCount--;
             break;
-        printf("Controllers: %s disconnected\n", sSdlControllerName);
-        SDL_GameControllerClose(sSdlController);
-        sSdlController = NULL;
-        sSdlControllerId = -1;
+        }
         break;
+    }
     case SDL_JOYDEVICEADDED: // jdevice.which is a device index; a joystick SDL has no controller mapping for
         if (!SDL_IsGameController(event->jdevice.which))
         {
@@ -1688,25 +1726,34 @@ static u16 GetSdlControllerKeys(void)
         { SDL_CONTROLLER_BUTTON_DPAD_RIGHT,    PAD_DPAD_RIGHT },
     };
     u32 padInputs = 0;
-    Sint16 xAxis, yAxis;
-    u32 i;
+    u32 slotIndex;
 
-    if (sSdlController == NULL)
+    if (sSdlControllerCount == 0) // no pad: timeScale stays the keyboard's, as with no XInput pad
         return 0;
 
-    for (i = 0; i < ARRAY_COUNT(sButtons); i++)
+    // Every open pad, ORed: a stale pad that sends nothing adds nothing. With one pad this is the old poll.
+    for (slotIndex = 0; slotIndex < SDL_CONTROLLER_SLOTS; slotIndex++)
     {
-        if (SDL_GameControllerGetButton(sSdlController, sButtons[i].button))
-            padInputs |= sButtons[i].pad;
+        SDL_GameController *pad = sSdlControllers[slotIndex].controller;
+        Sint16 xAxis, yAxis;
+        u32 i;
+
+        if (pad == NULL)
+            continue;
+        for (i = 0; i < ARRAY_COUNT(sButtons); i++)
+        {
+            if (SDL_GameControllerGetButton(pad, sButtons[i].button))
+                padInputs |= sButtons[i].pad;
+        }
+        if (SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT)  > SDL_AXIS_THRESHOLD) padInputs |= PAD_LT;
+        if (SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > SDL_AXIS_THRESHOLD) padInputs |= PAD_RT;
+        xAxis = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX);
+        yAxis = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTY); // SDL: positive = down (XInput: up)
+        if (xAxis < -SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_LEFT;
+        if (xAxis >  SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_RIGHT;
+        if (yAxis < -SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_UP;
+        if (yAxis >  SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_DOWN;
     }
-    if (SDL_GameControllerGetAxis(sSdlController, SDL_CONTROLLER_AXIS_TRIGGERLEFT)  > SDL_AXIS_THRESHOLD) padInputs |= PAD_LT;
-    if (SDL_GameControllerGetAxis(sSdlController, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > SDL_AXIS_THRESHOLD) padInputs |= PAD_RT;
-    xAxis = SDL_GameControllerGetAxis(sSdlController, SDL_CONTROLLER_AXIS_LEFTX);
-    yAxis = SDL_GameControllerGetAxis(sSdlController, SDL_CONTROLLER_AXIS_LEFTY); // SDL: positive = down (XInput: up)
-    if (xAxis < -SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_LEFT;
-    if (xAxis >  SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_RIGHT;
-    if (yAxis < -SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_UP;
-    if (yAxis >  SDL_AXIS_THRESHOLD) padInputs |= PAD_STICK_DOWN;
 
     return MapPadInputs(padInputs);
 }
