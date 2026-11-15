@@ -340,7 +340,7 @@ int main(int argc, char **argv)
             printf("Renderer: %s%s\n", rendererInfo.name, (rendererInfo.flags & SDL_RENDERER_PRESENTVSYNC) ? " (vsync)" : "");
     }
 
-    SDL_SetRenderDrawColor(sdlRenderer, 255, 255, 255, 255);
+    SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255); // PS-085: black, the colour of the per-frame clear below
     SDL_RenderClear(sdlRenderer);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     SDL_RenderSetLogicalSize(sdlRenderer, DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -444,7 +444,6 @@ int main(int argc, char **argv)
                 if (!isGameStepDrawn)
                 {
                     VDraw(sdlTexture);
-                    //SDL_RenderClear(sdlRenderer);
                     isGameStepDrawn = true;
                 }
                 RunDMAsAndVBlank();
@@ -464,6 +463,10 @@ int main(int argc, char **argv)
 
         lastGameTime = curGameTime;
 
+        // PS-085: clear the whole backbuffer every frame. With the 240x160 logical size the copy only
+        // paints the letterboxed picture and leaves the rest of the backbuffer as it was; on Linux the
+        // old window-sized picture stayed in the top-left corner after Alt+Enter to fullscreen.
+        SDL_RenderClear(sdlRenderer);
         SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
         Platform_DrawNetOverlay(sdlRenderer); // MP: PS-053 F3 overlay, on top of the game picture
         SDL_RenderPresent(sdlRenderer);
