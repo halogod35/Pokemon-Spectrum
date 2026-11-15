@@ -92,6 +92,10 @@ static void ThrottleLoop(void);
 static void UpdateInternalClock(void);
 
 #ifdef _WIN32
+static void PlatformLoadXInput(void); // PS-083: run-time XInput loader, called once from main()
+#endif
+
+#ifdef _WIN32
 // MP: crash reporter (BUG-003). On an unhandled exception, print the faulting address and a
 // stack of return addresses as offsets from the exe's base, to the console and to
 // pokemon-spectrum_crash.txt next to the exe. Match the offsets against pokemon-spectrum.map (shipped with
@@ -295,6 +299,9 @@ int main(int argc, char **argv)
         return 1;
     }
     Platform_InputLoadConfig(); // PS-066: pokemon-spectrum.ini next to the executable
+#ifdef _WIN32
+    PlatformLoadXInput(); // PS-083: once at startup; prints which XInput DLL was found, or that controllers are off
+#endif
 
     sdlWindow = SDL_CreateWindow(gPlatformArgs.windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISPLAY_WIDTH * videoScale, DISPLAY_HEIGHT * videoScale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (sdlWindow == NULL)
@@ -1469,14 +1476,47 @@ void ProcessEvents(void)
 }
 
 #ifdef _WIN32
+// PS-083: XInput is loaded at run time, not linked. The exe used to import XINPUT1_3.dll, which Windows XP
+// and a Windows without the DirectX runtime do not have, so the game refused to start there. Now the DLL
+// is looked up once at startup; when none is found sXInputGetState stays NULL and controllers are off.
+// <xinput.h> is still included for XINPUT_STATE and the XINPUT_GAMEPAD_* constants (header only).
+typedef DWORD (WINAPI *XInputGetStateFn)(DWORD dwUserIndex, XINPUT_STATE *pState);
+static XInputGetStateFn sXInputGetState = NULL;
+
+static void PlatformLoadXInput(void)
+{
+    static const char *const sXInputDlls[] = { "xinput1_4.dll", "xinput1_3.dll", "xinput9_1_0.dll" };
+    u32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sXInputDlls); i++)
+    {
+        HMODULE module = LoadLibraryA(sXInputDlls[i]);
+
+        if (module == NULL)
+            continue;
+        sXInputGetState = (XInputGetStateFn)(void *)GetProcAddress(module, "XInputGetState");
+        if (sXInputGetState != NULL)
+        {
+            printf("Controllers: XInput from %s\n", sXInputDlls[i]);
+            return;
+        }
+        FreeLibrary(module);
+    }
+    printf("Controllers: no XInput DLL found (xinput1_4/1_3/9_1_0), controllers off\n");
+}
+
 #define STICK_THRESHOLD 0.5f
 u16 GetXInputKeys()
 {
     XINPUT_STATE state;
-    ZeroMemory(&state, sizeof(XINPUT_STATE));
-
-    DWORD dwResult = XInputGetState(0, &state);
+    DWORD dwResult;
     u16 xinputKeys = 0;
+
+    if (sXInputGetState == NULL) // PS-083: no XInput DLL on this Windows, controllers off
+        return 0;
+
+    ZeroMemory(&state, sizeof(XINPUT_STATE));
+    dwResult = sXInputGetState(0, &state);
 
     if (dwResult == ERROR_SUCCESS)
     {

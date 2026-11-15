@@ -27,7 +27,9 @@ but the build tools in `tools/` are built for the host, so you don't need to cle
 ### Multiplayer networking (ENet)
 
 Multiplayer uses [ENet](http://enet.bespin.org/) 1.3.18 (MIT), vendored in `libs/enet/`, so there is nothing to
-install. The Makefile compiles it into every PC build and links `-lws2_32 -lwinmm` on Windows. The build also embeds
+install. The Makefile compiles it into every PC build and links `-lws2_32 -lwinmm` on Windows (`-lxinput` is gone:
+XInput is loaded at run time, so no XInput import library is needed to build, and the exe starts on Windows XP or
+without the DirectX runtime, with controllers off). The build also embeds
 a build id (the first 8 hex digits of the git commit, or `nogit`) that the multiplayer handshake compares. Two
 games can only play together if they were built from the same commit. Override it with `make linux MP_BUILD_ID=<id>`.
 

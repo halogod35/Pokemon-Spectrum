@@ -205,6 +205,14 @@ jobs:
       - name: Build
         run: make -j"$(nproc)" winwsl
 
+      # PS-083: Windows XP import audit. Prints every DLL and symbol the exe imports and fails the job
+      # when a DLL outside the XP allowlist or a Vista-or-later symbol is imported (the exe would not
+      # start on XP). SDL2.dll's DLL list is printed for the log only.
+      - name: XP import audit
+        run: |
+          chmod +x tools/ci/check_xp_imports.sh
+          tools/ci/check_xp_imports.sh ${{ matrix.triplet }}-objdump pokemon-spectrum${{ matrix.bits }}.exe SDL2/${{ matrix.triplet }}/bin/SDL2.dll
+
       - name: Package executable with SDL2.dll
         run: |
           mkdir -p dist
