@@ -25,17 +25,30 @@ AcquireSRWLockExclusive InitializeConditionVariable SleepConditionVariableCS Get
 QueryUnbiasedInterruptTime SHGetKnownFolderPath K32GetProcessMemoryInfo SetThreadDescription
 CreateWaitableTimerExW GetFinalPathNameByHandleA GetFinalPathNameByHandleW RtlGenRandom BCryptGenRandom"
 
-# Prints "DLL symbol" pairs for every named import in a PE file. objdump -p lists, per DLL,
+# Prints "DLL symbol" pairs for every named import in a PE file. objdump -p lists, per DLL, either
 #     DLL Name: KERNEL32.dll
 #     vma:  Hint/Ord Member-Name Bound-To
 #     a2d0       85  CloseHandle
-# (ordinal-only imports have no name and are skipped).
+# (older binutils) or, with an Ordinal column (binutils 2.39 and later),
+#     vma:     Ordinal  Hint  Member-Name  Bound-To
+#     a2d0       <none>    85  CloseHandle
+# so the name is the first field after the vma that looks like an identifier (ordinal-only imports
+# have no name and are skipped).
 imports_of()
 {
     "$objdump" -p "$1" | awk '
         /DLL Name:/ { dll = $3; next }
-        dll != "" && $1 ~ /^[0-9a-f]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[A-Za-z_?@$][A-Za-z0-9_?@$]*$/ { print dll, $3 }
+        dll != "" && $1 ~ /^[0-9a-f]+$/ {
+            for (i = 2; i <= NF; i++)
+                if ($i ~ /^[A-Za-z_?@$][A-Za-z0-9_?@$]*$/) { print dll, $i; break }
+        }
     '
+}
+
+# The raw import tables, for the log, so a parser mismatch can be seen and fixed.
+raw_imports_of()
+{
+    "$objdump" -p "$1" | awk '/The Import Tables/ { p = 1 } /The Function Table|The Export Tables/ { p = 0 } p'
 }
 
 dlls_of()
@@ -58,10 +71,18 @@ echo "--- imported DLLs"
 echo "$dlls" | sed 's/^/    /'
 
 echo "--- imported symbols"
-echo "$imports" | awk '{ print "    " $1 "  " $2 }'
-echo "    ($(echo "$imports" | grep -c .) named imports from $(echo "$dlls" | grep -c .) DLLs)"
+echo "$imports" | awk 'NF { print "    " $1 "  " $2 }'
+nsyms=$(echo "$imports" | grep -c .)
+echo "    ($nsyms named imports from $(echo "$dlls" | grep -c .) DLLs)"
+
+echo "--- raw import tables (objdump -p)"
+raw_imports_of "$exe" | sed 's/^/    /'
 
 echo "--- verdict"
+if [ "$nsyms" = 0 ]; then
+    echo "::error::check_xp_imports: parsed no imported symbols from $exe; the objdump -p layout changed, fix imports_of()"
+    fail=1
+fi
 for dll in $dlls; do
     lower=$(echo "$dll" | tr '[:upper:]' '[:lower:]')
     ok=0
