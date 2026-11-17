@@ -3,6 +3,7 @@
 #include "bg.h"
 #include "gpu_regs.h"
 #include "international_string_util.h"
+#include "list_menu.h" // PS-086: scroll indicator arrows
 #include "main.h"
 #include "menu.h"
 #include "palette.h"
@@ -23,7 +24,9 @@
 #define tSound data[4]
 #define tButtonMode data[5]
 #define tWindowFrameType data[6]
-#define tDayNightOff data[7] // PS-072
+#define tDayNightOff data[7]    // PS-072
+#define tRandomCallsOff data[8] // PS-086
+#define tArrowTaskId data[9]    // PS-086: scroll indicator arrow pair task
 
 enum
 {
@@ -33,16 +36,19 @@ enum
     MENUITEM_SOUND,
     MENUITEM_BUTTONMODE,
     MENUITEM_FRAMETYPE,
-    MENUITEM_DAYNIGHT, // PS-072
+    MENUITEM_DAYNIGHT,    // PS-072
+    MENUITEM_RANDOMCALLS, // PS-086
     MENUITEM_CANCEL,
     MENUITEM_COUNT,
 };
 
-// PS-072: eight rows need 16 tile rows, so the header sits at the top of the screen without
-// a frame (rows 0-1), the list starts at row 3 and its frame uses rows 2 and 19. The frame
-// tiles moved up in VRAM to make room for the taller list window.
-#define OPTIONS_TOP_TILE 3
-#define FRAME_TILE_BASE  0x1D6
+// PS-086: the list window is the original 26x14 one (7 rows of 16 px) and scrolls through the
+// MENUITEM_COUNT items; sScrollOffset is the first visible item. The frame tiles sit right after
+// the list window's tiles (0x36 + 26 * 14 = 0x1A2), exactly as in the unmodified game.
+#define MENUITEMS_VISIBLE 7
+#define MAX_SCROLL_OFFSET (MENUITEM_COUNT - MENUITEMS_VISIBLE)
+#define FRAME_TILE_BASE   0x1A2
+#define TAG_SCROLL_ARROW  1086 // PS-086: this screen has no other sprites, any tag is free
 
 enum
 {
@@ -50,19 +56,14 @@ enum
     WIN_OPTIONS
 };
 
-#define YPOS_TEXTSPEED    (MENUITEM_TEXTSPEED * 16)
-#define YPOS_BATTLESCENE  (MENUITEM_BATTLESCENE * 16)
-#define YPOS_BATTLESTYLE  (MENUITEM_BATTLESTYLE * 16)
-#define YPOS_SOUND        (MENUITEM_SOUND * 16)
-#define YPOS_BUTTONMODE   (MENUITEM_BUTTONMODE * 16)
-#define YPOS_FRAMETYPE    (MENUITEM_FRAMETYPE * 16)
-#define YPOS_DAYNIGHT     (MENUITEM_DAYNIGHT * 16) // PS-072
-
 static void Task_OptionMenuFadeIn(u8 taskId);
 static void Task_OptionMenuProcessInput(u8 taskId);
 static void Task_OptionMenuSave(u8 taskId);
 static void Task_OptionMenuFadeOut(u8 taskId);
-static void HighlightOptionMenuItem(u8 selection);
+static void HighlightOptionMenuItem(u8 index);
+static void ScrollToSelection(u8 taskId);    // PS-086
+static void RedrawOptionMenuItems(u8 taskId); // PS-086
+static s32 ItemYPos(u8 item);                 // PS-086
 static u8 TextSpeed_ProcessInput(u8 selection);
 static void TextSpeed_DrawChoices(u8 selection);
 static u8 BattleScene_ProcessInput(u8 selection);
@@ -75,19 +76,23 @@ static u8 FrameType_ProcessInput(u8 selection);
 static void FrameType_DrawChoices(u8 selection);
 static u8 ButtonMode_ProcessInput(u8 selection);
 static void ButtonMode_DrawChoices(u8 selection);
-static u8 DayNight_ProcessInput(u8 selection);  // PS-072
-static void DayNight_DrawChoices(u8 selection); // PS-072
+static u8 DayNight_ProcessInput(u8 selection);     // PS-072
+static void DayNight_DrawChoices(u8 selection);    // PS-072
+static u8 RandomCalls_ProcessInput(u8 selection);  // PS-086
+static void RandomCalls_DrawChoices(u8 selection); // PS-086
 static void DrawHeaderText(void);
 static void DrawOptionMenuTexts(void);
 static void DrawBgWindowFrames(void);
 
 EWRAM_DATA static bool8 sArrowPressed = FALSE;
+EWRAM_DATA static u16 sScrollOffset = 0; // PS-086: first visible item; the arrow sprites read it every frame
 
 static const u16 sOptionMenuText_Pal[] = INCGFX_U16("graphics/interface/option_menu_text.pal", ".gbapal");
 // note: this is only used in the Japanese release
 static const u8 sEqualSignGfx[] = INCGFX_U8("graphics/interface/option_menu_equals_sign.png", ".4bpp");
 
-static const u8 sText_DayNight[] = _("DAY/NIGHT"); // PS-072
+static const u8 sText_DayNight[] = _("DAY/NIGHT");       // PS-072
+static const u8 sText_RandomCalls[] = _("RANDOM CALLS"); // PS-086
 
 static const u8 *const sOptionMenuItemsNames[MENUITEM_COUNT] =
 {
@@ -97,7 +102,8 @@ static const u8 *const sOptionMenuItemsNames[MENUITEM_COUNT] =
     [MENUITEM_SOUND]       = gText_Sound,
     [MENUITEM_BUTTONMODE]  = gText_ButtonMode,
     [MENUITEM_FRAMETYPE]   = gText_Frame,
-    [MENUITEM_DAYNIGHT]    = sText_DayNight, // PS-072
+    [MENUITEM_DAYNIGHT]    = sText_DayNight,    // PS-072
+    [MENUITEM_RANDOMCALLS] = sText_RandomCalls, // PS-086
     [MENUITEM_CANCEL]      = gText_OptionMenuCancel,
 };
 
@@ -106,7 +112,7 @@ static const struct WindowTemplate sOptionMenuWinTemplates[] =
     [WIN_HEADER] = {
         .bg = 1,
         .tilemapLeft = 2,
-        .tilemapTop = 0, // PS-072: was 1
+        .tilemapTop = 1,
         .width = 26,
         .height = 2,
         .paletteNum = 1,
@@ -115,9 +121,9 @@ static const struct WindowTemplate sOptionMenuWinTemplates[] =
     [WIN_OPTIONS] = {
         .bg = 0,
         .tilemapLeft = 2,
-        .tilemapTop = OPTIONS_TOP_TILE, // PS-072: was 5
+        .tilemapTop = 5,
         .width = 26,
-        .height = MENUITEM_COUNT * 2,   // PS-072: was 14
+        .height = 14,
         .paletteNum = 1,
         .baseBlock = 0x36
     },
@@ -191,8 +197,9 @@ void CB2_InitOptionMenu(void)
         DeactivateAllTextPrinters();
         SetGpuReg(REG_OFFSET_WIN0H, 0);
         SetGpuReg(REG_OFFSET_WIN0V, 0);
-        SetGpuReg(REG_OFFSET_WININ, WININ_WIN0_BG0);
-        SetGpuReg(REG_OFFSET_WINOUT, WINOUT_WIN01_BG0 | WINOUT_WIN01_BG1 | WINOUT_WIN01_CLR);
+        // PS-086: OBJ added inside and outside the highlight window so the scroll arrows show
+        SetGpuReg(REG_OFFSET_WININ, WININ_WIN0_BG0 | WININ_WIN0_OBJ);
+        SetGpuReg(REG_OFFSET_WINOUT, WINOUT_WIN01_BG0 | WINOUT_WIN01_BG1 | WINOUT_WIN01_OBJ | WINOUT_WIN01_CLR);
         SetGpuReg(REG_OFFSET_BLDCNT, BLDCNT_TGT1_BG0 | BLDCNT_EFFECT_DARKEN);
         SetGpuReg(REG_OFFSET_BLDALPHA, 0);
         SetGpuReg(REG_OFFSET_BLDY, 4);
@@ -206,6 +213,7 @@ void CB2_InitOptionMenu(void)
         ScanlineEffect_Stop();
         ResetTasks();
         ResetSpriteData();
+        sScrollOffset = 0; // PS-086
         gMain.state++;
         break;
     case 3:
@@ -248,7 +256,8 @@ void CB2_InitOptionMenu(void)
         gTasks[taskId].tSound = gSaveBlock2Ptr->optionsSound;
         gTasks[taskId].tButtonMode = gSaveBlock2Ptr->optionsButtonMode;
         gTasks[taskId].tWindowFrameType = gSaveBlock2Ptr->optionsWindowFrameType;
-        gTasks[taskId].tDayNightOff = gSaveBlock2Ptr->optionsDayNightOff; // PS-072
+        gTasks[taskId].tDayNightOff = gSaveBlock2Ptr->optionsDayNightOff;       // PS-072
+        gTasks[taskId].tRandomCallsOff = gSaveBlock2Ptr->optionsRandomCallsOff; // PS-086
 
         TextSpeed_DrawChoices(gTasks[taskId].tTextSpeed);
         BattleScene_DrawChoices(gTasks[taskId].tBattleSceneOff);
@@ -256,8 +265,14 @@ void CB2_InitOptionMenu(void)
         Sound_DrawChoices(gTasks[taskId].tSound);
         ButtonMode_DrawChoices(gTasks[taskId].tButtonMode);
         FrameType_DrawChoices(gTasks[taskId].tWindowFrameType);
-        DayNight_DrawChoices(gTasks[taskId].tDayNightOff); // PS-072
+        DayNight_DrawChoices(gTasks[taskId].tDayNightOff);       // PS-072
+        RandomCalls_DrawChoices(gTasks[taskId].tRandomCallsOff); // PS-086
         HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
+
+        // PS-086: up/down arrows centred on the list frame's top (row 4) and bottom (row 19) edges
+        gTasks[taskId].tArrowTaskId = AddScrollIndicatorArrowPairParameterized(SCROLL_ARROW_UP, 120, 36, 156,
+                                                                               MAX_SCROLL_OFFSET, TAG_SCROLL_ARROW,
+                                                                               TAG_SCROLL_ARROW, &sScrollOffset);
 
         CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
         gMain.state++;
@@ -294,7 +309,7 @@ static void Task_OptionMenuProcessInput(u8 taskId)
             gTasks[taskId].tMenuSelection--;
         else
             gTasks[taskId].tMenuSelection = MENUITEM_CANCEL;
-        HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
+        ScrollToSelection(taskId); // PS-086: scrolls the list if needed, then highlights
     }
     else if (JOY_NEW(DPAD_DOWN))
     {
@@ -302,7 +317,7 @@ static void Task_OptionMenuProcessInput(u8 taskId)
             gTasks[taskId].tMenuSelection++;
         else
             gTasks[taskId].tMenuSelection = 0;
-        HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
+        ScrollToSelection(taskId); // PS-086
     }
     else
     {
@@ -359,6 +374,13 @@ static void Task_OptionMenuProcessInput(u8 taskId)
             if (previousOption != gTasks[taskId].tDayNightOff)
                 DayNight_DrawChoices(gTasks[taskId].tDayNightOff);
             break;
+        case MENUITEM_RANDOMCALLS: // PS-086
+            previousOption = gTasks[taskId].tRandomCallsOff;
+            gTasks[taskId].tRandomCallsOff = RandomCalls_ProcessInput(gTasks[taskId].tRandomCallsOff);
+
+            if (previousOption != gTasks[taskId].tRandomCallsOff)
+                RandomCalls_DrawChoices(gTasks[taskId].tRandomCallsOff);
+            break;
         default:
             return;
         }
@@ -379,7 +401,8 @@ static void Task_OptionMenuSave(u8 taskId)
     gSaveBlock2Ptr->optionsSound = gTasks[taskId].tSound;
     gSaveBlock2Ptr->optionsButtonMode = gTasks[taskId].tButtonMode;
     gSaveBlock2Ptr->optionsWindowFrameType = gTasks[taskId].tWindowFrameType;
-    gSaveBlock2Ptr->optionsDayNightOff = gTasks[taskId].tDayNightOff; // PS-072: takes effect on the next overworld frame
+    gSaveBlock2Ptr->optionsDayNightOff = gTasks[taskId].tDayNightOff;       // PS-072: takes effect on the next overworld frame
+    gSaveBlock2Ptr->optionsRandomCallsOff = gTasks[taskId].tRandomCallsOff; // PS-086: read by TryStartMatchCall each step
 
     BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
     gTasks[taskId].func = Task_OptionMenuFadeOut;
@@ -389,16 +412,62 @@ static void Task_OptionMenuFadeOut(u8 taskId)
 {
     if (!gPaletteFade.active)
     {
+        RemoveScrollIndicatorArrowPair(gTasks[taskId].tArrowTaskId); // PS-086
         DestroyTask(taskId);
         FreeAllWindowBuffers();
         SetMainCallback2(gMain.savedCallback);
     }
 }
 
+// PS-086: index is the visible row (0..MENUITEMS_VISIBLE-1), not the item; rows start at y 40.
 static void HighlightOptionMenuItem(u8 index)
 {
     SetGpuReg(REG_OFFSET_WIN0H, WIN_RANGE(16, DISPLAY_WIDTH - 16));
-    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE(index * 16 + OPTIONS_TOP_TILE * 8, index * 16 + OPTIONS_TOP_TILE * 8 + 16)); // PS-072
+    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE(index * 16 + 40, index * 16 + 56));
+}
+
+// PS-086: pixel y of an item's row inside WIN_OPTIONS, or -1 when the item is scrolled out of
+// view. Every draw goes through this so nothing is ever printed outside the window buffer.
+static s32 ItemYPos(u8 item)
+{
+    if (item < sScrollOffset || item >= sScrollOffset + MENUITEMS_VISIBLE)
+        return -1;
+    return (item - sScrollOffset) * 16;
+}
+
+// PS-086: bring the selected item into the 7-row view (redrawing the list when the offset
+// changes) and put the highlight on its visible row.
+static void ScrollToSelection(u8 taskId)
+{
+    u8 selection = gTasks[taskId].tMenuSelection;
+    u16 offset = sScrollOffset;
+
+    if (selection < offset)
+        offset = selection;
+    else if (selection >= offset + MENUITEMS_VISIBLE)
+        offset = selection - MENUITEMS_VISIBLE + 1;
+
+    if (offset != sScrollOffset)
+    {
+        sScrollOffset = offset;
+        RedrawOptionMenuItems(taskId);
+    }
+    HighlightOptionMenuItem(selection - sScrollOffset);
+}
+
+// PS-086: reprint the visible names and choices (each *_DrawChoices skips items out of view).
+static void RedrawOptionMenuItems(u8 taskId)
+{
+    DrawOptionMenuTexts();
+    TextSpeed_DrawChoices(gTasks[taskId].tTextSpeed);
+    BattleScene_DrawChoices(gTasks[taskId].tBattleSceneOff);
+    BattleStyle_DrawChoices(gTasks[taskId].tBattleStyle);
+    Sound_DrawChoices(gTasks[taskId].tSound);
+    ButtonMode_DrawChoices(gTasks[taskId].tButtonMode);
+    FrameType_DrawChoices(gTasks[taskId].tWindowFrameType);
+    DayNight_DrawChoices(gTasks[taskId].tDayNightOff);
+    RandomCalls_DrawChoices(gTasks[taskId].tRandomCallsOff);
+    CopyWindowToVram(WIN_OPTIONS, COPYWIN_GFX);
 }
 
 static void DrawOptionMenuChoice(const u8 *text, u8 x, u8 y, u8 style)
@@ -446,13 +515,17 @@ static void TextSpeed_DrawChoices(u8 selection)
 {
     u8 styles[3];
     s32 widthSlow, widthMid, widthFast, xMid;
+    s32 y = ItemYPos(MENUITEM_TEXTSPEED); // PS-086
+
+    if (y < 0)
+        return;
 
     styles[0] = 0;
     styles[1] = 0;
     styles[2] = 0;
     styles[selection] = 1;
 
-    DrawOptionMenuChoice(gText_TextSpeedSlow, 104, YPOS_TEXTSPEED, styles[0]);
+    DrawOptionMenuChoice(gText_TextSpeedSlow, 104, y, styles[0]);
 
     widthSlow = GetStringWidth(FONT_NORMAL, gText_TextSpeedSlow, 0);
     widthMid = GetStringWidth(FONT_NORMAL, gText_TextSpeedMid, 0);
@@ -460,9 +533,9 @@ static void TextSpeed_DrawChoices(u8 selection)
 
     widthMid -= 94;
     xMid = (widthSlow - widthMid - widthFast) / 2 + 104;
-    DrawOptionMenuChoice(gText_TextSpeedMid, xMid, YPOS_TEXTSPEED, styles[1]);
+    DrawOptionMenuChoice(gText_TextSpeedMid, xMid, y, styles[1]);
 
-    DrawOptionMenuChoice(gText_TextSpeedFast, GetStringRightAlignXOffset(FONT_NORMAL, gText_TextSpeedFast, 198), YPOS_TEXTSPEED, styles[2]);
+    DrawOptionMenuChoice(gText_TextSpeedFast, GetStringRightAlignXOffset(FONT_NORMAL, gText_TextSpeedFast, 198), y, styles[2]);
 }
 
 static u8 BattleScene_ProcessInput(u8 selection)
@@ -479,13 +552,17 @@ static u8 BattleScene_ProcessInput(u8 selection)
 static void BattleScene_DrawChoices(u8 selection)
 {
     u8 styles[2];
+    s32 y = ItemYPos(MENUITEM_BATTLESCENE); // PS-086
+
+    if (y < 0)
+        return;
 
     styles[0] = 0;
     styles[1] = 0;
     styles[selection] = 1;
 
-    DrawOptionMenuChoice(gText_BattleSceneOn, 104, YPOS_BATTLESCENE, styles[0]);
-    DrawOptionMenuChoice(gText_BattleSceneOff, GetStringRightAlignXOffset(FONT_NORMAL, gText_BattleSceneOff, 198), YPOS_BATTLESCENE, styles[1]);
+    DrawOptionMenuChoice(gText_BattleSceneOn, 104, y, styles[0]);
+    DrawOptionMenuChoice(gText_BattleSceneOff, GetStringRightAlignXOffset(FONT_NORMAL, gText_BattleSceneOff, 198), y, styles[1]);
 }
 
 static u8 BattleStyle_ProcessInput(u8 selection)
@@ -502,13 +579,17 @@ static u8 BattleStyle_ProcessInput(u8 selection)
 static void BattleStyle_DrawChoices(u8 selection)
 {
     u8 styles[2];
+    s32 y = ItemYPos(MENUITEM_BATTLESTYLE); // PS-086
+
+    if (y < 0)
+        return;
 
     styles[0] = 0;
     styles[1] = 0;
     styles[selection] = 1;
 
-    DrawOptionMenuChoice(gText_BattleStyleShift, 104, YPOS_BATTLESTYLE, styles[0]);
-    DrawOptionMenuChoice(gText_BattleStyleSet, GetStringRightAlignXOffset(FONT_NORMAL, gText_BattleStyleSet, 198), YPOS_BATTLESTYLE, styles[1]);
+    DrawOptionMenuChoice(gText_BattleStyleShift, 104, y, styles[0]);
+    DrawOptionMenuChoice(gText_BattleStyleSet, GetStringRightAlignXOffset(FONT_NORMAL, gText_BattleStyleSet, 198), y, styles[1]);
 }
 
 static u8 Sound_ProcessInput(u8 selection)
@@ -526,13 +607,17 @@ static u8 Sound_ProcessInput(u8 selection)
 static void Sound_DrawChoices(u8 selection)
 {
     u8 styles[2];
+    s32 y = ItemYPos(MENUITEM_SOUND); // PS-086
+
+    if (y < 0)
+        return;
 
     styles[0] = 0;
     styles[1] = 0;
     styles[selection] = 1;
 
-    DrawOptionMenuChoice(gText_SoundMono, 104, YPOS_SOUND, styles[0]);
-    DrawOptionMenuChoice(gText_SoundStereo, GetStringRightAlignXOffset(FONT_NORMAL, gText_SoundStereo, 198), YPOS_SOUND, styles[1]);
+    DrawOptionMenuChoice(gText_SoundMono, 104, y, styles[0]);
+    DrawOptionMenuChoice(gText_SoundStereo, GetStringRightAlignXOffset(FONT_NORMAL, gText_SoundStereo, 198), y, styles[1]);
 }
 
 static u8 FrameType_ProcessInput(u8 selection)
@@ -567,6 +652,10 @@ static void FrameType_DrawChoices(u8 selection)
     u8 text[16];
     u8 n = selection + 1;
     u16 i;
+    s32 y = ItemYPos(MENUITEM_FRAMETYPE); // PS-086
+
+    if (y < 0)
+        return;
 
     for (i = 0; gText_FrameTypeNumber[i] != EOS && i <= 5; i++)
         text[i] = gText_FrameTypeNumber[i];
@@ -589,8 +678,8 @@ static void FrameType_DrawChoices(u8 selection)
 
     text[i] = EOS;
 
-    DrawOptionMenuChoice(gText_FrameType, 104, YPOS_FRAMETYPE, 0);
-    DrawOptionMenuChoice(text, 128, YPOS_FRAMETYPE, 1);
+    DrawOptionMenuChoice(gText_FrameType, 104, y, 0);
+    DrawOptionMenuChoice(text, 128, y, 1);
 }
 
 static u8 ButtonMode_ProcessInput(u8 selection)
@@ -620,13 +709,17 @@ static void ButtonMode_DrawChoices(u8 selection)
 {
     s32 widthNormal, widthLR, widthLA, xLR;
     u8 styles[3];
+    s32 y = ItemYPos(MENUITEM_BUTTONMODE); // PS-086
+
+    if (y < 0)
+        return;
 
     styles[0] = 0;
     styles[1] = 0;
     styles[2] = 0;
     styles[selection] = 1;
 
-    DrawOptionMenuChoice(gText_ButtonTypeNormal, 104, YPOS_BUTTONMODE, styles[0]);
+    DrawOptionMenuChoice(gText_ButtonTypeNormal, 104, y, styles[0]);
 
     widthNormal = GetStringWidth(FONT_NORMAL, gText_ButtonTypeNormal, 0);
     widthLR = GetStringWidth(FONT_NORMAL, gText_ButtonTypeLR, 0);
@@ -634,9 +727,9 @@ static void ButtonMode_DrawChoices(u8 selection)
 
     widthLR -= 94;
     xLR = (widthNormal - widthLR - widthLA) / 2 + 104;
-    DrawOptionMenuChoice(gText_ButtonTypeLR, xLR, YPOS_BUTTONMODE, styles[1]);
+    DrawOptionMenuChoice(gText_ButtonTypeLR, xLR, y, styles[1]);
 
-    DrawOptionMenuChoice(gText_ButtonTypeLEqualsA, GetStringRightAlignXOffset(FONT_NORMAL, gText_ButtonTypeLEqualsA, 198), YPOS_BUTTONMODE, styles[2]);
+    DrawOptionMenuChoice(gText_ButtonTypeLEqualsA, GetStringRightAlignXOffset(FONT_NORMAL, gText_ButtonTypeLEqualsA, 198), y, styles[2]);
 }
 
 // PS-072
@@ -655,13 +748,46 @@ static u8 DayNight_ProcessInput(u8 selection)
 static void DayNight_DrawChoices(u8 selection)
 {
     u8 styles[2];
+    s32 y = ItemYPos(MENUITEM_DAYNIGHT); // PS-086
+
+    if (y < 0)
+        return;
 
     styles[0] = 0;
     styles[1] = 0;
     styles[selection] = 1;
 
-    DrawOptionMenuChoice(gText_BattleSceneOn, 104, YPOS_DAYNIGHT, styles[0]);
-    DrawOptionMenuChoice(gText_BattleSceneOff, GetStringRightAlignXOffset(FONT_NORMAL, gText_BattleSceneOff, 198), YPOS_DAYNIGHT, styles[1]);
+    DrawOptionMenuChoice(gText_BattleSceneOn, 104, y, styles[0]);
+    DrawOptionMenuChoice(gText_BattleSceneOff, GetStringRightAlignXOffset(FONT_NORMAL, gText_BattleSceneOff, 198), y, styles[1]);
+}
+
+// PS-086
+static u8 RandomCalls_ProcessInput(u8 selection)
+{
+    if (JOY_NEW(DPAD_LEFT | DPAD_RIGHT))
+    {
+        selection ^= 1;
+        sArrowPressed = TRUE;
+    }
+
+    return selection;
+}
+
+// PS-086: selection is optionsRandomCallsOff, so 0 highlights ON and 1 highlights OFF.
+static void RandomCalls_DrawChoices(u8 selection)
+{
+    u8 styles[2];
+    s32 y = ItemYPos(MENUITEM_RANDOMCALLS);
+
+    if (y < 0)
+        return;
+
+    styles[0] = 0;
+    styles[1] = 0;
+    styles[selection] = 1;
+
+    DrawOptionMenuChoice(gText_BattleSceneOn, 104, y, styles[0]);
+    DrawOptionMenuChoice(gText_BattleSceneOff, GetStringRightAlignXOffset(FONT_NORMAL, gText_BattleSceneOff, 198), y, styles[1]);
 }
 
 static void DrawHeaderText(void)
@@ -671,17 +797,17 @@ static void DrawHeaderText(void)
     CopyWindowToVram(WIN_HEADER, COPYWIN_FULL);
 }
 
+// PS-086: prints the MENUITEMS_VISIBLE names from sScrollOffset on. The callers copy the window
+// to VRAM once the choices are drawn too (init: COPYWIN_FULL; scroll: COPYWIN_GFX).
 static void DrawOptionMenuTexts(void)
 {
     u8 i;
 
     FillWindowPixelBuffer(WIN_OPTIONS, PIXEL_FILL(1));
-    for (i = 0; i < MENUITEM_COUNT; i++)
-        AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sOptionMenuItemsNames[i], 8, (i * 16) + 1, TEXT_SKIP_DRAW, NULL);
-    CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
+    for (i = 0; i < MENUITEMS_VISIBLE; i++)
+        AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sOptionMenuItemsNames[sScrollOffset + i], 8, (i * 16) + 1, TEXT_SKIP_DRAW, NULL);
 }
 
-// PS-072: relative to FRAME_TILE_BASE (was 0x1A2, which the taller list window now overlaps)
 #define TILE_TOP_CORNER_L (FRAME_TILE_BASE + 0)
 #define TILE_TOP_EDGE     (FRAME_TILE_BASE + 1)
 #define TILE_TOP_CORNER_R (FRAME_TILE_BASE + 2)
@@ -694,16 +820,25 @@ static void DrawOptionMenuTexts(void)
 static void DrawBgWindowFrames(void)
 {
     //                     bg, tile,              x, y, width, height, palNum
-    // PS-072: the title has no frame (rows 0-1); only the options list is framed (rows 2-19).
+    // Draw title window frame
+    FillBgTilemapBufferRect(1, TILE_TOP_CORNER_L,  1,  0,  1,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_TOP_EDGE,      2,  0, 27,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_TOP_CORNER_R, 28,  0,  1,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_LEFT_EDGE,     1,  1,  1,  2,  7);
+    FillBgTilemapBufferRect(1, TILE_RIGHT_EDGE,   28,  1,  1,  2,  7);
+    FillBgTilemapBufferRect(1, TILE_BOT_CORNER_L,  1,  3,  1,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_BOT_EDGE,      2,  3, 27,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_BOT_CORNER_R, 28,  3,  1,  1,  7);
+
     // Draw options list window frame
-    FillBgTilemapBufferRect(1, TILE_TOP_CORNER_L,  1, OPTIONS_TOP_TILE - 1,  1,  1,  7);
-    FillBgTilemapBufferRect(1, TILE_TOP_EDGE,      2, OPTIONS_TOP_TILE - 1, 26,  1,  7);
-    FillBgTilemapBufferRect(1, TILE_TOP_CORNER_R, 28, OPTIONS_TOP_TILE - 1,  1,  1,  7);
-    FillBgTilemapBufferRect(1, TILE_LEFT_EDGE,     1, OPTIONS_TOP_TILE,      1, MENUITEM_COUNT * 2,  7);
-    FillBgTilemapBufferRect(1, TILE_RIGHT_EDGE,   28, OPTIONS_TOP_TILE,      1, MENUITEM_COUNT * 2,  7);
-    FillBgTilemapBufferRect(1, TILE_BOT_CORNER_L,  1, OPTIONS_TOP_TILE + MENUITEM_COUNT * 2,  1,  1,  7);
-    FillBgTilemapBufferRect(1, TILE_BOT_EDGE,      2, OPTIONS_TOP_TILE + MENUITEM_COUNT * 2, 26,  1,  7);
-    FillBgTilemapBufferRect(1, TILE_BOT_CORNER_R, 28, OPTIONS_TOP_TILE + MENUITEM_COUNT * 2,  1,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_TOP_CORNER_L,  1,  4,  1,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_TOP_EDGE,      2,  4, 26,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_TOP_CORNER_R, 28,  4,  1,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_LEFT_EDGE,     1,  5,  1, 18,  7);
+    FillBgTilemapBufferRect(1, TILE_RIGHT_EDGE,   28,  5,  1, 18,  7);
+    FillBgTilemapBufferRect(1, TILE_BOT_CORNER_L,  1, 19,  1,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_BOT_EDGE,      2, 19, 26,  1,  7);
+    FillBgTilemapBufferRect(1, TILE_BOT_CORNER_R, 28, 19,  1,  1,  7);
 
     CopyBgTilemapBufferToVram(1);
 }
