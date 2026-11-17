@@ -103,6 +103,7 @@ The game follows your PC's clock, the way the battery clock in a cartridge did. 
 - **Berries grow while the game is closed.** Plant them, come back tomorrow.
 - **Daily events** happen once per real day: the Lilycove lottery, the Berry Master's wife, the shoal cave tides and the rest.
 - **Day and night.** Outdoors the world is tinted by the time of day: a soft morning from 4:00, normal daylight from 10:00, an orange evening from 17:00 and a dark blue night from 20:00, blending smoothly between them. Indoors, caves, battles and menus are untouched. **DAY/NIGHT ON/OFF** in the Options menu turns it off.
+- **Random calls.** **RANDOM CALLS ON/OFF** in the Options menu stops the random Match Call chatter; calls that are part of the story still come through. The Options menu now scrolls (seven rows at a time, arrows on the frame show when there is more) to make room.
 
 ### Summary screen
 
