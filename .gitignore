@@ -1,7 +1,6 @@
 *.exe
 *.o
 *.i
-*.elf
 *.gba
 !data/*.gba
 *.sgm
@@ -22,7 +21,6 @@
 *.fwjpnfont
 sound/**/*.bin
 sound/songs/midi/*.s
-tools/agbcc
 tools/compresSmol/
 *.map
 *.bat
@@ -41,7 +39,6 @@ prefabs.json
 .fuse_hidden*
 *.sna
 *.diff
-*.sym
 *.js
 /pokeemerald-*.png
 /pokeemerald_modern-*.png
