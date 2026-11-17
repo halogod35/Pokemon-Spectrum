@@ -104,7 +104,7 @@ The game follows your PC's clock, the way the battery clock in a cartridge did. 
 - **Daily events** happen once per real day: the Lilycove lottery, the Berry Master's wife, the shoal cave tides and the rest.
 - **Day and night.** Outdoors the world is tinted by the time of day: a soft morning from 4:00, normal daylight from 10:00, an orange evening from 17:00 and a dark blue night from 20:00, blending smoothly between them. Indoors, caves, battles and menus are untouched. **DAY/NIGHT ON/OFF** in the Options menu turns it off.
 - **Random calls.** **RANDOM CALLS ON/OFF** in the Options menu stops the random Match Call chatter; calls that are part of the story still come through. The Options menu now scrolls (seven rows at a time, arrows on the frame show when there is more) to make room.
-- **Fix a save's clock.** On the title screen hold B+Select+Left to open the clock-reset screen and set the save's clock; use it if the game's time drifted from the real one. Hold Left first, then B and Select (B+Select on their own open the berry program screen).
+- **Fix a save's clock.** On the title screen hold B+Select+Left to open the clock-reset screen and set the save's clock; use it if the game's time drifted from the real one.
 
 ### Summary screen
 
