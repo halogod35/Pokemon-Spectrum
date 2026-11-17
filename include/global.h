@@ -564,7 +564,8 @@ struct SaveBlock2
              u16 optionsBattleSceneOff:1; // whether battle animations are disabled
              u16 regionMapZoom:1; // whether the map is zoomed in
              u16 optionsDayNightOff:1; // PS-072: 1 = day/night palette tint off (0 = on, the default, also for old saves)
-             //u16 padding1:3;
+             u16 optionsRandomCallsOff:1; // PS-086: 1 = random Match Call chatter off (0 = on, the default, also for old saves)
+             //u16 padding1:2;
              //u16 padding2;
     /*0x18*/ struct Pokedex pokedex;
     /*0x90*/ u8 saveFormatVersion; // PS-070: SAVE_FORMAT_VERSION (gba/flash_internal.h); 0 in saves older than v0.3.0, which are refused

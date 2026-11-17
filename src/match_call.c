@@ -1155,7 +1155,10 @@ static u32 GetActiveMatchCallTrainerId(u32 activeMatchCallId)
 */
 bool32 TryStartMatchCall(void)
 {
-    if (FlagGet(FLAG_HAS_MATCH_CALL)
+    // PS-086: the Options RANDOM CALLS toggle. Only this random path is gated; scripted calls
+    // (pokenavcall -> StartMatchCallFromScript) and the Pokénav MATCH CALL app never come through here.
+    if (!gSaveBlock2Ptr->optionsRandomCallsOff
+        && FlagGet(FLAG_HAS_MATCH_CALL)
         && UpdateMatchCallStepCounter()
         && UpdateMatchCallMinutesCounter()
         && CheckMatchCallChance()
