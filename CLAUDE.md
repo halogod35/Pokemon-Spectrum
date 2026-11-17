@@ -13,7 +13,7 @@ Status board and task cards live next to it (`BOARD.md`, `cards/PS-*.md`, `skill
 - `src/platform/` — PC platform layer. `sdl2.c` is the entry point (`main()`) and the 60 Hz main loop
 - `include/platform.h` — `Platform_*` API that game code calls into the PC layer
 - `tools/` — host build tools (gbagfx, preproc, scaninc, …), built automatically by `make`
-- `INSTALL_PC.md` — PC build setup (Arch, Ubuntu, Windows via WSL). `INSTALL.md` — upstream GBA setup (unsupported)
+- `INSTALL_PC.md` — PC build setup (Arch, Ubuntu, Windows via WSL). The upstream GBA build and its `INSTALL.md` are gone (PS-004)
 
 ## Build commands
 
@@ -29,8 +29,9 @@ CI (`.github/workflows/build.yml`) runs linux and winwsl builds on pushes to `ma
 
 ## PC only (AD-6)
 
-- The GBA build is **unsupported** (user ruling 2026-11-06). No matching requirement, no `make compare`,
-  and no `#ifdef PORTABLE` guards are required for new code. GBA targets may be removed (card PS-004).
+- The GBA build is **unsupported** (user ruling 2026-11-06) and its build machinery was removed (card PS-004):
+  no matching requirement, no `make compare`, no agbcc or devkitARM. No `#ifdef PORTABLE` guards are required for
+  new code; the existing guards in game code are left as they are (`PORTABLE` and `MODERN` are always defined).
 - Mark every multiplayer hook inside an existing decomp file with a `// MP:` comment so hooks are easy to find:
 
 ```c

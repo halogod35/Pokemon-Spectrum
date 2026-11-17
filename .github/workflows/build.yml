@@ -28,7 +28,6 @@ jobs:
             experimental: true
     continue-on-error: ${{ matrix.experimental }}
     env:
-      COMPARE: 0
       IS64BIT: ${{ matrix.is64bit }}
     steps:
       - name: Checkout
@@ -181,7 +180,6 @@ jobs:
             is64bit: 0
             triplet: i686-w64-mingw32
     env:
-      COMPARE: 0
       IS64BIT: ${{ matrix.is64bit }}
     steps:
       - name: Checkout
