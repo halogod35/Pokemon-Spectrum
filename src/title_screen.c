@@ -790,7 +790,7 @@ static void Task_TitleScreenPhase3(u8 taskId)
         SetMainCallback2(CB2_GoToClearSaveDataScreen);
     }
     else if (JOY_HELD(RESET_RTC_BUTTON_COMBO) == RESET_RTC_BUTTON_COMBO
-      && CanResetRTC() == TRUE)
+      && CanResetRTC() == TRUE) // PS-074: always TRUE on this port (event_data.c)
     {
         FadeOutBGM(4);
         BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);

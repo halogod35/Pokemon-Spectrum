@@ -155,10 +155,12 @@ void EnableResetRTC(void)
 
 bool32 CanResetRTC(void)
 {
-    if (FlagGet(FLAG_SYS_RESET_RTC_ENABLE) && VarGet(VAR_RESET_RTC_ENABLE) == 0x920)
-        return TRUE;
-    else
-        return FALSE;
+    // PS-074: the clock-reset screen (title screen: B+Select+Left) is open to every save on this
+    // port. The vanilla gate (FLAG_SYS_RESET_RTC_ENABLE and VAR_RESET_RTC_ENABLE == 0x920) was
+    // only ever set by a Japanese Mystery Event, which the port has no way to receive, so the
+    // screen was unreachable. EnableResetRTC/DisableResetRTC are kept: the screen still clears
+    // the flag and var after a reset, and that is harmless.
+    return TRUE;
 }
 
 u16 *GetVarPointer(u16 id)
