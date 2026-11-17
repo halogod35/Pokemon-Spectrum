@@ -48,6 +48,7 @@
 #include "constants/songs.h"
 #include "mp/mp.h" // MP: LEAVE GAME while in a multiplayer session (PS-022)
 #include "mp_menu.h" // MP: PLAYERS list (PS-033)
+#include "exit_to_title.h" // PS-088: EXIT -> title screen
 
 // Menu actions
 enum
@@ -113,6 +114,12 @@ static u8 MpLeaveConfirmCallback(void);
 static u8 MpLeaveYesNoCallback(void);
 static u8 MpLeaveInputCallback(void);
 static u8 MpLeaveDoneCallback(void);
+// PS-088: EXIT -> "Return to the title screen?" YES/NO
+static bool8 ExitToTitleCallback(void);
+static u8 ExitToTitleConfirmCallback(void);
+static u8 ExitToTitleYesNoCallback(void);
+static u8 ExitToTitleInputCallback(void);
+static u8 ExitToTitleFadeCallback(void);
 static bool8 StartMenuBattlePyramidBagCallback(void);
 
 // Menu callbacks
@@ -774,9 +781,17 @@ static bool8 StartMenuOptionCallback(void)
 static bool8 StartMenuExitCallback(void)
 {
     RemoveExtraStartMenuWindows();
-    HideStartMenu(); // Hide start menu
-
-    return TRUE;
+    // PS-088: in a link room (cable club, CB1_OverworldLink) or the Union Room a partner is on
+    // the line, so EXIT keeps closing the menu as before. Everywhere else it asks whether to
+    // return to the title screen (B and START on the menu still just close it).
+    if (IsOverworldLinkActive() == TRUE || InUnionRoom() == TRUE)
+    {
+        HideStartMenu(); // Hide start menu
+        return TRUE;
+    }
+    sSaveDialogCallback = ExitToTitleConfirmCallback;
+    gMenuCallback = ExitToTitleCallback;
+    return FALSE;
 }
 
 static bool8 StartMenuSafariZoneRetireCallback(void)
@@ -965,6 +980,68 @@ static u8 MpLeaveDoneCallback(void)
         return SAVE_SUCCESS;
     }
     return SAVE_IN_PROGRESS;
+}
+
+// PS-088: EXIT -> "Return to the title screen? Unsaved progress will be lost." YES/NO (default
+// NO), on the save dialog machinery like LEAVE GAME above. NO or B: the box closes and the
+// START menu comes back with EXIT still selected (sStartMenuCursorPos is untouched). YES: the
+// field fades to black, then CB2_ExitToTitleScreen (exit_to_title.c) takes over as the main
+// callback: it leaves a multiplayer session, tears the overworld down, reloads the save from
+// flash and shows the title screen as after a program start.
+
+static bool8 ExitToTitleCallback(void)
+{
+    switch (RunSaveCallback())
+    {
+    case SAVE_IN_PROGRESS:
+        return FALSE;
+    case SAVE_CANCELED: // Back to start menu
+        ClearDialogWindowAndFrameToTransparent(0, FALSE);
+        InitStartMenu();
+        gMenuCallback = HandleStartMenuInput;
+        return FALSE;
+    default:            // Faded to black: leave the field (the task goes with ResetTasks)
+        SetMainCallback2(CB2_ExitToTitleScreen);
+        return TRUE;
+    }
+}
+
+static u8 ExitToTitleConfirmCallback(void)
+{
+    ClearStdWindowAndFrame(GetStartMenuWindowId(), FALSE);
+    RemoveStartMenuWindow();
+    ShowSaveMessage(gText_ExitToTitleConfirm, ExitToTitleYesNoCallback);
+    return SAVE_IN_PROGRESS;
+}
+
+static u8 ExitToTitleYesNoCallback(void)
+{
+    DisplayYesNoMenuWithDefault(1); // NO selected by default
+    sSaveDialogCallback = ExitToTitleInputCallback;
+    return SAVE_IN_PROGRESS;
+}
+
+static u8 ExitToTitleInputCallback(void)
+{
+    switch (Menu_ProcessInputNoWrapClearOnChoose())
+    {
+    case 0: // Yes
+        FadeScreen(FADE_TO_BLACK, 0);
+        sSaveDialogCallback = ExitToTitleFadeCallback;
+        return SAVE_IN_PROGRESS;
+    case MENU_B_PRESSED:
+    case 1: // No
+        HideSaveMessageWindow();
+        return SAVE_CANCELED;
+    }
+    return SAVE_IN_PROGRESS;
+}
+
+static u8 ExitToTitleFadeCallback(void)
+{
+    if (gPaletteFade.active)
+        return SAVE_IN_PROGRESS;
+    return SAVE_SUCCESS;
 }
 
 static bool8 BattlePyramidRetireStartCallback(void)
