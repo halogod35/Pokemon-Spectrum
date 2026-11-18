@@ -22,6 +22,7 @@
 #include "constants/mauville_old_man.h"
 #include "constants/moves.h"
 #include "constants/pokemon.h"
+#include "constants/secret_bases.h"
 #include "constants/species.h"
 #include "constants/trainers.h"
 #include "constants/tv.h"
