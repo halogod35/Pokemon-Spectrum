@@ -368,8 +368,7 @@ static void TestSanitizer(void)
     Expect("TV show contest category", MP_MIX_BAD_TV_SHOW, 1);
     sRec.tvShows[1].bravoTrainer.move = MOVES_COUNT;
     Expect("TV show move (gMoveNames)", MP_MIX_BAD_TV_SHOW, 1);
-    sRec.tvShows[2].pokemonToday.ball = ITEMS_COUNT;
-    Expect("TV show ball item", MP_MIX_BAD_TV_SHOW, 2);
+    // (pokemonToday.ball is a u8: every value is a valid item id, nothing to craft there.)
     memset(sRec.tvShows[2].pokemonToday.playerName, BAD_NAME_BYTE, sizeof(sRec.tvShows[2].pokemonToday.playerName));
     Expect("TV show player name without EOS", MP_MIX_BAD_TV_SHOW, 2);
     memset(sRec.tvShows[2].pokemonToday.nickname, BAD_NAME_BYTE, sizeof(sRec.tvShows[2].pokemonToday.nickname));
