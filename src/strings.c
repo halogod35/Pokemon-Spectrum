@@ -57,6 +57,8 @@ const u8 gText_MpNoLanAddress[] = _("(no network address found)");
 const u8 gText_MenuMpLeave[] = _("LEAVE GAME");
 const u8 gText_MpLeaveConfirm[] = _("Leave the multiplayer game?\nYou will keep playing offline.");
 const u8 gText_MpLeftGame[] = _("You left the multiplayer game.");
+// PS-088: START menu EXIT -> title screen
+const u8 gText_ExitToTitleConfirm[] = _("Return to the title screen?\nUnsaved progress will be lost.");
 // MP: join/leave notices and the PLAYERS list (PS-033)
 const u8 gText_MpToastJoined[] = _(" joined the game.");
 const u8 gText_MpToastLeft[] = _(" left the game.");

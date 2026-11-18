@@ -116,6 +116,10 @@ The Options menu scrolls: seven rows at a time, with arrows on the frame when th
 
 - **Hidden stats.** A Pokémon's summary has a fifth page, HIDDEN STATS, after CONTEST MOVES: press Right once more to see its effort values (EVs) on top and its individual values (IVs) below.
 
+### Back to the title screen
+
+- **EXIT** in the START menu asks for confirmation and returns to the title screen without closing the game. Anything not saved is lost; CONTINUE picks up from your last save.
+
 ### Save file
 
 The game saves to `pokemon-spectrum.sav` next to its exe file. The same save works with the 32-bit and 64-bit builds, on Windows and Linux. Saving is crash-safe: the new save replaces the old one only once it's completely written.
@@ -149,7 +153,6 @@ The built-in distributor (see "Mystery Gift" above) is the base for these:
 
 ### Game and PC polish
 - **Graphics polish:** small visual issues spotted in play-tests, still to be listed and looked at.
-- **Soft reset without closing the window:** reset the game in place instead of restarting the program.
 - **Sound:**
   - a limiter if loud battles with Pokémon cries ever distort;
   - a filter if low "thumps" are heard at the end of notes.

@@ -365,6 +365,7 @@ extern const u8 gText_MpNoLanAddress[];
 extern const u8 gText_MenuMpLeave[];
 extern const u8 gText_MpLeaveConfirm[];
 extern const u8 gText_MpLeftGame[];
+extern const u8 gText_ExitToTitleConfirm[]; // PS-088
 // MP: join/leave notices and the PLAYERS list (PS-033)
 extern const u8 gText_MpToastJoined[];
 extern const u8 gText_MpToastLeft[];
