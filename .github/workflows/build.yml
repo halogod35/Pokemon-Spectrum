@@ -46,6 +46,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential gcc-multilib libpng-dev libsdl2-dev:i386
 
+      # PS-090: no script special may return bool8/u8/s8 (specialvar reads 16 bits through a u16 function
+      # pointer; x86 leaves bits 8-15 of an 8-bit return undefined). Needs no toolchain, so it runs first.
+      - name: Check special return types
+        run: bash tools/check_specials.sh
+
       - name: Build
         run: make -j"$(nproc)" linux
 
@@ -199,6 +204,10 @@ jobs:
           tar -xzf "$tarball"
           mv "SDL2-${SDL2_VERSION}" SDL2
           rm "$tarball"
+
+      # PS-090: same special return-type check as the Linux job.
+      - name: Check special return types
+        run: bash tools/check_specials.sh
 
       - name: Build
         run: make -j"$(nproc)" winwsl

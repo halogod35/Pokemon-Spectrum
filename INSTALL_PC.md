@@ -177,3 +177,4 @@ it from WSL with `./pokemon-spectrum64.exe`. The save `pokemon-spectrum.sav` is 
 `.github/workflows/build.yml` runs on pushes to `master` and `ps-*` branches and on pull requests to `master`.
 It runs `make linux` (64-bit, plus a non-blocking 32-bit job) and `make winwsl` (64- and 32-bit), then the
 headless self-tests on the Linux executables. The Windows and Linux executables are uploaded as workflow artifacts.
+Before each build it runs `make checkspecials` (`tools/check_specials.sh`, bash only), which fails if any script special returns `bool8`/`u8`/`s8` (PS-090).
