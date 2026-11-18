@@ -156,4 +156,3 @@ The built-in distributor (see "Mystery Gift" above) is the base for these:
 
 ### Developer housekeeping
 - A debug build with memory-error checking (sanitizers).
-- Remove the unused GBA build targets.

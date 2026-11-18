@@ -1,61 +1,31 @@
-# GBA rom header
-TITLE       := POKEMON EMER
-GAME_CODE   := BPEE
-MAKER_CODE  := 01
-REVISION    := 0
-MODERN      ?= 0
+# Pokémon Spectrum: the PC (SDL2) build of the pokeemerald decomp.
+# The GBA ROM build (agbcc, devkitARM, `make compare`) was removed in PS-004; `make linux` and
+# `make winwsl` are the only build targets. See INSTALL_PC.md.
+
 KEEP_TEMPS  ?= 0
-PORTABLE    ?= 0
 IS64BIT     ?= 1
 TARGET_PLATFORM ?= PLATFORM_SDL2
-TARGET_OS       ?= NONE
+TARGET_OS       ?= LINUX
 TILE_RENDERER   ?= RENDERER_EASY_DRAW
 
-# `File name`.gba ('_modern' will be appended to the modern builds)
+# `File name` of the executable (the bit width and, on Windows, `.exe` are appended)
 FILE_NAME := pokemon-spectrum
 BUILD_DIR := build
 
-# Builds the ROM using a modern compiler
-MODERN      ?= 0
-# Compares the ROM to a checksum of the original - only makes sense using when non-modern
-COMPARE     ?= 0
+# Always on. The PC build is the decomp's "portable" and "modern" (plain gcc) build; game code
+# still tests both macros, so they keep their historical values.
+PORTABLE := 1
+MODERN   := 1
 
-ifeq (modern,$(MAKECMDGOALS))
-  MODERN := 1
-endif
-ifeq (compare,$(MAKECMDGOALS))
-  COMPARE := 1
-endif
 ifeq (winwsl,$(MAKECMDGOALS))
-  PORTABLE := 1
   TARGET_OS := WINDOWS
 endif
 ifeq (linux,$(MAKECMDGOALS))
-  PORTABLE := 1
   TARGET_OS := LINUX
-endif
-
-#Enable MODERN if compiling portable version
-ifeq ($(PORTABLE), 1)
-  MODERN := 1
 endif
 
 # Default make rule
 all: rom
-
-# Toolchain selection
-TOOLCHAIN := $(DEVKITARM)
-# don't use dkP's base_tools anymore
-# because the redefinition of $(CC) conflicts
-# with when we want to use $(CC) to preprocess files
-# thus, manually create the variables for the bin
-# files, or use arm-none-eabi binaries on the system
-# if dkP is not installed on this system
-ifneq (,$(TOOLCHAIN))
-  ifneq ($(wildcard $(TOOLCHAIN)/bin),)
-    export PATH := $(TOOLCHAIN)/bin:$(PATH)
-  endif
-endif
 
 BIT_WIDTH := 32
 OTHER_BIT_WIDTH := 64
@@ -70,143 +40,90 @@ ifeq ($(IS64BIT),1)
   CPPFLAGS64 := -D VER_64BIT
 endif
 
-ifeq ($(PORTABLE),1)
-  ifeq ($(TARGET_OS),WINDOWS)
-    ifeq ($(IS64BIT),1)
-      PREFIX := x86_64-w64-mingw32-
-    else
-      PREFIX := i686-w64-mingw32-
-    endif # IS64BIT
-  else # LINUX
-    PREFIX :=
-  endif # TARGET_OS
-else
-  PREFIX := arm-none-eabi-
-endif
+# Toolchain selection: mingw-w64 cross compilers for Windows, the host gcc for Linux
+ifeq ($(TARGET_OS),WINDOWS)
+  ifeq ($(IS64BIT),1)
+    PREFIX := x86_64-w64-mingw32-
+  else
+    PREFIX := i686-w64-mingw32-
+  endif # IS64BIT
+else # LINUX
+  PREFIX :=
+endif # TARGET_OS
 
 OBJCOPY := $(PREFIX)objcopy
-OBJDUMP := $(PREFIX)objdump
 WINDRES := $(PREFIX)windres
 AS := $(PREFIX)as
-LD := $(PREFIX)ld
 
 EXE :=
 ifeq ($(OS),Windows_NT)
   EXE := .exe
 endif
 
-ifeq ($(PORTABLE),1)
+# SDL2 mingw development libraries, extracted to ./SDL2 (INSTALL_PC.md). Linux uses the system SDL2.
+ifeq ($(TARGET_OS),WINDOWS)
   ifeq ($(IS64BIT),1)
-    ifeq ($(TARGET_OS),WINDOWS)
-      SDL_DIR := ./SDL2/x86_64-w64-mingw32
-    endif
-    ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/\.int/g;s/\.2byte/\.short/g'
-    FIX_UNDERSCORE := $(OBJCOPY)
-    LEADING_UNDERSCORE_FLAG :=
+    SDL_DIR := ./SDL2/x86_64-w64-mingw32
   else
     SDL_DIR := ./SDL2/i686-w64-mingw32
-    ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/\.int/g;s/\.2byte/\.short/g'
-    #FIX_UNDERSCORE is required for 32 bit windows
-    ifeq ($(TARGET_OS),WINDOWS)
-      FIX_UNDERSCORE := $(OBJCOPY) --prefix-symbol _
-      LEADING_UNDERSCORE_FLAG := -fleading-underscore
-    else
-      FIX_UNDERSCORE := $(OBJCOPY)
-      LEADING_UNDERSCORE_FLAG :=
-    endif
   endif
+endif
 
-  PLATFORM_LFLAGS :=
-  PLATFORM_INCLUDES :=
-  PLATFORM_CFLAGS :=
-  BUILD_FEXTENSION :=
-  OS_CFLAGS :=
-  OS_LFLAGS :=
-
-  ifeq ($(TARGET_OS),WINDOWS)
-    OS_CFLAGS :=
-    # PS-083: no -lxinput. XInput is loaded at run time (sdl2.c) so the exe starts on Windows XP / without XINPUT1_3.dll.
-    OS_LFLAGS := -lwinmm -Wl,-Map,pokemon-spectrum.map # MP: map file for the crash reporter (BUG-003)
-    BUILD_FEXTENSION := .exe
-  else
-    OS_CFLAGS :=
-    OS_LFLAGS := -no-pie
-  endif
-
-  #Windows only
-  ifeq ($(TARGET_OS),WINDOWS)
-    ifneq ($(NO_STD_LIB),1)
-      PLATFORM_LFLAGS += -lmingw32
-    endif
-  endif
-
-  ifeq ($(TARGET_PLATFORM), PLATFORM_SDL2)
-    PLATFORM_LFLAGS += -lSDL2main -lSDL2 -lm
-    # SDL headers pull in x86 intrinsics headers, which break under -fno-builtin with GCC 15.
-    # We never use SDL intrinsics, so disable them for every SDL2 build (was 32-bit only).
-    PLATFORM_INCLUDES += -DSDL_DISABLE_IMMINTRIN_H -DSDL_DISABLE_MMINTRIN_H -DSDL_DISABLE_XMMINTRIN_H -DSDL_DISABLE_EMMINTRIN_H -DSDL_DISABLE_PMMINTRIN_H
-  endif
-
-  ifeq ($(TARGET_PLATFORM), PLATFORM_WIN32)
-    ifeq ($(NO_STD_LIB),1)
-      PLATFORM_LFLAGS += -Wl,-e__main -nostdlib
-      CPPFLAGS += -D NO_STD_LIB_ENABLED
-    endif
-    PLATFORM_LFLAGS += -lkernel32 -luser32 -lgdi32
-    PLATFORM_INCLUDES += -D SOUND_DISABLED
-  endif
+ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/\.int/g;s/\.2byte/\.short/g'
+#FIX_UNDERSCORE is required for 32 bit windows
+ifeq ($(TARGET_OS)$(IS64BIT),WINDOWS0)
+  FIX_UNDERSCORE := $(OBJCOPY) --prefix-symbol _
+  LEADING_UNDERSCORE_FLAG := -fleading-underscore
 else
-  ASM_PSEUDO_OP_CONV := cat
   FIX_UNDERSCORE := $(OBJCOPY)
+  LEADING_UNDERSCORE_FLAG :=
 endif
 
-# use arm-none-eabi-cpp for macOS
-# as macOS's default compiler is clang
-# and clang's preprocessor will warn on \u
-# when preprocessing asm files, expecting a unicode literal
-# we can't unconditionally use arm-none-eabi-cpp
-# as installations which install binutils-arm-none-eabi
-# don't come with it
-ifneq ($(MODERN),1)
-  ifeq ($(shell uname -s),Darwin)
-    CPP := $(PREFIX)cpp
-  else
-    CPP := $(CC) -E
+PLATFORM_LFLAGS :=
+PLATFORM_INCLUDES :=
+PLATFORM_CFLAGS :=
+BUILD_FEXTENSION :=
+OS_CFLAGS :=
+OS_LFLAGS :=
+
+ifeq ($(TARGET_OS),WINDOWS)
+  OS_CFLAGS :=
+  # PS-083: no -lxinput. XInput is loaded at run time (sdl2.c) so the exe starts on Windows XP / without XINPUT1_3.dll.
+  OS_LFLAGS := -lwinmm -Wl,-Map,pokemon-spectrum.map # MP: map file for the crash reporter (BUG-003)
+  BUILD_FEXTENSION := .exe
+else
+  OS_CFLAGS :=
+  OS_LFLAGS := -no-pie
+endif
+
+#Windows only
+ifeq ($(TARGET_OS),WINDOWS)
+  ifneq ($(NO_STD_LIB),1)
+    PLATFORM_LFLAGS += -lmingw32
   endif
-else
-  CPP := $(PREFIX)cpp
 endif
 
-ROM_NAME := $(FILE_NAME).gba
+ifeq ($(TARGET_PLATFORM), PLATFORM_SDL2)
+  PLATFORM_LFLAGS += -lSDL2main -lSDL2 -lm
+  # SDL headers pull in x86 intrinsics headers, which break under -fno-builtin with GCC 15.
+  # We never use SDL intrinsics, so disable them for every SDL2 build (was 32-bit only).
+  PLATFORM_INCLUDES += -DSDL_DISABLE_IMMINTRIN_H -DSDL_DISABLE_MMINTRIN_H -DSDL_DISABLE_XMMINTRIN_H -DSDL_DISABLE_EMMINTRIN_H -DSDL_DISABLE_PMMINTRIN_H
+endif
 
-OBJ_DIR_NAME := $(BUILD_DIR)/emerald
-MODERN_ROM_NAME := $(FILE_NAME)_modern.gba
-MODERN_OBJ_DIR_NAME := $(BUILD_DIR)/modern
-PORTABLE_ROM_NAME := $(FILE_NAME)$(BIT_WIDTH)$(BUILD_FEXTENSION)
-PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/pc$(BIT_WIDTH)
-PORTABLE_ROM_NAME_OTHER := $(FILE_NAME)$(OTHER_BIT_WIDTH)$(BUILD_FEXTENSION)
-PORTABLE_OBJ_DIR_NAME_OTHER := $(BUILD_DIR)/pc$(OTHER_BIT_WIDTH)
+ifeq ($(TARGET_PLATFORM), PLATFORM_WIN32)
+  ifeq ($(NO_STD_LIB),1)
+    PLATFORM_LFLAGS += -Wl,-e__main -nostdlib
+    CPPFLAGS += -D NO_STD_LIB_ENABLED
+  endif
+  PLATFORM_LFLAGS += -lkernel32 -luser32 -lgdi32
+  PLATFORM_INCLUDES += -D SOUND_DISABLED
+endif
+
+ROM := $(FILE_NAME)$(BIT_WIDTH)$(BUILD_FEXTENSION)
+OBJ_DIR := $(BUILD_DIR)/pc$(BIT_WIDTH)
+ROM_OTHER := $(FILE_NAME)$(OTHER_BIT_WIDTH)$(BUILD_FEXTENSION)
+OBJ_DIR_OTHER := $(BUILD_DIR)/pc$(OTHER_BIT_WIDTH)
 ASSETS_DIR_NAME := $(BUILD_DIR)/assets
-
-ELF_NAME := $(ROM_NAME:.gba=.elf)
-MAP_NAME := $(ROM_NAME:.gba=.map)
-MODERN_ELF_NAME := $(MODERN_ROM_NAME:.gba=.elf)
-MODERN_MAP_NAME := $(MODERN_ROM_NAME:.gba=.map)
-
-# Pick our active variables
-ifeq ($(MODERN),0)
-  ROM := $(ROM_NAME)
-  OBJ_DIR := $(OBJ_DIR_NAME)
-else ifeq ($(PORTABLE),1)
-  ROM := $(PORTABLE_ROM_NAME)
-  OBJ_DIR := $(PORTABLE_OBJ_DIR_NAME)
-else
-  ROM := $(MODERN_ROM_NAME)
-  OBJ_DIR := $(MODERN_OBJ_DIR_NAME)
-endif
-ELF := $(ROM:.gba=.elf)
-MAP := $(ROM:.gba=.map)
-SYM := $(ROM:.gba=.sym)
 
 # Commonly used directories
 C_SUBDIR = src
@@ -223,53 +140,24 @@ MID_BUILDDIR = $(OBJ_DIR)/$(MID_SUBDIR)
 SHELL := bash -o pipefail
 
 # Set flags for tools
-ifeq ($(PORTABLE),1)
-  ASFLAGS := --$(BIT_WIDTH) $(ASFLAGS64) --defsym VER_64BIT=$(IS64BIT) --defsym MODERN=$(MODERN) --defsym PORTABLE=1 --defsym UBFIX=1
-else
-  ASFLAGS := -mcpu=arm7tdmi --defsym MODERN=$(MODERN)
-endif
+ASFLAGS := --$(BIT_WIDTH) $(ASFLAGS64) --defsym VER_64BIT=$(IS64BIT) --defsym MODERN=$(MODERN) --defsym PORTABLE=1 --defsym UBFIX=1
 
 INCLUDE_DIRS := include
 INCLUDE_CPP_ARGS := $(INCLUDE_DIRS:%=-iquote %)
 INCLUDE_SCANINC_ARGS := $(INCLUDE_DIRS:%=-I %)
 
-O_LEVEL ?= 2
 CPPFLAGS := $(INCLUDE_CPP_ARGS) -Wno-trigraphs -DMODERN=$(MODERN)
-ifeq ($(MODERN),0)
-  CPPFLAGS += -std=gnu99 -I tools/agbcc/include -I tools/agbcc -nostdinc -undef -std=gnu89
-  CC1 := tools/agbcc/bin/agbcc$(EXE)
-  override CFLAGS += -mthumb-interwork -Wimplicit -Wparentheses -Werror -O$(O_LEVEL) -fhex-asm -g
-  LIBPATH := -L ../../tools/agbcc/lib
-  LIB := $(LIBPATH) -lgcc -lc -L../../libagbsyscall -lagbsyscall
-else ifeq ($(PORTABLE),1)
-  CPPFLAGS += -std=gnu99 -D NONMATCHING -D PORTABLE -D $(TARGET_PLATFORM) -D $(TILE_RENDERER) -D UBFIX $(CPPFLAGS64) $(PLATFORM_INCLUDES) -I$(SDL_DIR)/include -L$(SDL_DIR)/lib
-  MODERNCC := $(PREFIX)gcc
-  PATH_MODERNCC := PATH="$(PATH)" $(MODERNCC)
-  CPP := $(PREFIX)cpp -m$(BIT_WIDTH)
-  CC1 	:= $(shell $(PREFIX)gcc --print-prog-name=cc1) -quiet
-  override CFLAGS += $(OS_CFLAGS) $(PLATFORM_CFLAGS) -Werror=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-trigraphs -Wimplicit -Wparentheses -Wunused -m$(BIT_WIDTH) -std=gnu99 $(LEADING_UNDERSCORE_FLAG) -fno-dce -fno-builtin -Wno-unused-function -DPORTABLE -DNONMATCHING -D UBFIX -DMODERN=$(MODERN)
-  LIB := $(LIBPATH) -lgcc -lc
-else
-  # Note: The makefile must be set up to not call these if modern == 0
-  MODERNCC := $(PREFIX)gcc
-  PATH_MODERNCC := PATH="$(PATH)" $(MODERNCC)
-  CC1 := $(shell $(PATH_MODERNCC) --print-prog-name=cc1) -quiet
-  override CFLAGS += -mthumb -mthumb-interwork -O$(O_LEVEL) -mabi=apcs-gnu -mtune=arm7tdmi -march=armv4t -fno-toplevel-reorder -Wno-pointer-to-int-cast
-  LIBPATH := -L "$(dir $(shell $(PATH_MODERNCC) -mthumb -print-file-name=libgcc.a))" -L "$(dir $(shell $(PATH_MODERNCC) -mthumb -print-file-name=libnosys.a))" -L "$(dir $(shell $(PATH_MODERNCC) -mthumb -print-file-name=libc.a))"
-  LIB := $(LIBPATH) -lc -lnosys -lgcc -L../../libagbsyscall -lagbsyscall
-endif
+CPPFLAGS += -std=gnu99 -D NONMATCHING -D PORTABLE -D $(TARGET_PLATFORM) -D $(TILE_RENDERER) -D UBFIX $(CPPFLAGS64) $(PLATFORM_INCLUDES) -I$(SDL_DIR)/include -L$(SDL_DIR)/lib
+MODERNCC := $(PREFIX)gcc
+CPP := $(PREFIX)cpp -m$(BIT_WIDTH)
+CC1 	:= $(shell $(PREFIX)gcc --print-prog-name=cc1) -quiet
+override CFLAGS += $(OS_CFLAGS) $(PLATFORM_CFLAGS) -Werror=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-trigraphs -Wimplicit -Wparentheses -Wunused -m$(BIT_WIDTH) -std=gnu99 $(LEADING_UNDERSCORE_FLAG) -fno-dce -fno-builtin -Wno-unused-function -DPORTABLE -DNONMATCHING -D UBFIX -DMODERN=$(MODERN)
 
 # Enable debug info if set
 ifeq ($(DINFO),1)
-  override CFLAGS += -g
-endif
-
-ifeq ($(PORTABLE),1)
-  ifeq ($(DINFO),1)
-    override CFLAGS += -O0
-  else
-    override CFLAGS += -O3
-  endif
+  override CFLAGS += -g -O0
+else
+  override CFLAGS += -O3
 endif
 
 # Variable filled out in other make files
@@ -281,13 +169,8 @@ WAV2AGB   := $(TOOLS_DIR)/wav2agb/wav2agb$(EXE)
 MID       := $(TOOLS_DIR)/mid2agb/mid2agb$(EXE)
 SCANINC   := $(TOOLS_DIR)/scaninc/scaninc$(EXE)
 PREPROC   := $(TOOLS_DIR)/preproc/preproc$(EXE)
-RAMSCRGEN := $(TOOLS_DIR)/ramscrgen/ramscrgen$(EXE)
-FIX       := $(TOOLS_DIR)/gbafix/gbafix$(EXE)
 MAPJSON   := $(TOOLS_DIR)/mapjson/mapjson$(EXE)
 JSONPROC  := $(TOOLS_DIR)/jsonproc/jsonproc$(EXE)
-
-PERL := perl
-SHA1 := $(shell { command -v sha1sum || command -v shasum; } 2>/dev/null) -c
 
 MAKEFLAGS += --no-print-directory
 
@@ -298,8 +181,8 @@ MAKEFLAGS += --no-print-directory
 # Delete files that weren't built properly
 .DELETE_ON_ERROR:
 
-RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidynonmodern generated clean-generated
-.PHONY: all rom modern compare winwsl linux
+RULES_NO_SCAN += clean clean-assets tidy tidyportable clean-platform generated clean-generated
+.PHONY: all rom winwsl linux
 .PHONY: $(RULES_NO_SCAN)
 
 infoshell = $(foreach line, $(shell $1 | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
@@ -337,9 +220,6 @@ C_SRCS_IN := $(wildcard $(C_SUBDIR)/*.c $(C_SUBDIR)/*/*.c $(C_SUBDIR)/*/*/*.c)
 C_SRCS := $(foreach src,$(C_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
 C_OBJS := $(patsubst $(C_SUBDIR)/%.c,$(C_BUILDDIR)/%.o,$(C_SRCS))
 
-C_ASM_SRCS := $(wildcard $(C_SUBDIR)/*.s $(C_SUBDIR)/*/*.s $(C_SUBDIR)/*/*/*.s)
-C_ASM_OBJS := $(patsubst $(C_SUBDIR)/%.s,$(C_BUILDDIR)/%.o,$(C_ASM_SRCS))
-
 ASM_SRCS := $(wildcard $(ASM_SUBDIR)/*.s)
 ASM_OBJS := $(patsubst $(ASM_SUBDIR)/%.s,$(ASM_BUILDDIR)/%.o,$(ASM_SRCS))
 
@@ -349,11 +229,7 @@ DATA_ASM_OBJS := $(patsubst $(DATA_ASM_SUBDIR)/%.s,$(DATA_ASM_BUILDDIR)/%.o,$(DA
 MID_SRCS := $(wildcard $(MID_SUBDIR)/*.mid)
 MID_OBJS := $(patsubst $(MID_SUBDIR)/%.mid,$(MID_BUILDDIR)/%.o,$(MID_SRCS))
 
-ifeq ($(PORTABLE),1)
-  OBJS     := $(C_OBJS) $(ASM_OBJS) $(DATA_ASM_OBJS) $(MID_OBJS)
-else
-  OBJS     := $(C_OBJS) $(C_ASM_OBJS) $(ASM_OBJS) $(DATA_ASM_OBJS) $(MID_OBJS)
-endif
+OBJS     := $(C_OBJS) $(ASM_OBJS) $(DATA_ASM_OBJS) $(MID_OBJS)
 
 ifeq ($(TARGET_OS),WINDOWS)
   OBJS += $(OBJ_DIR)/res.o
@@ -362,50 +238,38 @@ endif
 # MP: multiplayer (PS-011). src/mp/*.c is already collected by C_SRCS_IN above.
 # ENet (libs/enet, vendored 1.3.18, MIT) is plain C: it gets its own rule below,
 # without preproc and without the game's warning flags.
-ifeq ($(PORTABLE),1)
-  ENET_DIR    := libs/enet
-  ENET_SRCS   := $(addprefix $(ENET_DIR)/,callbacks.c compress.c host.c list.c packet.c peer.c protocol.c unix.c win32.c)
-  ENET_OBJS   := $(patsubst %.c,$(OBJ_DIR)/%.o,$(ENET_SRCS))
-  ENET_CFLAGS := -O2 -std=gnu99 -m$(BIT_WIDTH) $(LEADING_UNDERSCORE_FLAG) -I $(ENET_DIR)/include -w
-  ifeq ($(TARGET_OS),WINDOWS)
-    OS_LFLAGS   += -lws2_32
-  else
-    # Replaces ENet's configure step (unix.c only defaults these on __APPLE__).
-    ENET_CFLAGS += -DHAS_FCNTL=1 -DHAS_POLL=1 -DHAS_INET_PTON=1 -DHAS_INET_NTOP=1 \
-                   -DHAS_MSGHDR_FLAGS=1 -DHAS_SOCKLEN_T=1 -DHAS_GETADDRINFO=1 -DHAS_GETNAMEINFO=1
-  endif
-  OBJS += $(ENET_OBJS)
-
-  # Build id for the multiplayer handshake (docs/multiplayer/protocol.md section 9).
-  # Only src/mp/mp_build.c sees it; a stamp file rebuilds that one file when it changes.
-  MP_GIT_ID      := $(shell git rev-parse HEAD 2>/dev/null | cut -c1-8)
-  MP_BUILD_ID    ?= $(if $(MP_GIT_ID),$(MP_GIT_ID),nogit)
-  MP_BUILD_DIRTY := $(if $(shell git status --porcelain --untracked-files=no 2>/dev/null),1,0)
-  MP_BUILD_STAMP := $(OBJ_DIR)/mp_build_id.txt
-  $(shell mkdir -p $(OBJ_DIR); echo '$(MP_BUILD_ID) $(MP_BUILD_DIRTY)' | cmp -s - $(MP_BUILD_STAMP) || echo '$(MP_BUILD_ID) $(MP_BUILD_DIRTY)' > $(MP_BUILD_STAMP))
+ENET_DIR    := libs/enet
+ENET_SRCS   := $(addprefix $(ENET_DIR)/,callbacks.c compress.c host.c list.c packet.c peer.c protocol.c unix.c win32.c)
+ENET_OBJS   := $(patsubst %.c,$(OBJ_DIR)/%.o,$(ENET_SRCS))
+ENET_CFLAGS := -O2 -std=gnu99 -m$(BIT_WIDTH) $(LEADING_UNDERSCORE_FLAG) -I $(ENET_DIR)/include -w
+ifeq ($(TARGET_OS),WINDOWS)
+  OS_LFLAGS   += -lws2_32
+else
+  # Replaces ENet's configure step (unix.c only defaults these on __APPLE__).
+  ENET_CFLAGS += -DHAS_FCNTL=1 -DHAS_POLL=1 -DHAS_INET_PTON=1 -DHAS_INET_NTOP=1 \
+                 -DHAS_MSGHDR_FLAGS=1 -DHAS_SOCKLEN_T=1 -DHAS_GETADDRINFO=1 -DHAS_GETNAMEINFO=1
 endif
+OBJS += $(ENET_OBJS)
 
-OBJS_REL := $(patsubst $(OBJ_DIR)/%,%,$(OBJS))
+# Build id for the multiplayer handshake (docs/multiplayer/protocol.md section 9).
+# Only src/mp/mp_build.c sees it; a stamp file rebuilds that one file when it changes.
+MP_GIT_ID      := $(shell git rev-parse HEAD 2>/dev/null | cut -c1-8)
+MP_BUILD_ID    ?= $(if $(MP_GIT_ID),$(MP_GIT_ID),nogit)
+MP_BUILD_DIRTY := $(if $(shell git status --porcelain --untracked-files=no 2>/dev/null),1,0)
+MP_BUILD_STAMP := $(OBJ_DIR)/mp_build_id.txt
+$(shell mkdir -p $(OBJ_DIR); echo '$(MP_BUILD_ID) $(MP_BUILD_DIRTY)' | cmp -s - $(MP_BUILD_STAMP) || echo '$(MP_BUILD_ID) $(MP_BUILD_DIRTY)' > $(MP_BUILD_STAMP))
 
 SUBDIRS  := $(sort $(dir $(OBJS)))
 $(shell mkdir -p $(SUBDIRS))
 
 # Pretend rules that are actually flags defer to `make all`
-modern: all
-compare: all
 winwsl: all
 linux: all
 
 # Other rules
 rom: $(ROM)
-ifeq ($(COMPARE),1)
-	@$(SHA1) rom.sha1
-endif
-
-syms: $(SYM)
 
 clean: tidy clean-tools clean-generated clean-assets
-	@$(MAKE) clean -C libagbsyscall
 
 clean-assets:
 	rm -rf $(ASSETS_DIR_NAME)
@@ -416,27 +280,19 @@ clean-assets:
 	find . \( -iname '*.1bpp' -o -iname '*.4bpp' -o -iname '*.8bpp' -o -iname '*.gbapal' -o -iname '*.lz' -o -iname '*.rl' -o -iname '*.latfont' -o -iname '*.hwjpnfont' -o -iname '*.fwjpnfont' \) -exec rm {} +
 	find $(DATA_ASM_SUBDIR)/maps \( -iname 'connections.inc' -o -iname 'events.inc' -o -iname 'header.inc' \) -exec rm {} +
 
-tidy: tidynonmodern tidymodern tidyportable
-
-tidynonmodern:
-	rm -f $(ROM_NAME) $(ELF_NAME) $(MAP_NAME)
-	rm -rf $(OBJ_DIR_NAME)
-
-tidymodern:
-	rm -f $(MODERN_ROM_NAME) $(MODERN_ELF_NAME) $(MODERN_MAP_NAME)
-	rm -rf $(MODERN_OBJ_DIR_NAME)
+tidy: tidyportable
 
 tidyportable:
-	rm -f $(PORTABLE_ROM_NAME)
-	rm -f $(PORTABLE_ROM_NAME).exe
-	rm -rf $(PORTABLE_OBJ_DIR_NAME)
-	rm -f $(PORTABLE_ROM_NAME_OTHER)
-	rm -f $(PORTABLE_ROM_NAME_OTHER).exe
-	rm -rf $(PORTABLE_OBJ_DIR_NAME_OTHER)
+	rm -f $(ROM)
+	rm -f $(ROM).exe
+	rm -rf $(OBJ_DIR)
+	rm -f $(ROM_OTHER)
+	rm -f $(ROM_OTHER).exe
+	rm -rf $(OBJ_DIR_OTHER)
 
 clean-platform:
-	rm -f $(PORTABLE_ROM_NAME)
-	rm -rf $(PORTABLE_OBJ_DIR_NAME)/src/platform
+	rm -f $(ROM)
+	rm -rf $(OBJ_DIR)/src/platform
 
 # Other rules
 include graphics_file_rules.mk
@@ -467,22 +323,6 @@ clean-generated:
 	@rm -f $(AUTO_GEN_TARGETS)
 	@echo "rm -f <AUTO_GEN_TARGETS>"
 
-ifeq ($(MODERN),0)
-$(C_BUILDDIR)/libc.o: CC1 := $(TOOLS_DIR)/agbcc/bin/old_agbcc$(EXE)
-$(C_BUILDDIR)/libc.o: CFLAGS := -O2
-$(C_BUILDDIR)/siirtc.o: CFLAGS := -mthumb-interwork
-$(C_BUILDDIR)/agb_flash.o: CFLAGS := -O -mthumb-interwork
-$(C_BUILDDIR)/agb_flash_1m.o: CFLAGS := -O -mthumb-interwork
-$(C_BUILDDIR)/agb_flash_mx.o: CFLAGS := -O -mthumb-interwork
-$(C_BUILDDIR)/m4a.o: CC1 := tools/agbcc/bin/old_agbcc$(EXE)
-$(C_BUILDDIR)/record_mixing.o: CFLAGS += -ffreestanding
-$(C_BUILDDIR)/librfu_intr.o: CC1 := $(TOOLS_DIR)/agbcc/bin/agbcc_arm$(EXE)
-$(C_BUILDDIR)/librfu_intr.o: CFLAGS := -O2 -mthumb-interwork -quiet
-else ifneq ($(PORTABLE),1)
-$(C_BUILDDIR)/librfu_intr.o: CFLAGS := -mthumb-interwork -O2 -mabi=apcs-gnu -mtune=arm7tdmi -march=armv4t -fno-toplevel-reorder -Wno-pointer-to-int-cast
-$(C_BUILDDIR)/berry_crush.o: override CFLAGS += -Wno-address-of-packed-member
-endif
-
 # Dependency rules (for the *.c & *.s sources to .o files)
 # Have to be explicit or else missing files won't be reported.
 
@@ -501,10 +341,9 @@ else
 endif
 
 $(C_BUILDDIR)/%.d: $(C_SUBDIR)/%.c
-	$(SCANINC) -M $@ -g $(ASSETS_DIR_NAME) $(INCLUDE_SCANINC_ARGS) -I tools/agbcc/include $<
+	$(SCANINC) -M $@ -g $(ASSETS_DIR_NAME) $(INCLUDE_SCANINC_ARGS) $<
 
 # MP: multiplayer build rules (PS-011)
-ifeq ($(PORTABLE),1)
 $(OBJ_DIR)/$(ENET_DIR)/%.o: $(ENET_DIR)/%.c $(wildcard $(ENET_DIR)/include/enet/*.h)
 	@echo "$(MODERNCC) <enet flags> -o $@ $<"
 	@$(MODERNCC) $(ENET_CFLAGS) -c -o $@ $<
@@ -515,7 +354,6 @@ $(C_BUILDDIR)/mp/mp_transport.o: $(wildcard $(ENET_DIR)/include/enet/*.h)
 
 $(C_BUILDDIR)/mp/mp_build.o: CPPFLAGS += -DMP_BUILD_ID=\"$(MP_BUILD_ID)\" -DMP_BUILD_DIRTY=$(MP_BUILD_DIRTY)
 $(C_BUILDDIR)/mp/mp_build.o: $(MP_BUILD_STAMP)
-endif
 
 ifneq ($(NODEP),1)
 -include $(addprefix $(OBJ_DIR)/,$(C_SRCS:.c=.d))
@@ -532,16 +370,6 @@ ifneq ($(NODEP),1)
 -include $(addprefix $(OBJ_DIR)/,$(ASM_SRCS:.s=.d))
 endif
 
-$(C_BUILDDIR)/%.o: $(C_SUBDIR)/%.s
-	$(PREPROC) $< charmap.txt | $(CPP) $(INCLUDE_SCANINC_ARGS) - | $(PREPROC) -ie $< charmap.txt | $(AS) $(ASFLAGS) -o $@
-
-$(C_BUILDDIR)/%.d: $(C_SUBDIR)/%.s
-	$(SCANINC) -M $@ -g $(ASSETS_DIR_NAME) $(INCLUDE_SCANINC_ARGS) -I "" $<
-
-ifneq ($(NODEP),1)
--include $(addprefix $(OBJ_DIR)/,$(C_ASM_SRCS:.s=.d))
-endif
-
 $(DATA_ASM_BUILDDIR)/%.o: $(DATA_ASM_SUBDIR)/%.s
 	$(PREPROC) $< charmap.txt | $(CPP) $(INCLUDE_SCANINC_ARGS) - | $(PREPROC) -ie $< charmap.txt | $(ASM_PSEUDO_OP_CONV) | $(AS) $(ASFLAGS) -o $@
 	$(FIX_UNDERSCORE) $@
@@ -553,49 +381,9 @@ ifneq ($(NODEP),1)
 -include $(addprefix $(OBJ_DIR)/,$(DATA_ASM_SRCS:.s=.d))
 endif
 
-$(OBJ_DIR)/sym_bss.ld: sym_bss.txt
-	$(RAMSCRGEN) .bss $< ENGLISH > $@
-
-$(OBJ_DIR)/sym_common.ld: sym_common.txt $(C_OBJS) $(wildcard common_syms/*.txt)
-	$(RAMSCRGEN) COMMON $< ENGLISH -c $(C_BUILDDIR),common_syms > $@
-
-$(OBJ_DIR)/sym_ewram.ld: sym_ewram.txt
-	$(RAMSCRGEN) ewram_data $< ENGLISH > $@
-
 $(OBJ_DIR)/res.o: $(C_SUBDIR)/platform/win32res/res.rc $(C_SUBDIR)/platform/win32res/icon.ico
 	$(WINDRES) $< -o $@
 
-# Linker script
-ifeq ($(MODERN),0)
-LD_SCRIPT := ld_script.ld
-LD_SCRIPT_DEPS := $(OBJ_DIR)/sym_bss.ld $(OBJ_DIR)/sym_common.ld $(OBJ_DIR)/sym_ewram.ld
-else
-LD_SCRIPT := ld_script_modern.ld
-LD_SCRIPT_DEPS :=
-endif
-
-# Final rules
-
-libagbsyscall:
-	@$(MAKE) -C libagbsyscall TOOLCHAIN=$(TOOLCHAIN) MODERN=$(MODERN)
-
-ifneq ($(PORTABLE),1)
-# Elf from object files
-LDFLAGS = -Map ../../$(MAP)
-$(ELF): $(LD_SCRIPT) $(LD_SCRIPT_DEPS) $(OBJS) libagbsyscall
-	@cd $(OBJ_DIR) && $(LD) $(LDFLAGS) -T ../../$< --print-memory-usage -o ../../$@ $(OBJS_REL) $(LIB) | cat
-	@echo "cd $(OBJ_DIR) && $(LD) $(LDFLAGS) -T ../../$< --print-memory-usage -o ../../$@ <objs> <libs> | cat"
-	$(FIX) $@ -t"$(TITLE)" -c$(GAME_CODE) -m$(MAKER_CODE) -r$(REVISION) --silent
-
-# Builds the rom from the elf file
-$(ROM): $(ELF)
-	$(OBJCOPY) -O binary $< $@
-	$(FIX) $@ -p --silent
-
-# Symbol file (`make syms`)
-$(SYM): $(ELF)
-	$(OBJDUMP) -t $< | sort -u | grep -E "^0[2389]" | $(PERL) -p -e 's/^(\w{8}) (\w).{6} \S+\t(\w{8}) (\S+)$$/\1 \2 \3 \4/g' > $@
-else
+# Final rule: link the executable
 $(ROM): $(OBJS)
 	$(MODERNCC) $(CFLAGS) -Wl,--demangle $^ -static-libgcc -L$(SDL_DIR)/lib $(PLATFORM_LFLAGS) $(OS_LFLAGS) -o $@
-endif

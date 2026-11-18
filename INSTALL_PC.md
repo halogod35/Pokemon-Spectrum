@@ -1,7 +1,7 @@
 # Instructions
 
 These instructions explain how to build **Pokémon Spectrum**, the PC (SDL2) port of the pokeemerald decomp, for Windows and Linux.
-For the original GBA ROM build, see [INSTALL.md](INSTALL.md).
+The original GBA ROM build (agbcc, devkitARM, `make compare`) was removed: this repository only builds the PC game.
 
 All PC builds produce an executable in the repository root:
 
@@ -108,8 +108,9 @@ WSL1 and WSL2 both work. In an **administrator** PowerShell:
 wsl --install -d Ubuntu
 ```
 
-On older Windows 10 builds (including LTSC 2019/2021) where `wsl --install` is not available, follow the pret WSL
-steps in [INSTALL.md](INSTALL.md) instead: enable the "Windows Subsystem for Linux" optional feature, reboot, then
+On older Windows 10 builds (including LTSC 2019/2021) where `wsl --install` is not available, enable WSL by hand
+instead: in an administrator PowerShell run
+`dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart`, reboot, then
 install a distro (for example Ubuntu) from the Microsoft Store or with `wsl --import`.
 
 Open the distro once and create your Linux user.
@@ -171,12 +172,8 @@ Standalone downloads also exist: [32-bit](https://archive.org/download/sdl-2-2.0
 Double-click `pokemon-spectrum64.exe` in Explorer (a console window opens next to the game for log output), or start
 it from WSL with `./pokemon-spectrum64.exe`. The save `pokemon-spectrum.sav` is created in the working directory.
 
-## GBA
-
-Follow instructions in [INSTALL.md](INSTALL.md). Building the matching ROM (`make compare`) needs agbcc.
-
 ## CI
 
 `.github/workflows/build.yml` runs on pushes to `master` and `ps-*` branches and on pull requests to `master`.
-It runs the GBA `make compare` build, `make linux` (64-bit, plus a non-blocking 32-bit job) and `make winwsl`
-(64- and 32-bit). The Windows and Linux executables are uploaded as workflow artifacts.
+It runs `make linux` (64-bit, plus a non-blocking 32-bit job) and `make winwsl` (64- and 32-bit), then the
+headless self-tests on the Linux executables. The Windows and Linux executables are uploaded as workflow artifacts.

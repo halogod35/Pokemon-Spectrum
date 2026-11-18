@@ -343,7 +343,7 @@ bool32 MysteryGift_TrySaveStamp(const u16 *stamp)
 #define GAME_DATA_VALID_GIFT_TYPE_1 (1 << 2)
 #define GAME_DATA_VALID_GIFT_TYPE_2 (1 << 9)
 
-// PS-080: the GBA ROM header is not linked into the PC build (src/rom_header.s), so the game
+// PS-080: the GBA ROM header is not part of the PC build (src/rom_header.s went with the GBA build, PS-004), so the game
 // code and version the Mystery Gift server used to read from it are constants here.
 static const u8 sMysteryGiftGameCode[GAME_CODE_LENGTH] = {'B', 'P', 'E', 'E'};
 #define MYSTERY_GIFT_SOFTWARE_VERSION 0
