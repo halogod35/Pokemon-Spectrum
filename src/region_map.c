@@ -1479,6 +1479,12 @@ void CreateRegionMapPlayerIcon(u16 tileTag, u16 paletteTag)
     struct SpritePalette palette = {sRegionMapPlayerIcon_BrendanPal, paletteTag};
     struct SpriteTemplate template = {tileTag, paletteTag, &sRegionMapPlayerIconOam, sRegionMapPlayerIconAnimTable, NULL, gDummySpriteAffineAnimTable, SpriteCallbackDummy};
 
+    // PS-091: FreeRegionMapIconResources frees the player icon by these two tags, but nothing ever
+    // set them (the RegionMap struct comes from Alloc, not AllocZeroed), so the PokéNav freed the
+    // tiles/palette of whatever tag the heap garbage named (tag 0 = the spinning PokéNav sprite).
+    sRegionMap->playerIconTileTag = tileTag;
+    sRegionMap->playerIconPaletteTag = paletteTag;
+
     if (IsEventIslandMapSecId(gMapHeader.regionMapSectionId))
     {
         sRegionMap->playerIconSprite = NULL;
