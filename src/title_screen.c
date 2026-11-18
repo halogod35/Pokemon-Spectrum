@@ -12,7 +12,6 @@
 #include "main_menu.h"
 #include "palette.h"
 #include "reset_rtc_screen.h"
-#include "berry_fix_program.h"
 #include "sound.h"
 #include "sprite.h"
 #include "task.h"
@@ -38,7 +37,7 @@ enum {
 
 #define CLEAR_SAVE_BUTTON_COMBO (B_BUTTON | SELECT_BUTTON | DPAD_UP)
 #define RESET_RTC_BUTTON_COMBO (B_BUTTON | SELECT_BUTTON | DPAD_LEFT)
-#define BERRY_UPDATE_BUTTON_COMBO (B_BUTTON | SELECT_BUTTON)
+#define BERRY_UPDATE_BUTTON_COMBO (B_BUTTON | SELECT_BUTTON) // PS-074: unused on this port, see Task_TitleScreenPhase3
 #define A_B_START_SELECT (A_BUTTON | B_BUTTON | START_BUTTON | SELECT_BUTTON)
 
 static void MainCB2(void);
@@ -48,7 +47,6 @@ static void Task_TitleScreenPhase3(u8);
 static void CB2_GoToMainMenu(void);
 static void CB2_GoToClearSaveDataScreen(void);
 static void CB2_GoToResetRtcScreen(void);
-static void CB2_GoToBerryFixScreen(void);
 static void CB2_GoToCopyrightScreen(void);
 static void UpdateLegendaryMarkingColor(u8);
 
@@ -790,18 +788,17 @@ static void Task_TitleScreenPhase3(u8 taskId)
         SetMainCallback2(CB2_GoToClearSaveDataScreen);
     }
     else if (JOY_HELD(RESET_RTC_BUTTON_COMBO) == RESET_RTC_BUTTON_COMBO
-      && CanResetRTC() == TRUE)
+      && CanResetRTC() == TRUE) // PS-074: always TRUE on this port (event_data.c)
     {
         FadeOutBGM(4);
         BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
         SetMainCallback2(CB2_GoToResetRtcScreen);
     }
-    else if (JOY_HELD(BERRY_UPDATE_BUTTON_COMBO) == BERRY_UPDATE_BUTTON_COMBO)
-    {
-        FadeOutBGM(4);
-        BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
-        SetMainCallback2(CB2_GoToBerryFixScreen);
-    }
+    // PS-074: the berry-fix combo (B+Select, BERRY_UPDATE_BUTTON_COMBO -> CB2_InitBerryFixProgram) is
+    // skipped on this port. The berry-fix program is the GBA multiboot tool for Ruby/Sapphire
+    // cartridges: it does nothing useful on PC and can only be left by restarting the game, and it
+    // matched as soon as B and Select were down, before Left for the clock-reset combo above.
+    // src/berry_fix_program.c is still compiled, just unreachable.
     else
     {
         SetGpuReg(REG_OFFSET_BG2Y_L, 0);
@@ -845,15 +842,6 @@ static void CB2_GoToResetRtcScreen(void)
 {
     if (!UpdatePaletteFade())
         SetMainCallback2(CB2_InitResetRtcScreen);
-}
-
-static void CB2_GoToBerryFixScreen(void)
-{
-    if (!UpdatePaletteFade())
-    {
-        m4aMPlayAllStop();
-        SetMainCallback2(CB2_InitBerryFixProgram);
-    }
 }
 
 static void UpdateLegendaryMarkingColor(u8 frameNum)
