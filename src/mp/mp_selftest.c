@@ -355,6 +355,8 @@ s32 MP_RunSelftest(void)
     sFailures += MpSelftest_Trade();
     // PS-045: direct link battle (party rules, BATTLE_DOUBLE parser, start flow, group end).
     sFailures += MpSelftest_Battle();
+    // PS-089: direct record mixing (MIX_RECORDS parser, the record sanitizer: clean, crafted, fuzz).
+    sFailures += MpSelftest_Mix();
     // PS-053: traffic counters and the benchmark table (CI log: "[MP] netbench:").
     sFailures += MpSelftest_NetBench();
     MpTransport_Shutdown();
