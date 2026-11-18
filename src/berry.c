@@ -1316,7 +1316,7 @@ void ObjectEventInteractionRemoveBerryTree(void)
     SetBerryTreeJustPicked(gSpecialVar_LastTalked, gSaveBlock1Ptr->location.mapNum, gSaveBlock1Ptr->location.mapGroup);
 }
 
-bool8 PlayerHasBerries(void)
+bool16 PlayerHasBerries(void)
 {
     return IsBagPocketNonEmpty(POCKET_BERRIES);
 }

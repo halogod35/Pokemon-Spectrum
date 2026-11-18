@@ -51,6 +51,11 @@
 #include "constants/event_objects.h"
 #include "constants/comparison_operators.h"
 
+// PS-090: every special must return a 16- or 32-bit type (bool16/u16/s16/u32/s32), never bool8/u8/s8.
+// specialvar reads the result through this u16 pointer type, but the x86 ABI only defines the low
+// 8 bits of eax for an 8-bit return, so bits 8-15 are whatever the callee left there (for
+// IsEnoughForCostInVar0x8005 that was the decrypted money: "not enough money" with 31,171). The
+// GBA (ARM) zero-extended for free. tools/check_specials.sh enforces this in CI.
 typedef u16 (*SpecialFunc)(void);
 typedef void (*NativeFunc)(void);
 

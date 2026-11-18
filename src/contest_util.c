@@ -2382,7 +2382,7 @@ void ShouldReadyContestArtist(void)
     }
 }
 
-u8 CountPlayerMuseumPaintings(void)
+u16 CountPlayerMuseumPaintings(void)
 {
     int i;
     u8 count = 0;
@@ -2550,7 +2550,7 @@ void LoadLinkContestPlayerPalettes(void)
     }
 }
 
-bool8 GiveMonArtistRibbon(void)
+bool16 GiveMonArtistRibbon(void)
 {
     u8 hasArtistRibbon;
 
@@ -2573,7 +2573,7 @@ bool8 GiveMonArtistRibbon(void)
     }
 }
 
-bool8 IsContestDebugActive(void)
+bool16 IsContestDebugActive(void)
 {
     return FALSE; // gUnknown_0203856C in pokeruby
 }
@@ -2706,7 +2706,7 @@ u16 GetContestRand(void)
     return gContestRngValue >> 16;
 }
 
-bool8 LinkContestWaitForConnection(void)
+bool16 LinkContestWaitForConnection(void)
 {
     if (gLinkContestFlags & LINK_CONTEST_FLAG_IS_WIRELESS)
     {
@@ -2764,7 +2764,7 @@ void LinkContestTryHideWirelessIndicator(void)
     }
 }
 
-bool8 IsContestWithRSPlayer(void)
+bool16 IsContestWithRSPlayer(void)
 {
     if (gLinkContestFlags & LINK_CONTEST_FLAG_HAS_RS_PLAYER)
         return TRUE;
@@ -2777,7 +2777,7 @@ void ClearLinkContestFlags(void)
     gLinkContestFlags = 0;
 }
 
-bool8 IsWirelessContest(void)
+bool16 IsWirelessContest(void)
 {
     if (gLinkContestFlags & LINK_CONTEST_FLAG_IS_WIRELESS)
         return TRUE;

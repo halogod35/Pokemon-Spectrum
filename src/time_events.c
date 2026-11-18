@@ -39,7 +39,7 @@ void UpdateMirageRnd(u16 days)
     SetMirageRnd(rnd);
 }
 
-bool8 IsMirageIslandPresent(void)
+bool16 IsMirageIslandPresent(void)
 {
     u16 rnd = GetMirageRnd() >> 16;
     int i;

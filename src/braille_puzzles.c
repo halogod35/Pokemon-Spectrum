@@ -89,7 +89,7 @@ void DoBrailleDigEffect(void)
     UnlockPlayerFieldControls();
 }
 
-bool8 CheckRelicanthWailord(void)
+bool16 CheckRelicanthWailord(void)
 {
     // Emerald change: why did they flip it?
     // First comes Wailord
@@ -278,7 +278,7 @@ bool8 FldEff_UsePuzzleEffect(void)
 
 // The puzzle to unlock Regice's cave requires the player to interact with the braille message on the back wall,
 // step on every space on the perimeter of the cave (and only those spaces) then return to the back wall.
-bool8 ShouldDoBrailleRegicePuzzle(void)
+bool16 ShouldDoBrailleRegicePuzzle(void)
 {
     u8 i;
 

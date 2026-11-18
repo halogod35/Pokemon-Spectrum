@@ -4393,7 +4393,7 @@ static u8 CopyMonToPC(struct Pokemon *mon)
     return MON_CANT_GIVE;
 }
 
-u8 CalculatePlayerPartyCount(void)
+u16 CalculatePlayerPartyCount(void)
 {
     gPlayerPartyCount = 0;
 

@@ -384,7 +384,7 @@ void ScriptMenu_DisplayPCStartupPrompt(void)
     AddTextPrinterParameterized2(0, FONT_NORMAL, gText_WhichPCShouldBeAccessed, 0, NULL, TEXT_COLOR_DARK_GRAY, TEXT_COLOR_WHITE, TEXT_COLOR_LIGHT_GRAY);
 }
 
-bool8 ScriptMenu_CreateLilycoveSSTidalMultichoice(void)
+bool16 ScriptMenu_CreateLilycoveSSTidalMultichoice(void)
 {
     if (FuncIsActiveTask(Task_HandleMultichoiceInput) == TRUE)
     {
@@ -549,7 +549,7 @@ void GetLilycoveSSTidalSelection(void)
 
 // PS-071: region transit helper menu (data/scripts/region_transit.inc). Same shape as the
 // SS Tidal menu above: the rows are the unlocked destinations from src/region.c plus EXIT.
-bool8 ScriptMenu_CreateRegionTransitMultichoice(void)
+bool16 ScriptMenu_CreateRegionTransitMultichoice(void)
 {
     if (FuncIsActiveTask(Task_HandleMultichoiceInput) == TRUE)
     {

@@ -475,7 +475,7 @@ bool32 ShouldDoRivalRayquazaCall(void)
     return TRUE;
 }
 
-u8 GetLinkPartnerNames(void)
+u16 GetLinkPartnerNames(void)
 {
     u8 i;
     u8 j = 0;
@@ -898,7 +898,7 @@ void StorePlayerCoordsInVars(void)
     gSpecialVar_0x8005 = gSaveBlock1Ptr->pos.y;
 }
 
-u8 GetPlayerTrainerIdOnesDigit(void)
+u16 GetPlayerTrainerIdOnesDigit(void)
 {
     return (u16)((gSaveBlock2Ptr->playerTrainerId[1] << 8) | gSaveBlock2Ptr->playerTrainerId[0]) % 10;
 }
@@ -919,7 +919,7 @@ void GetRivalSonDaughterString(void)
         StringCopy(gStringVar1, gText_Son);
 }
 
-u8 GetBattleOutcome(void)
+u16 GetBattleOutcome(void)
 {
     return gBattleOutcome;
 }
@@ -946,7 +946,7 @@ u16 GetWeekCount(void)
     return weekCount;
 }
 
-u8 GetLeadMonFriendshipScore(void)
+u16 GetLeadMonFriendshipScore(void)
 {
     struct Pokemon *pokemon = &gPlayerParty[GetLeadMonIndex()];
     if (GetMonData(pokemon, MON_DATA_FRIENDSHIP) == MAX_FRIENDSHIP)
@@ -1187,7 +1187,7 @@ void ResetTrickHouseNuggetFlag(void)
     FlagClear(flag);
 }
 
-bool8 CheckLeadMonCool(void)
+bool16 CheckLeadMonCool(void)
 {
     if (GetMonData(&gPlayerParty[GetLeadMonIndex()], MON_DATA_COOL) < 200)
         return FALSE;
@@ -1195,7 +1195,7 @@ bool8 CheckLeadMonCool(void)
     return TRUE;
 }
 
-bool8 CheckLeadMonBeauty(void)
+bool16 CheckLeadMonBeauty(void)
 {
     if (GetMonData(&gPlayerParty[GetLeadMonIndex()], MON_DATA_BEAUTY) < 200)
         return FALSE;
@@ -1203,7 +1203,7 @@ bool8 CheckLeadMonBeauty(void)
     return TRUE;
 }
 
-bool8 CheckLeadMonCute(void)
+bool16 CheckLeadMonCute(void)
 {
     if (GetMonData(&gPlayerParty[GetLeadMonIndex()], MON_DATA_CUTE) < 200)
         return FALSE;
@@ -1211,7 +1211,7 @@ bool8 CheckLeadMonCute(void)
     return TRUE;
 }
 
-bool8 CheckLeadMonSmart(void)
+bool16 CheckLeadMonSmart(void)
 {
     if (GetMonData(&gPlayerParty[GetLeadMonIndex()], MON_DATA_SMART) < 200)
         return FALSE;
@@ -1219,7 +1219,7 @@ bool8 CheckLeadMonSmart(void)
     return TRUE;
 }
 
-bool8 CheckLeadMonTough(void)
+bool16 CheckLeadMonTough(void)
 {
     if (GetMonData(&gPlayerParty[GetLeadMonIndex()], MON_DATA_TOUGH) < 200)
         return FALSE;
@@ -1266,7 +1266,7 @@ void RemoveCameraObject(void)
     RemoveObjectEventByLocalIdAndMap(LOCALID_CAMERA, gSaveBlock1Ptr->location.mapNum, gSaveBlock1Ptr->location.mapGroup);
 }
 
-u8 GetPokeblockNameByMonNature(void)
+u16 GetPokeblockNameByMonNature(void)
 {
     return CopyMonFavoritePokeblockName(GetNature(&gPlayerParty[GetLeadMonIndex()]), gStringVar1);
 }
@@ -1325,7 +1325,7 @@ u16 GetSlotMachineId(void)
     return sSlotMachineIds[rnd % SLOT_MACHINE_COUNT];
 }
 
-bool8 FoundAbandonedShipRoom1Key(void)
+bool16 FoundAbandonedShipRoom1Key(void)
 {
     u16 *specVar = &gSpecialVar_0x8004;
     u16 flag = FLAG_HIDDEN_ITEM_ABANDONED_SHIP_RM_1_KEY;
@@ -1336,7 +1336,7 @@ bool8 FoundAbandonedShipRoom1Key(void)
     return TRUE;
 }
 
-bool8 FoundAbandonedShipRoom2Key(void)
+bool16 FoundAbandonedShipRoom2Key(void)
 {
     u16 *specVar = &gSpecialVar_0x8004;
     u16 flag = FLAG_HIDDEN_ITEM_ABANDONED_SHIP_RM_2_KEY;
@@ -1347,7 +1347,7 @@ bool8 FoundAbandonedShipRoom2Key(void)
     return TRUE;
 }
 
-bool8 FoundAbandonedShipRoom4Key(void)
+bool16 FoundAbandonedShipRoom4Key(void)
 {
     u16 *specVar = &gSpecialVar_0x8004;
     u16 flag = FLAG_HIDDEN_ITEM_ABANDONED_SHIP_RM_4_KEY;
@@ -1358,7 +1358,7 @@ bool8 FoundAbandonedShipRoom4Key(void)
     return TRUE;
 }
 
-bool8 FoundAbandonedShipRoom6Key(void)
+bool16 FoundAbandonedShipRoom6Key(void)
 {
     u16 *specVar = &gSpecialVar_0x8004;
     u16 flag = FLAG_HIDDEN_ITEM_ABANDONED_SHIP_RM_6_KEY;
@@ -1369,7 +1369,7 @@ bool8 FoundAbandonedShipRoom6Key(void)
     return TRUE;
 }
 
-bool8 LeadMonHasEffortRibbon(void)
+bool16 LeadMonHasEffortRibbon(void)
 {
     return GetMonData(&gPlayerParty[GetLeadMonIndex()], MON_DATA_EFFORT_RIBBON, NULL);
 }
@@ -1387,7 +1387,7 @@ void GiveLeadMonEffortRibbon(void)
         TryPutSpotTheCutiesOnAir(leadMon, MON_DATA_EFFORT_RIBBON);
 }
 
-bool8 Special_AreLeadMonEVsMaxedOut(void)
+bool16 Special_AreLeadMonEVsMaxedOut(void)
 {
     if (GetMonEVCount(&gPlayerParty[GetLeadMonIndex()]) >= MAX_TOTAL_EVS)
         return TRUE;
@@ -1395,7 +1395,7 @@ bool8 Special_AreLeadMonEVsMaxedOut(void)
     return FALSE;
 }
 
-u8 TryUpdateRusturfTunnelState(void)
+u16 TryUpdateRusturfTunnelState(void)
 {
     if (!FlagGet(FLAG_RUSTURF_TUNNEL_OPENED)
         && gSaveBlock1Ptr->location.mapGroup == MAP_GROUP(MAP_RUSTURF_TUNNEL)
@@ -1434,7 +1434,7 @@ void LoadWallyZigzagoon(void)
     SetMonData(&gPlayerParty[0], MON_DATA_MOVE4, &monData);
 }
 
-bool8 IsStarterInParty(void)
+bool16 IsStarterInParty(void)
 {
     u8 i;
     u16 starter = GetStarterPokemon(VarGet(VAR_STARTER_MON));
@@ -1447,12 +1447,12 @@ bool8 IsStarterInParty(void)
     return FALSE;
 }
 
-bool8 ScriptCheckFreePokemonStorageSpace(void)
+bool16 ScriptCheckFreePokemonStorageSpace(void)
 {
     return CheckFreePokemonStorageSpace();
 }
 
-bool8 IsPokerusInParty(void)
+bool16 IsPokerusInParty(void)
 {
     if (!CheckPartyPokerus(gPlayerParty, (1 << PARTY_SIZE) - 1))
         return FALSE;
@@ -1511,7 +1511,7 @@ static void StopCameraShake(u8 taskId)
 #undef tDelay
 #undef tVerticalPan
 
-bool8 FoundBlackGlasses(void)
+bool16 FoundBlackGlasses(void)
 {
     return FlagGet(FLAG_HIDDEN_ITEM_ROUTE_116_BLACK_GLASSES);
 }
@@ -1569,7 +1569,7 @@ u16 SetPacifidlogTMReceivedDay(void)
     return gLocalTime.days;
 }
 
-bool8 MonOTNameNotPlayer(void)
+bool16 MonOTNameNotPlayer(void)
 {
     if (GetMonData(&gPlayerParty[gSpecialVar_0x8004], MON_DATA_LANGUAGE) != GAME_LANGUAGE)
         return TRUE;
@@ -1635,7 +1635,7 @@ u16 GetMysteryGiftCardStat(void)
     }
 }
 
-bool8 BufferTMHMMoveName(void)
+bool16 BufferTMHMMoveName(void)
 {
     if (gSpecialVar_0x8004 >= ITEM_TM01 && gSpecialVar_0x8004 <= ITEM_HM08)
     {
@@ -1646,7 +1646,7 @@ bool8 BufferTMHMMoveName(void)
     return FALSE;
 }
 
-bool8 IsBadEggInParty(void)
+bool16 IsBadEggInParty(void)
 {
     u8 partyCount = CalculatePlayerPartyCount();
     u8 i;
@@ -3402,7 +3402,7 @@ u16 GetPCBoxToSendMon(void)
     return sPCBoxToSendMon;
 }
 
-bool8 ShouldShowBoxWasFullMessage(void)
+bool16 ShouldShowBoxWasFullMessage(void)
 {
     if (!FlagGet(FLAG_SHOWN_BOX_WAS_FULL_MESSAGE))
     {
@@ -4155,7 +4155,7 @@ void TryLoseFansFromPlayTime(void)
     }
 }
 
-bool8 IsFanClubMemberFanOfPlayer(void)
+bool16 IsFanClubMemberFanOfPlayer(void)
 {
     return GET_TRAINER_FAN_CLUB_FLAG(gSpecialVar_0x8004);
 }
@@ -4264,7 +4264,7 @@ void SetPlayerGotFirstFans(void)
 }
 
 // return value is always ignored
-u8 Script_TryGainNewFanFromCounter(void)
+u16 Script_TryGainNewFanFromCounter(void)
 {
     return TryGainNewFanFromCounter(gSpecialVar_0x8004);
 }

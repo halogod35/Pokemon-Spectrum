@@ -120,7 +120,7 @@ void RemoveMoney(u32 *moneyPtr, u32 toSub)
     SetMoney(moneyPtr, toSet);
 }
 
-bool8 IsEnoughForCostInVar0x8005(void)
+bool16 IsEnoughForCostInVar0x8005(void)
 {
     return IsEnoughMoney(&gSaveBlock1Ptr->money, gSpecialVar_0x8005);
 }

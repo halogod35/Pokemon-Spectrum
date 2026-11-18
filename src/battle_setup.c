@@ -1267,12 +1267,12 @@ void SetTrainerFacingDirection(void)
     SetTrainerMovementType(objectEvent, GetTrainerFacingDirectionMovementType(objectEvent->facingDirection));
 }
 
-u8 GetTrainerBattleMode(void)
+u16 GetTrainerBattleMode(void)
 {
     return sTrainerBattleMode;
 }
 
-bool8 GetTrainerFlag(void)
+bool16 GetTrainerFlag(void)
 {
     if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
         return GetBattlePyramidTrainerFlag(gSelectedObjectEvent);
@@ -1876,7 +1876,7 @@ u16 GetLastBeatenRematchTrainerId(u16 trainerId)
     return GetLastBeatenRematchTrainerIdFromTable(gRematchTable, trainerId);
 }
 
-bool8 ShouldTryRematchBattle(void)
+bool16 ShouldTryRematchBattle(void)
 {
     if (IsFirstTrainerIdReadyForRematch(gRematchTable, gTrainerBattleOpponent_A))
         return TRUE;
@@ -1884,7 +1884,7 @@ bool8 ShouldTryRematchBattle(void)
     return WasSecondRematchWon(gRematchTable, gTrainerBattleOpponent_A);
 }
 
-bool8 IsTrainerReadyForRematch(void)
+bool16 IsTrainerReadyForRematch(void)
 {
     return IsTrainerReadyForRematch_(gRematchTable, gTrainerBattleOpponent_A);
 }

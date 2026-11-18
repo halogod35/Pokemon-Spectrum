@@ -773,7 +773,7 @@ void ClearTVShowData(void)
     ClearPokeNews();
 }
 
-u8 GetRandomActiveShowIdx(void)
+u16 GetRandomActiveShowIdx(void)
 {
     u8 i;
     u8 j;
@@ -880,7 +880,7 @@ void TurnOnTVScreen(void)
 }
 
 // gSpecialVar_0x8004 here is set from GetRandomActiveShowIdx in EventScript_TryDoTVShow
-u8 GetSelectedTVShow(void)
+u16 GetSelectedTVShow(void)
 {
     return gSaveBlock1Ptr->tvShows[gSpecialVar_0x8004].common.kind;
 }
@@ -899,7 +899,7 @@ static u8 FindFirstActiveTVShowThatIsNotAMassOutbreak(void)
     return 0xFF;
 }
 
-u8 GetNextActiveShowIfMassOutbreak(void)
+u16 GetNextActiveShowIfMassOutbreak(void)
 {
     TVShow *tvShow;
 
@@ -994,7 +994,7 @@ static void TakeGabbyAndTyOffTheAir(void)
 }
 
 // See gabby_and_ty.inc for details
-u8 GabbyAndTyGetBattleNum(void)
+u16 GabbyAndTyGetBattleNum(void)
 {
     if (gSaveBlock1Ptr->gabbyAndTyData.battleNum > 5)
         return (gSaveBlock1Ptr->gabbyAndTyData.battleNum % 3) + 6;
@@ -1002,12 +1002,12 @@ u8 GabbyAndTyGetBattleNum(void)
     return gSaveBlock1Ptr->gabbyAndTyData.battleNum;
 }
 
-bool8 IsGabbyAndTyShowOnTheAir(void)
+bool16 IsGabbyAndTyShowOnTheAir(void)
 {
     return gSaveBlock1Ptr->gabbyAndTyData.onAir;
 }
 
-bool8 GabbyAndTyGetLastQuote(void)
+bool16 GabbyAndTyGetLastQuote(void)
 {
     if (gSaveBlock1Ptr->gabbyAndTyData.quote[0] == EC_EMPTY_WORD)
     {
@@ -1018,7 +1018,7 @@ bool8 GabbyAndTyGetLastQuote(void)
     return TRUE;
 }
 
-u8 GabbyAndTyGetLastBattleTrivia(void)
+u16 GabbyAndTyGetLastBattleTrivia(void)
 {
     if (!gSaveBlock1Ptr->gabbyAndTyData.battleTookMoreThanOneTurn2)
         return 1;
@@ -2340,7 +2340,7 @@ void TryPutTrainerFanClubOnAir(void)
     }
 }
 
-bool8 ShouldHideFanClubInterviewer(void)
+bool16 ShouldHideFanClubInterviewer(void)
 {
     sCurTVShowSlot = FindFirstEmptyNormalTVShowSlot(gSaveBlock1Ptr->tvShows);
     if (sCurTVShowSlot == -1)
@@ -3022,7 +3022,7 @@ static bool8 IsPartyMonNicknamedOrNotEnglish(u8 monIdx)
     return TRUE;
 }
 
-bool8 IsLeadMonNicknamedOrNotEnglish(void)
+bool16 IsLeadMonNicknamedOrNotEnglish(void)
 {
     return IsPartyMonNicknamedOrNotEnglish(GetLeadMonIndex());
 }
@@ -3266,7 +3266,7 @@ static void GetNicknameSubstring(u8 varIdx, u8 whichPosition, u8 charParam, u16 
 }
 
 // Unused script special
-bool8 IsTVShowAlreadyInQueue(void)
+bool16 IsTVShowAlreadyInQueue(void)
 {
     u8 i;
 
@@ -3278,7 +3278,7 @@ bool8 IsTVShowAlreadyInQueue(void)
     return FALSE;
 }
 
-bool8 TryPutNameRaterShowOnTheAir(void)
+bool16 TryPutNameRaterShowOnTheAir(void)
 {
     GetMonData(&gPlayerParty[gSpecialVar_0x8004], MON_DATA_NICKNAME, gStringVar1);
 
@@ -3357,7 +3357,7 @@ u32 GetPlayerIDAsU32(void)
     return (gSaveBlock2Ptr->playerTrainerId[3] << 24) | (gSaveBlock2Ptr->playerTrainerId[2] << 16) | (gSaveBlock2Ptr->playerTrainerId[1] << 8) | gSaveBlock2Ptr->playerTrainerId[0];
 }
 
-u8 CheckForPlayersHouseNews(void)
+u16 CheckForPlayersHouseNews(void)
 {
     // Check if not in Littleroot house map group
     if (gSaveBlock1Ptr->location.mapGroup != MAP_GROUP(MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F))

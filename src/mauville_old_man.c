@@ -1443,14 +1443,14 @@ void Script_StorytellerDisplayStory(void)
     StorytellerDisplayStory(sSelectedStory);
 }
 
-u8 StorytellerGetFreeStorySlot(void)
+u16 StorytellerGetFreeStorySlot(void)
 {
     sStorytellerPtr = &gSaveBlock1Ptr->oldMan.storyteller;
     return GetFreeStorySlot();
 }
 
 // Returns TRUE if stat has increased
-bool8 StorytellerUpdateStat(void)
+bool16 StorytellerUpdateStat(void)
 {
     u8 stat;
     sStorytellerPtr = &gSaveBlock1Ptr->oldMan.storyteller;
@@ -1464,7 +1464,7 @@ bool8 StorytellerUpdateStat(void)
     return FALSE;
 }
 
-bool8 HasStorytellerAlreadyRecorded(void)
+bool16 HasStorytellerAlreadyRecorded(void)
 {
     sStorytellerPtr = &gSaveBlock1Ptr->oldMan.storyteller;
 
@@ -1474,7 +1474,7 @@ bool8 HasStorytellerAlreadyRecorded(void)
         return TRUE;
 }
 
-bool8 Script_StorytellerInitializeRandomStat(void)
+bool16 Script_StorytellerInitializeRandomStat(void)
 {
     sStorytellerPtr = &gSaveBlock1Ptr->oldMan.storyteller;
     return StorytellerInitializeRandomStat();

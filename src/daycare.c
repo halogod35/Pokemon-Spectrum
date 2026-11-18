@@ -337,7 +337,7 @@ static void UNUSED Debug_AddDaycareSteps(u16 numSteps)
     gSaveBlock1Ptr->daycare.mons[1].steps += numSteps;
 }
 
-u8 GetNumLevelsGainedFromDaycare(void)
+u16 GetNumLevelsGainedFromDaycare(void)
 {
     if (GetBoxMonData(&gSaveBlock1Ptr->daycare.mons[gSpecialVar_0x8004].mon, MON_DATA_SPECIES) != 0)
         return GetNumLevelsGainedForDaycareMon(&gSaveBlock1Ptr->daycare.mons[gSpecialVar_0x8004]);
@@ -968,7 +968,7 @@ void GetDaycareMonNicknames(void)
     _GetDaycareMonNicknames(&gSaveBlock1Ptr->daycare);
 }
 
-u8 GetDaycareState(void)
+u16 GetDaycareState(void)
 {
     u8 numMons;
     if (IsEggPending(&gSaveBlock1Ptr->daycare))
