@@ -59,8 +59,8 @@ FastForward = RT
 ```
 
 - A button can have several keys, separated by commas. `None` leaves it unbound.
-- Keyboard keys use SDL key names: `Z`, `Return`, `Space`, `Left Shift`, `Keypad 8`, `F1` and so on. The file lists more.
-- Controller inputs: `A B X Y LB RB LT RT Start Back LS RS`, the D-pad (`DPadUp` …) and the left stick (`StickUp` …).
+- Keyboard keys use SDL key names: `Z`, `Return`, `Space`, `Left Shift`, `Keypad 8`, `F1`, and so on. The file lists more.
+- Controller inputs: `A B X Y LB RB LT RT Start Back LS RS`, the D-pad (`DPadUp` …), and the left stick (`StickUp` …).
 - Delete the file to get the default controls back.
 - The hotkeys (Ctrl+R, Ctrl+P, F3, Alt+Enter) can't be changed.
 
@@ -75,7 +75,7 @@ Each player runs the whole game on their own save file, like Diablo 2. The netwo
 - **Host or join** from **MULTIPLAYER** on the title menu, after choosing your save. The host opens UDP port 27500 and the screen shows the address friends should enter. Joining is by IP address, typed or pasted with Ctrl+V. Up to 4 players. To play over the internet, the host forwards UDP port 27500 on their router, or everyone uses a LAN or VPN.
 - **See each other.** Other players walk around on your map as avatars, through doors, over ledges, during cutscenes and menus. You get "joined" and "left" notices in the field.
 - **Interact.** Walk up to a player and press A: view their trainer card or Pokémon, or ask them to trade or battle. Trades and single or double battles run over a simulated link cable, several times faster than the original. Both saves commit a trade together, and a trade interrupted by a crash or disconnect is recovered.
-- **Players list.** START → PLAYERS shows everyone's name, location and badges, and holds LEAVE GAME. Leaving keeps you playing offline on the same save.
+- **Players list.** START → PLAYERS shows everyone's name, location, and badges, and holds LEAVE GAME. Leaving keeps you playing offline on the same save.
 - **Dropouts.** A lost connection reconnects by itself for about half a minute; the others see "lost signal" and "reconnected".
 - Pause and fast-forward are switched off while you're in a trade or battle, because the other player's game runs in step with yours.
 - Everyone needs the same version to play together.
@@ -87,10 +87,10 @@ The four event tickets can be received in the game, the way the original Wireles
 1. Get the Pokédex, then answer the questionnaire at a Poké Mart counter with the phrase **LINK TOGETHER WITH ALL** and save. MYSTERY GIFT appears on the title menu.
 2. MYSTERY GIFT → Wonder Cards → Wireless Communication. You receive a Wonder Card and the game saves.
 3. Go upstairs in any Pokémon Center and talk to the man in green. He hands over the ticket.
-4. Come back for the next card: the Eon Ticket (Southern Island, Latias or Latios), then the Aurora Ticket (Birth Island, Deoxys in its Normal forme, see below), the Mystic Ticket (Navel Rock, Lugia and Ho-Oh) and the Old Sea Map (Faraway Island, Mew). One card at a time, as in the original.
+4. Come back for the next card: the Eon Ticket (Southern Island, Latias or Latios), then the Aurora Ticket (Birth Island, Deoxys in its Normal forme, see below), the Mystic Ticket (Navel Rock, Lugia and Ho-Oh), and the Old Sea Map (Faraway Island, Mew). One card at a time, as in the original.
 5. After the Hall of Fame, the ferry attendant at Lilycove Harbor takes you to the islands.
 
-The card texts are our own; the islands, the ferry and the man's dialogue are the game's.
+The card texts are our own; the islands, the ferry, and the man's dialogue are the game's.
 
 ### Deoxys formes
 
@@ -101,9 +101,15 @@ Deoxys has all four formes. The Birth Island Deoxys is the Normal forme (Emerald
 The game follows your PC's clock, the way the battery clock in a cartridge did. The wall clock you set in your bedroom at the start is the game's time, and it starts at the PC's time, so just confirming it keeps the game in step with the real world.
 
 - **Berries grow while the game is closed.** Plant them, come back tomorrow.
-- **Daily events** happen once per real day: the Lilycove lottery, the Berry Master's wife, the shoal cave tides and the rest.
-- **Day and night.** Outdoors the world is tinted by the time of day: a soft morning from 4:00, normal daylight from 10:00, an orange evening from 17:00 and a dark blue night from 20:00, blending smoothly between them. Indoors, caves, battles and menus are untouched. **DAY/NIGHT ON/OFF** in the Options menu turns it off.
-- **Random calls.** **RANDOM CALLS ON/OFF** in the Options menu stops the random Match Call chatter; calls that are part of the story still come through. The Options menu now scrolls (seven rows at a time, arrows on the frame show when there is more) to make room.
+- **Daily events** happen once per real day: the Lilycove lottery, the Berry Master's wife, the shoal cave tides, and the rest.
+- **Day and night.** Outdoors the world is tinted by the time of day: a soft morning from 4:00, normal daylight from 10:00, an orange evening from 17:00, and a dark blue night from 20:00, blending smoothly between them. Indoors, caves, battles, and menus are untouched. Switch it off with **DAY/NIGHT** in the Options menu.
+
+### Options
+
+The Options menu scrolls: seven rows at a time, with arrows on the frame when there is more above or below. Two rows are new:
+
+- **DAY/NIGHT ON/OFF** turns the day and night tinting off (see above).
+- **RANDOM CALLS ON/OFF** stops the random Match Call chatter from registered trainers; calls that are part of the story still come through.
 
 ### Summary screen
 
@@ -127,7 +133,7 @@ The built-in distributor (see "Mystery Gift" above) is the base for these:
 
 ### Ruby/Sapphire graphics
 - **Graphics pack:** an optional folder of your own Ruby/Sapphire images, chosen when the game is built. Players with either look can still play together. No Ruby/Sapphire files would be stored in this project.
-- **What it would cover:** Pokémon sprites, trainers, the player, and the title screen. Map tiles, redesigned menus and the Emerald-only areas (Battle Frontier) would stay as Emerald.
+- **What it would cover:** Pokémon sprites, trainers, the player, and the title screen. Map tiles, redesigned menus, and the Emerald-only areas (Battle Frontier) would stay as Emerald.
 - **Full swap:** about 2–3 months of work, and the result would still be a mix of both looks. Not recommended.
 - **In-game toggle:** switch looks from the Options menu, realistic only for the main sprites.
 - **First step:** a 1–2 day comparison of the two games' files, to answer the open questions (mainly the map tiles).
