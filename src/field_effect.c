@@ -2239,7 +2239,7 @@ static bool8 LavaridgeGym1FWarpEffect_Warp(struct Task *task, struct ObjectEvent
 }
 
 // For the ash effect when a trainer pops out of ash, or when the player enters/exits a warp in Lavaridge Gym 1F
-u8 FldEff_AshPuff(void)
+u32 FldEff_AshPuff(void)
 {
     u8 spriteId;
     SetSpritePosToOffsetMapCoords((s16 *)&gFieldEffectArguments[0], (s16 *)&gFieldEffectArguments[1], 8, 8);
