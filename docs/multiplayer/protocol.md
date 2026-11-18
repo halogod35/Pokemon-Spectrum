@@ -1,7 +1,7 @@
 # Pokémon Spectrum — Multiplayer Wire Protocol
 
 - **Card:** PS-010 (spec), implemented by PS-011 (transport), PS-012 (session), PS-013 (summary), PS-030 (presence), PS-041 (interaction requests), PS-046 (virtual link cable), PS-042 (trainer card), PS-043 (view party)
-- **Protocol version:** `MP_PROTOCOL_VERSION = 11` (2 = `INTERACT_*`, PS-041; 3 = `LINK_*`, PS-046; 4 = `TRAINER_CARD_DATA`, PS-042; 5 = `PARTY_DATA`, PS-043; 6 = `TRADE_COMMIT`, PS-044; 7 = `TRADE_RECOVER`, PS-050; 8 = INTERACT kind BATTLE_DOUBLE, PS-045; 9 = `LINK_DONE`, PS-051; 10 = `LINK_BLOCK`, PS-052; 11 = reconnect token, `RESUME`, `PLAYER_STATUS`, PS-054; see section 11)
+- **Protocol version:** `MP_PROTOCOL_VERSION = 12` (2 = `INTERACT_*`, PS-041; 3 = `LINK_*`, PS-046; 4 = `TRAINER_CARD_DATA`, PS-042; 5 = `PARTY_DATA`, PS-043; 6 = `TRADE_COMMIT`, PS-044; 7 = `TRADE_RECOVER`, PS-050; 8 = INTERACT kind BATTLE_DOUBLE, PS-045; 9 = `LINK_DONE`, PS-051; 10 = `LINK_BLOCK`, PS-052; 11 = reconnect token, `RESUME`, `PLAYER_STATUS`, PS-054; 12 = INTERACT kind MIX_RECORDS and `summaryFlags` bit 0, PS-089; see section 11)
 - **Status:** draft for Director approval
 - **Companion docs:** `design.md` (modules, API, build), `include/mp/mp.h` (public API)
 
@@ -149,7 +149,7 @@ Built from the local save by PS-013 (`MP_BuildPlayerSummary`, `MP_WritePlayerSum
 | 8 | 1 | u8 | `gender` | `gSaveBlock2Ptr->playerGender` | `0` (MALE) or `1` (FEMALE) |
 | 9 | 1 | u8 | `avatarStyle` | `MP_AVATAR_STYLE_PLAYER` (0) in M1 | `< MP_AVATAR_STYLE_COUNT` (= 1) |
 | 10 | 1 | u8 | `badges` | **bitfield**: bit *i* = `FlagGet(FLAG_BADGE01_GET + i)`, i = 0..7. There is no count on the wire; the UI (PS-033) shows the popcount. | any value |
-| 11 | 1 | u8 | `summaryFlags` | reserved, 0 | ignored |
+| 11 | 1 | u8 | `summaryFlags` | bit 0 `MP_SUMMARY_FLAG_CAN_MIX_RECORDS` = `FlagGet(FLAG_VISITED_MAUVILLE_CITY)` (PS-089, version 12: the Cable Club's unlock of the Record Corner; MIX RECORDS is only asked / accepted when both have it). Bits 1–7 reserved, sender writes 0 | known bits kept; unknown bits ignored (read as 0) |
 | 12 | 4 | u32 | `trainerId` | `GetTrainerId(gSaveBlock2Ptr->playerTrainerId)`: `id[0] \| id[1]<<8 \| id[2]<<16 \| id[3]<<24`. Low 16 bits = public TID, high 16 = secret ID. | any value |
 
 #### 5.1.1 Name rules
@@ -290,9 +290,10 @@ disconnect.
 
 ### 6.6 `PLAYER_UPDATE` (0x06) — both directions, channel 0, payload 20 bytes
 
-One PlayerEntry (5.2). Sent when the local summary changes mid-session (for example a new badge),
-via `MP_RefreshLocalSummary()`. Rate limit: at most 1 per second per player (sender coalesces;
-host drops extras).
+One PlayerEntry (5.2). Sent when the local summary changes mid-session (for example a new badge,
+or since PS-089 the first visit to Mauville: `summaryFlags` bit 0), via `MP_RefreshLocalSummary()`,
+which the UI calls once a second (mp_ui.c, PS-089). Rate limit: at most 1 per second per player
+(sender coalesces; host drops extras).
 
 - **Client → host:** the host **ignores** `slot`, `epoch` and `entryFlags` in the message and
   uses the sender's real slot. Summary must pass 5.1, else dropped and counted malformed. The
@@ -459,7 +460,7 @@ All three share one layout:
 |---|---|---|---|---|
 | 0 | 1 | u8 | `slot` | The **other party** from the receiver's point of view (table below). `< 4` |
 | 1 | 1 | u8 | `epoch` | Epoch of `slot`. `!= 0` |
-| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE (a single link battle, PS-045), `3` TRAINER_CARD (PS-042, 6.13), `4` VIEW_PARTY (PS-043, 6.14), `5` BATTLE_DOUBLE (a double link battle, PS-045, version 8; prompted and answered like BATTLE). Others rejected |
+| 2 | 1 | u8 | `kind` | `1` TRADE, `2` BATTLE (a single link battle, PS-045), `3` TRAINER_CARD (PS-042, 6.13), `4` VIEW_PARTY (PS-043, 6.14), `5` BATTLE_DOUBLE (a double link battle, PS-045, version 8; prompted and answered like BATTLE), `6` MIX_RECORDS (Emerald's record mixing between the two players, PS-089, version 12; prompted and answered like TRADE, the exchange itself runs over the PS-046 cable). Others rejected |
 | 3 | 1 | u8 | `requestId` | Chosen by the requester (any value), echoed in RESPONSE / CANCEL |
 | 4 | 1 | u8 | `result` | RESPONSE only: `1` ACCEPTED, `2` DECLINED, `3` BUSY, `4` TIMEOUT, `5` UNAVAILABLE; others rejected. REQUEST / CANCEL: reserved, sender writes 0, receiver ignores |
 | 5 | 3 | u8[3] | reserved | 0 |
@@ -1302,9 +1303,9 @@ The build hash `0x12345678` is an illustrative value (a real one is an FNV-1a re
 Packet = 36 bytes:
 
 ```
-01 0B 20 00                 header: type HELLO, version 11, length 32
+01 0C 20 00                 header: type HELLO, version 12, length 32
 50 53 4D 50                 magic "PSMP"
-0B 00                       protocolVersion 11
+0C 00                       protocolVersion 12
 00 00                       reserved
 78 56 34 12                 buildHash 0x12345678
 00                          buildFlags
@@ -1313,7 +1314,7 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 00                          gender MALE
 00                          avatarStyle PLAYER
 07                          badges 0b00000111
-00                          summaryFlags
+00                          summaryFlags (01 once ASH has visited Mauville, PS-089)
 39 30 05 00                 trainerId 0x00053039
 ```
 
@@ -1335,3 +1336,4 @@ BB CD C2 FF FF FF FF FF     name "ASH" + EOS padding
 | 9 | PS-051 | `LINK_DONE` (0x6E, 6.12): the agreed end of a link activity. A member that is done sends it, then closes its cable (no close-link handshake). The host relays the done mask, ends the group with the new `END` reason 5 DONE once all are done (or 3 s after the first), and emits queued rows before it handles `DONE` / `CLOSE`. A finishing member does not treat `BUS_END` or the group ending as a hardware error (fixes BUG-007). Version bumped to 9: a version-8 peer counts `0x6E` as malformed. Worked example (10) updated to version 9. |
 | 10 | PS-052 | `LINK_BLOCK` (0x6F, 6.12 "Whole blocks"): a `SendBlock` of 1..500 bytes travels as one message instead of its `INIT_BLOCK` + `CONT_BLOCK` rows; the host emits the queued rows, then relays the block to every member with the sender's link id (one sequenced stream per group). Bigger blocks keep the rows. Row pacing plays backlogged block-data rows up to 8 per tick (no wire change). Version bumped to 10: a version-9 peer counts `0x6F` as malformed. Worked example (10) updated to version 10. |
 | 11 | PS-054 | Survive dropouts (7.6). `WELCOME` grows to 12 + 20·N: byte 3 is `flags` (bit 0 RESUMED), bytes 4–11 a random reconnect `token` (never zero). New `RESUME` (0x0A, 40 bytes, 6.17: HELLO's layout + slot, epoch, token) and `PLAYER_STATUS` (0x0B, 4 bytes, 6.18: a player's connection LOST / ONLINE). `PlayerEntry` flag bit 1 LOST (WELCOME only). REJECT reasons 5 RESUME_REFUSED and 6 RESUME_MISMATCH. A lost connection (ENet timeout, now 4000 / 7000 ms, or idle) no longer frees the slot at once: the host holds it for 35 s, the client retries for 30 s. Host peer count 6. Version bumped to 11: a version-10 peer would read the token as player entries. Worked example (10) updated to version 11. |
+| 12 | PS-089 | INTERACT `kind` 6 MIX_RECORDS (6.11): a request for Emerald's record mixing between the two players (secret bases, TV shows, PokéNews, the Mauville old man, Dewford trends, the daycare mail swap, the Battle Tower record, the gift item, the Lilycove lady, apprentices, Ranking Hall records), prompted, routed and answered like TRADE; the exchange itself is the vanilla one over the PS-046 cable (`LINK_BLOCK`, 27 blocks of 200 bytes each way), and the received record is checked field by field before it is applied (design.md "Direct record mixing"). `PlayerSummary.summaryFlags` (5.1) bit 0 CAN_MIX_RECORDS = the Record Corner's unlock (`FLAG_VISITED_MAUVILLE_CITY`); the UI now rebuilds the summary once a second, so a badge or a Mauville visit goes out as `PLAYER_UPDATE` within a second. Version bumped to 12: a version-11 peer rejects kind 6 as malformed and reads the flag byte as 0. Worked example (10) updated to version 12. |

@@ -229,6 +229,9 @@ void MP_BuildPlayerSummary(struct MpPlayerSummary *out)
             if (FlagGet((u16)(FLAG_BADGE01_GET + i)))
                 out->badges |= (u8)(1 << i);
         }
+        // PS-089: the Record Corner's unlock, so a partner knows whether MIX RECORDS can be asked.
+        if (FlagGet(FLAG_VISITED_MAUVILLE_CITY))
+            out->summaryFlags |= MP_SUMMARY_FLAG_CAN_MIX_RECORDS;
     }
 
     if (sHasNameOverride)
@@ -250,7 +253,7 @@ u16 MP_WritePlayerSummary(u8 *buf, u16 cap, const struct MpPlayerSummary *in)
     buf[SUMMARY_OFS_GENDER] = in->gender;
     buf[SUMMARY_OFS_AVATAR_STYLE] = in->avatarStyle;
     buf[SUMMARY_OFS_BADGES] = in->badges;
-    buf[SUMMARY_OFS_FLAGS] = 0; // Reserved: the sender writes 0.
+    buf[SUMMARY_OFS_FLAGS] = in->summaryFlags & MP_SUMMARY_FLAGS_MASK; // PS-089: known bits only; the rest reserved 0.
     MpWriter_Init(&w, &buf[SUMMARY_OFS_TRAINER_ID], 4);
     MpWriteU32(&w, in->trainerId);
     return MP_PLAYER_SUMMARY_WIRE_SIZE;
@@ -274,7 +277,7 @@ static bool8 MpParsePlayerSummary(const u8 *buf, u32 len, struct MpPlayerSummary
     tmp->gender = buf[SUMMARY_OFS_GENDER];
     tmp->avatarStyle = buf[SUMMARY_OFS_AVATAR_STYLE];
     tmp->badges = buf[SUMMARY_OFS_BADGES];   // Any value.
-    tmp->summaryFlags = 0;                   // Reserved: ignored on receive.
+    tmp->summaryFlags = buf[SUMMARY_OFS_FLAGS] & MP_SUMMARY_FLAGS_MASK; // PS-089: known bits; unknown bits ignored (read as 0).
     MpReader_Init(&r, &buf[SUMMARY_OFS_TRAINER_ID], 4);
     tmp->trainerId = MpReadU32(&r);          // Any value.
     return TRUE;
@@ -371,7 +374,7 @@ static bool8 MpSummaryParsedIsSane(const struct MpPlayerSummary *s)
         else if (ended)
             return FALSE; // Bytes after EOS must be EOS in memory.
     }
-    if (s->gender > FEMALE || s->avatarStyle >= MP_AVATAR_STYLE_COUNT || s->summaryFlags != 0)
+    if (s->gender > FEMALE || s->avatarStyle >= MP_AVATAR_STYLE_COUNT || (s->summaryFlags & ~MP_SUMMARY_FLAGS_MASK) != 0)
         return FALSE;
     if (MP_WritePlayerSummary(wire, sizeof(wire), s) != MP_PLAYER_SUMMARY_WIRE_SIZE)
         return FALSE;
@@ -462,7 +465,7 @@ static void MpSelfTestWriter(void)
     SELFTEST_CHECK(MP_WritePlayerSummary(NULL, sizeof(buf), &s) == 0);
     SELFTEST_CHECK(MP_WritePlayerSummary(buf, sizeof(buf), NULL) == 0);
 
-    // Reserved summaryFlags written as 0; junk after EOS written as EOS.
+    // Unknown summaryFlags bits written as 0 (0x5A has no known bit, PS-089); junk after EOS written as EOS.
     s.summaryFlags = 0x5A;
     s.name[4] = CHAR_Z;
     s.name[6] = EXT_CTRL_CODE_BEGIN;
@@ -568,9 +571,11 @@ static void MpSelfTestTargeted(void)
     SELFTEST_CHECK(!MpReadFixtureWith(SUMMARY_OFS_AVATAR_STYLE, MP_AVATAR_STYLE_COUNT, &r));
     SELFTEST_CHECK(!MpReadFixtureWith(SUMMARY_OFS_AVATAR_STYLE, 0xFF, &r));
 
-    // Badges: any value. summaryFlags: ignored (stored as 0).
+    // Badges: any value. summaryFlags: the known bits are kept, unknown bits read as 0 (PS-089).
     SELFTEST_CHECK(MpReadFixtureWith(SUMMARY_OFS_BADGES, 0xFF, &r) && r.badges == 0xFF);
-    SELFTEST_CHECK(MpReadFixtureWith(SUMMARY_OFS_FLAGS, 0xFF, &r) && r.summaryFlags == 0);
+    SELFTEST_CHECK(MpReadFixtureWith(SUMMARY_OFS_FLAGS, 0xFF, &r) && r.summaryFlags == MP_SUMMARY_FLAGS_MASK);
+    SELFTEST_CHECK(MpReadFixtureWith(SUMMARY_OFS_FLAGS, MP_SUMMARY_FLAG_CAN_MIX_RECORDS, &r) && r.summaryFlags == MP_SUMMARY_FLAG_CAN_MIX_RECORDS);
+    SELFTEST_CHECK(MpReadFixtureWith(SUMMARY_OFS_FLAGS, 0xFE, &r) && r.summaryFlags == 0);
 
     // Trainer id: any value, little-endian.
     memcpy(wire, sFixtureWire, sizeof(wire));

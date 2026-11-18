@@ -143,7 +143,7 @@ static void TestInteractKind(void)
     u8 r;
 
     B_CHECK(MP_PROTOCOL_VERSION >= 8, "protocol version 8 or later (PS-045; 9 since PS-051)");
-    B_CHECK(MP_INTERACT_BATTLE_DOUBLE == 5 && MP_INTERACT_KIND_COUNT == 6, "kind 5 is BATTLE_DOUBLE");
+    B_CHECK(MP_INTERACT_BATTLE_DOUBLE == 5 && MP_INTERACT_KIND_COUNT == 7, "kind 5 is BATTLE_DOUBLE (6 = MIX_RECORDS since PS-089)");
     for (t = 0; t < 3; t++)
     {
         memset(&in, 0, sizeof(in));
@@ -156,15 +156,15 @@ static void TestInteractKind(void)
         B_CHECK(len == MP_HEADER_SIZE + MP_INTERACT_SIZE, "BATTLE_DOUBLE write size");
         B_CHECK(MpProto_ParseInteract(sTypes[t], buf + MP_HEADER_SIZE, MP_INTERACT_SIZE, &out) == MP_PARSE_OK
              && out.kind == MP_INTERACT_BATTLE_DOUBLE && out.slot == 1 && out.epoch == 3 && out.requestId == 0x5C, "BATTLE_DOUBLE round trip");
-        // Every kind byte: 1..5 parse, 0 and 6..255 are BAD_FIELD.
+        // Every kind byte: 1..KIND_COUNT-1 parse, 0 and KIND_COUNT..255 are BAD_FIELD.
         for (k = 0; k < 256; k++)
         {
             buf[MP_HEADER_SIZE + 2] = (u8)k;
             r = MpProto_ParseInteract(sTypes[t], buf + MP_HEADER_SIZE, MP_INTERACT_SIZE, &out);
             if (k >= 1 && k < MP_INTERACT_KIND_COUNT)
-                B_CHECK(r == MP_PARSE_OK && out.kind == k, "kinds 1..5 accepted");
+                B_CHECK(r == MP_PARSE_OK && out.kind == k, "kinds 1..KIND_COUNT-1 accepted");
             else
-                B_CHECK(r == MP_PARSE_ERR_BAD_FIELD, "kind 0 / 6..255 rejected");
+                B_CHECK(r == MP_PARSE_ERR_BAD_FIELD, "kind 0 / KIND_COUNT..255 rejected");
         }
     }
     // Random payloads: never crashes, and whatever parses has a kind in range.
