@@ -1764,6 +1764,7 @@ void MP_LinkPrepareErrorRecovery(void)
     gSuppressLinkErrorMessage = FALSE; // MP: PS-044 (set while a direct trade waits for its commit)
     MP_TradeOnLinkErrorRecovery(); // MP: PS-044: a direct trade ended here
     MP_BattleOnLinkErrorRecovery(); // MP: PS-045: a direct battle ended here (and stale battle pointers)
+    MP_MixOnLinkErrorRecovery(); // MP: PS-089: a direct record mix ended here (the pre-mix save is reloaded)
     MP_LinkLeave();
 }
 

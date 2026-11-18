@@ -34,6 +34,7 @@
 #include "international_string_util.h"
 #include "constants/battle_frontier.h"
 #include "dewford_trend.h"
+#include "mp/mp.h" // MP: PS-089 direct record mixing (MP_MixIsDirect and friends)
 
 // Number of bytes of the record transferred at a time
 #define BUFFER_CHUNK_SIZE 200
@@ -62,21 +63,8 @@ struct PlayerRecordRS
     u16 filler[50];
 };
 
-struct PlayerRecordEmerald
-{
-    /* 0x0000 */ struct SecretBase secretBases[SECRET_BASES_COUNT];
-    /* 0x0C80 */ TVShow tvShows[TV_SHOWS_COUNT];
-    /* 0x1004 */ PokeNews pokeNews[POKE_NEWS_COUNT];
-    /* 0x1044 */ OldMan oldMan;
-    /* 0x1084 */ struct DewfordTrend dewfordTrends[SAVED_TRENDS_COUNT];
-    /* 0x10AC */ struct RecordMixingDaycareMail daycareMail;
-    /* 0x1124 */ struct EmeraldBattleTowerRecord battleTowerRecord;
-    /* 0x1210 */ u16 giftItem;
-    /* 0x1214 */ LilycoveLady lilycoveLady;
-    /* 0x1254 */ struct Apprentice apprentices[2];
-    /* 0x12DC */ struct PlayerHallRecords hallRecords;
-    /* 0x1434 */ u8 filler_1434[16];
-}; // 0x1444
+// MP: PS-089. struct PlayerRecordEmerald moved to include/record_mixing.h (the direct-mix
+// sanitizer checks a received one before it is applied).
 
 union PlayerRecord
 {
@@ -166,6 +154,13 @@ static const u8 sDaycareMailSwapIds_4Player[NUM_SWAP_COMBOS][4] =
 void RecordMixingPlayerSpotTriggered(void)
 {
     CreateTask_EnterCableClubSeat(Task_RecordMixing_Main);
+}
+
+// MP: PS-089. A direct mix from the overworld (src/mp/mp_mix.c): the link is already open with
+// both players, so the Cable Club seat exchange is skipped and the mixing task starts at once.
+void RecordMixing_StartDirect(void)
+{
+    CreateTask(Task_RecordMixing_Main, 80);
 }
 
 // these variables were const in R/S, but had to become changeable because of saveblocks changing RAM position
@@ -321,7 +316,8 @@ static void Task_RecordMixing_Main(u8 taskId)
         VarSet(VAR_TEMP_MIXED_RECORDS, 1);
         sReadyToReceive = FALSE;
         PrepareExchangePacket();
-        CreateRecordMixingLights();
+        if (!MP_MixIsDirect()) // MP: PS-089. The lights are the Record Corner's furniture (fixed map position).
+            CreateRecordMixingLights();
         tState = 1;
         tLinkTaskId = CreateTask(Task_MixingRecordsRecv, 80);
         tSoundTaskId = CreateTask(Task_RecordMixing_SoundEffect, 81);
@@ -344,10 +340,12 @@ static void Task_RecordMixing_Main(u8 taskId)
         if (!gTasks[tLinkTaskId].isActive)
         {
             tState = 4;
-            if (gWirelessCommType == 0)
+            // MP: PS-089. A direct mix has no Cable Club room to re-link in: the link closed in
+            // Task_DoRecordMixing stays closed and state 5 hands the field back (MP_MixOnFinished).
+            if (gWirelessCommType == 0 && !MP_MixIsDirect())
                 tLinkTaskId = CreateTask_ReestablishCableClubLink();
 
-            PrintTextOnRecordMixing(gText_RecordMixingComplete);
+            PrintTextOnRecordMixing(MP_MixIsDirect() ? MP_MixCompleteText() : gText_RecordMixingComplete); // MP: PS-089 "couldn't be mixed" if the record was rejected
             tTimer = 0;
         }
         break;
@@ -356,10 +354,17 @@ static void Task_RecordMixing_Main(u8 taskId)
             tState = 5;
         break;
     case 5: // Wait for the task created by CreateTask_ReestablishCableClubLink
-        if (!gTasks[tLinkTaskId].isActive)
+        if (MP_MixIsDirect() || !gTasks[tLinkTaskId].isActive) // MP: PS-089 no re-link task on a direct mix
         {
             Free(sReceivedRecords);
             Free(sSentRecord);
+            if (MP_MixIsDirect()) // MP: PS-089. Back to the plain overworld where the player stands.
+            {
+                ClearDialogWindowAndFrame(0, TRUE);
+                DestroyTask(taskId);
+                MP_MixOnFinished();
+                break;
+            }
             SetLinkWaitingForScript();
             if (gWirelessCommType != 0)
                 CreateTask(Task_ReturnToFieldRecordMixing, 10);
@@ -571,7 +576,14 @@ static void Task_ReceivePacket(u8 taskId)
 
     task->func = Task_WaitReceivePacket;
     if (sReadyToReceive == TRUE)
+    {
+        // MP: PS-089. On a direct mix the partner's record is another save's contents from the
+        // network: check every field first (src/mp/mp_mix_validate.c). A bad record is dropped
+        // whole (nothing of it is applied); the mix still saves and ends normally on both sides.
+        if (MP_MixIsDirect() && !MP_MixAcceptReceived(sReceivedRecords, sRecordStructSize, GetLinkPlayerCount(), task->tMultiplayerId))
+            return;
         ReceiveExchangePacket(task->tMultiplayerId);
+    }
 }
 
 static void Task_SendPacket_SwitchToReceive(u8 taskId)
