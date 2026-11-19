@@ -51,6 +51,7 @@
 #include "mp/mp_internal.h"
 #include "mp/mp_link.h"
 #include "mp/mp_mix.h"
+#include "mp/mp_summary.h"
 #include "mp_menu.h"
 
 #define MP_MIX_LEAVE_FALLBACK_FRAMES 300 // after the mix: the host ends the group (DONE) within ~3 s
@@ -256,6 +257,67 @@ bool8 MP_MixIsDirect(void)
     return sPhase == PHASE_MIXING;
 }
 
+// One secret base for the log: "id 12, owner 'MAY' (tid 1a2b3c4d, gender 1)". `name` is the
+// caller's PLAYER_NAME_LENGTH + 1 buffer; the id is 0 for an empty entry.
+static void MpMix_LogBase(const char *what, const struct SecretBase *b, char *name)
+{
+    MP_NameToAscii(b->trainerName, name, PLAYER_NAME_LENGTH + 1);
+    MP_LOG("mix: %s: id %u, owner '%s' (tid %02x%02x%02x%02x, gender %u, entered %u times)\n", what,
+           (unsigned)b->secretBaseId, name, b->trainerId[0], b->trainerId[1], b->trainerId[2], b->trainerId[3],
+           (unsigned)b->gender, (unsigned)b->numTimesEntered);
+}
+
+// What the mix carries for secret bases, so a partner's base that does not appear afterwards
+// can be traced from the log: ReceiveSecretBasesData skips them all without Secret Power, and
+// drops a base whose owner matches us (name, trainer id and gender).
+static void MpMix_LogReceivedBases(const u8 *records, u32 recordSize, u32 playerCount, u32 myId)
+{
+    char name[PLAYER_NAME_LENGTH + 1];
+    u32 i, j, others;
+
+    MP_LOG("mix: %u link players, we are link id %u; Secret Power %s\n", (unsigned)playerCount, (unsigned)myId,
+           FlagGet(FLAG_RECEIVED_SECRET_POWER) ? "received" : "NOT received (no base can be taken over)");
+    MpMix_LogBase("our own base", &gSaveBlock1Ptr->secretBases[0], name);
+    for (i = 0; i < playerCount; i++)
+    {
+        const struct PlayerRecordEmerald *rec = (const struct PlayerRecordEmerald *)(records + i * recordSize);
+        char what[48];
+
+        if (i == myId)
+            continue;
+        others = 0;
+        for (j = 1; j < SECRET_BASES_COUNT; j++)
+        {
+            if (rec->secretBases[j].secretBaseId != 0)
+                others++;
+        }
+        snprintf(what, sizeof(what), "link player %u's own base (version %u, %u other bases)", (unsigned)i,
+                 (unsigned)(gLinkPlayers[i].version & 0xFF), (unsigned)others);
+        MpMix_LogBase(what, &rec->secretBases[0], name);
+    }
+}
+
+// After the records were applied and saved: the other players' bases the save now holds.
+static void MpMix_LogSavedBases(void)
+{
+    char name[PLAYER_NAME_LENGTH + 1];
+    char what[32];
+    u32 i, n = 0;
+
+    for (i = 1; i < SECRET_BASES_COUNT; i++)
+    {
+        const struct SecretBase *b = &gSaveBlock1Ptr->secretBases[i];
+
+        if (b->secretBaseId == 0)
+            continue;
+        n++;
+        snprintf(what, sizeof(what), "save slot %u (registry %u)", (unsigned)i, (unsigned)b->registryStatus);
+        MpMix_LogBase(what, b, name);
+    }
+    if (n == 0)
+        MP_LOG("mix: the save holds no other player's base\n");
+}
+
 // Task_ReceivePacket, before ReceiveExchangePacket: every partner record (link ids other than
 // ours, `playerCount` of them in `records`, `recordSize` bytes apart) through the sanitizer.
 // FALSE drops them all: nothing is applied and the end text says so.
@@ -288,6 +350,7 @@ bool8 MP_MixAcceptReceived(const void *records, u32 recordSize, u32 playerCount,
         }
     }
     MP_LOG("mix: the partner's record passed the checks; applying it\n");
+    MpMix_LogReceivedBases(base, recordSize, playerCount, myId);
     return TRUE;
 }
 
@@ -303,6 +366,8 @@ const u8 *MP_MixCompleteText(void)
 void MP_MixOnFinished(void)
 {
     MP_LOG("mix: finished (%s); back to the field\n", sRejected ? "the partner's record was rejected" : "records mixed and saved");
+    if (!sRejected)
+        MpMix_LogSavedBases();
     sPhase = PHASE_NONE;
     // PS-051: LINK_DONE to the host; it ends the group once both are done (or after its grace
     // time). MpMix_Update only leaves it if that never comes.
