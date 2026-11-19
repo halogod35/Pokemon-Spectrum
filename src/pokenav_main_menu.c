@@ -677,6 +677,7 @@ static void LoadLeftHeaderGfxForMenu(u32 menuGfxId)
 {
     struct Pokenav_MainMenu *menu;
     u32 size, tag;
+    u8 palIndex;
 
     if (menuGfxId >= POKENAV_GFX_SUBMENUS_START)
         return;
@@ -684,7 +685,9 @@ static void LoadLeftHeaderGfxForMenu(u32 menuGfxId)
     menu = GetSubstructPtr(POKENAV_SUBSTRUCT_MAIN_MENU);
     tag = sMenuLeftHeaderSpriteSheets[menuGfxId].tag;
     size = GetDecompressedDataSize(sMenuLeftHeaderSpriteSheets[menuGfxId].data);
-    LoadPalette(&gPokenavLeftHeader_Pal[tag * 16], OBJ_PLTT_ID(IndexOfSpritePaletteTag(1)), PLTT_SIZE_4BPP);
+    palIndex = IndexOfSpritePaletteTag(1);
+    if (palIndex != 0xFF) // PS-091: a missing tag would write 8 KB past gPlttBufferUnfaded/Faded on PC
+        LoadPalette(&gPokenavLeftHeader_Pal[tag * 16], OBJ_PLTT_ID(palIndex), PLTT_SIZE_4BPP);
     LZ77UnCompWram(sMenuLeftHeaderSpriteSheets[menuGfxId].data, gDecompressionBuffer);
     RequestDma3Copy(gDecompressionBuffer, (void *)OBJ_VRAM0 + (GetSpriteTileStartByTag(2) * 32), size, 1);
     menu->leftHeaderSprites[1]->oam.tileNum = GetSpriteTileStartByTag(2) + sMenuLeftHeaderSpriteSheets[menuGfxId].size;
@@ -698,13 +701,16 @@ static void LoadLeftHeaderGfxForMenu(u32 menuGfxId)
 static void LoadLeftHeaderGfxForSubMenu(u32 menuGfxId)
 {
     u32 size, tag;
+    u8 palIndex;
 
     if (menuGfxId >= POKENAV_GFX_MENUS_END - POKENAV_GFX_SUBMENUS_START)
         return;
 
     tag = sPokenavSubMenuLeftHeaderSpriteSheets[menuGfxId].tag;
     size = GetDecompressedDataSize(sPokenavSubMenuLeftHeaderSpriteSheets[menuGfxId].data);
-    LoadPalette(&gPokenavLeftHeader_Pal[tag * 16], OBJ_PLTT_ID(IndexOfSpritePaletteTag(2)), PLTT_SIZE_4BPP);
+    palIndex = IndexOfSpritePaletteTag(2);
+    if (palIndex != 0xFF) // PS-091: see LoadLeftHeaderGfxForMenu
+        LoadPalette(&gPokenavLeftHeader_Pal[tag * 16], OBJ_PLTT_ID(palIndex), PLTT_SIZE_4BPP);
     LZ77UnCompWram(sPokenavSubMenuLeftHeaderSpriteSheets[menuGfxId].data, &gDecompressionBuffer[0x1000]);
     RequestDma3Copy(&gDecompressionBuffer[0x1000], (void *)OBJ_VRAM0 + 0x800 + (GetSpriteTileStartByTag(2) * 32), size, 1);
 }
