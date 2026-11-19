@@ -77,6 +77,15 @@ const u8 *MpBattle_CheckPartner(u8 slot);
 void MpBattle_Start(u8 partnerSlot, const u8 *partnerName, u8 kind);
 // Once per frame from MpUi_Update: the deferred link leave, the battle's handshake, the watchdog.
 void MpBattle_Update(void);
+// PS-089 direct record mixing (src/mp/mp_mix.c). The checks return NULL if fine, else the text to
+// show ({STR_VAR_1} = the other player's name): plain overworld, no pending trade journal, and the
+// Record Corner's unlock (FLAG_VISITED_MAUVILLE_CITY; the partner's travels in its summary).
+const u8 *MpMix_CheckLocal(void);
+const u8 *MpMix_CheckPartner(u8 slot);
+// Both players, after ACCEPTED: save, link up and run record_mixing.c. Controls stay locked.
+void MpMix_Start(u8 partnerSlot, const u8 *partnerName);
+// Once per frame from MpUi_Update: the deferred link leave after a mix, and the watchdog.
+void MpMix_Update(void);
 // PS-050 trade journal: recovery messages and periodic status (every frame, from MpUi_Update),
 // and the field part (roll forward + "unfinished trade" notices, from MpUi_TryShowFieldNotice;
 // TRUE if it showed a message and locked controls).

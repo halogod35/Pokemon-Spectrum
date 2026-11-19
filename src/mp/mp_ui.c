@@ -198,6 +198,7 @@ const u8 *MpUi_GetReasonText(u8 reason)
 static EWRAM_DATA u8 sMpToastQueue[MP_TOAST_QUEUE_SIZE][MP_TOAST_TEXT_SIZE] = {0};
 static EWRAM_DATA u8 sMpToastHead = 0;
 static EWRAM_DATA u8 sMpToastCount = 0;
+static EWRAM_DATA u8 sSummaryRefreshFrames = 0; // PS-089: MP_RefreshLocalSummary once a second
 
 static void MpUi_QueueToast(const u8 *name, const u8 *suffix)
 {
@@ -269,7 +270,16 @@ void MpUi_Update(void)
     MpInteractUi_Update(); // PS-041: busy bookkeeping for a waiting incoming request
     MpTrade_Update(); // BUG-004: deferred link leave, never hang in a trade
     MpBattle_Update(); // PS-045: deferred link leave, the battle's handshake, never hang in a battle
+    MpMix_Update(); // PS-089: deferred link leave, never hang in a record mix
     MpTrade_JournalUpdate(); // PS-050: trade journal recovery
+    // PS-089: the summary carries the badges and the Record Corner unlock; rebuild it once a
+    // second so a new badge or a first visit to Mauville reaches the others (PLAYER_UPDATE, 1/s
+    // at most) instead of only at the next session. Does nothing outside a session.
+    if (++sSummaryRefreshFrames >= 60)
+    {
+        sSummaryRefreshFrames = 0;
+        MP_RefreshLocalSummary();
+    }
 }
 
 // ---------------------------------------------------------------------------

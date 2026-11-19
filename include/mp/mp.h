@@ -23,7 +23,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-#define MP_PROTOCOL_VERSION      11      // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045), 9 = LINK_DONE + END reason DONE (PS-051), 10 = LINK_BLOCK fast cable (PS-052), 11 = reconnect token, RESUME, PLAYER_STATUS (PS-054).
+#define MP_PROTOCOL_VERSION      12      // Wire protocol version. Bump on ANY wire change. Max 255. 2 = INTERACT_* (PS-041), 3 = LINK_* (PS-046), 4 = trainer card (PS-042), 5 = view party (PS-043), 6 = TRADE_COMMIT (PS-044), 7 = trade journal recovery (PS-050), 8 = INTERACT kind BATTLE_DOUBLE (PS-045), 9 = LINK_DONE + END reason DONE (PS-051), 10 = LINK_BLOCK fast cable (PS-052), 11 = reconnect token, RESUME, PLAYER_STATUS (PS-054), 12 = INTERACT kind MIX_RECORDS + summaryFlags bit CAN_MIX_RECORDS (PS-089).
 #define MP_BUILD_ID_MAX_LEN      15      // Longest build id string (excluding NUL).
 #define MP_MAX_PLAYERS           4       // AD-8. Slot 0 is always the host.
 #define MP_MAX_REMOTE_AVATARS    3       // AD-8. Budget for PS-031.
@@ -97,9 +97,14 @@ struct MpPlayerSummary
     u8 avatarStyle;               // MP_AVATAR_STYLE_*.
     u8 badges;                    // Bitfield: bit i set = FLAG_BADGE01_GET + i obtained (i = 0..7).
                                   // UI derives the count (popcount); there is no count field.
-    u8 summaryFlags;              // Reserved, always 0 in M1.
+    u8 summaryFlags;              // MP_SUMMARY_FLAG_* bits (PS-089, protocol 12); unknown bits read as 0.
     u32 trainerId;                // Full 32-bit ID: low 16 bits = public TID, high 16 = secret ID.
 };
+
+// summaryFlags bits (protocol.md 5.1). Bit 0 (PS-089): FlagGet(FLAG_VISITED_MAUVILLE_CITY), the
+// Cable Club's unlock of the Record Corner; MIX RECORDS is only offered when both players have it.
+#define MP_SUMMARY_FLAG_CAN_MIX_RECORDS  0x01
+#define MP_SUMMARY_FLAGS_MASK            (MP_SUMMARY_FLAG_CAN_MIX_RECORDS)
 
 // ---------------------------------------------------------------------------
 // Presence (where a player is and how they move). PS-030 owns capture.
@@ -477,6 +482,7 @@ enum
     MP_INTERACT_TRAINER_CARD,   // PS-042: public info, answered without a prompt
     MP_INTERACT_VIEW_PARTY,     // PS-043: needs the target's consent
     MP_INTERACT_BATTLE_DOUBLE,  // PS-045 (protocol 8): a DOUBLE link battle, prompted like BATTLE
+    MP_INTERACT_MIX_RECORDS,    // PS-089 (protocol 12): Emerald's record mixing, prompted like TRADE
     MP_INTERACT_KIND_COUNT,
 };
 
@@ -783,6 +789,29 @@ void MP_BattleOnBattleEnd(void);
 bool8 MP_BattleTryExitLocally(void);
 // MP: from MP_LinkPrepareErrorRecovery (link.c): a link error ended the battle (or its start).
 void MP_BattleOnLinkErrorRecovery(void);
+
+// ---------------------------------------------------------------------------
+// Direct record mixing over the cable (PS-089, src/mp/mp_mix.c, pure sanitizer in mp_mix.h)
+// ---------------------------------------------------------------------------
+// After a MIX_RECORDS request is accepted, both players save, link up (LINKTYPE_RECORD_MIX_BEFORE)
+// and run Emerald's own record mixing (record_mixing.c) from the overworld, without the Record
+// Corner. The decomp hooks ("// MP: PS-089") use MP_MixIsDirect() to
+//   - check the partner's record before ReceiveExchangePacket (MP_MixAcceptReceived; a bad record
+//     is dropped whole and the end text says so),
+//   - save at the player's position (Task_LinkFullSave, save.c: no Cable Club dynamic warp),
+//   - skip the Cable Club re-link (CreateTask_ReestablishCableClubLink / SetLinkWaitingForScript)
+//     and return to the plain field (MP_MixOnFinished).
+// TRUE from the start of Task_RecordMixing_Main until the field is unlocked again.
+bool8 MP_MixIsDirect(void);
+// MP: from Task_ReceivePacket (record_mixing.c): the received records (`playerCount` of them,
+// `recordSize` bytes apart; ours is at `myId`). FALSE: a partner record failed the checks; apply none.
+bool8 MP_MixAcceptReceived(const void *records, u32 recordSize, u32 playerCount, u32 myId);
+// MP: from Task_RecordMixing_Main: "Record mixing complete" or "The records couldn't be mixed."
+const u8 *MP_MixCompleteText(void);
+// MP: from Task_RecordMixing_Main's last state on a direct mix: back to the field, leave the group.
+void MP_MixOnFinished(void);
+// MP: from MP_LinkPrepareErrorRecovery (link.c): a link error ended the mix (or its start).
+void MP_MixOnLinkErrorRecovery(void);
 
 // ---------------------------------------------------------------------------
 // Trade journal (PS-050, protocol.md 6.16, design.md "Trade journal")

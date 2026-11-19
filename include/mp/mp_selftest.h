@@ -52,6 +52,11 @@ u32 MpSelftest_Trade(void);
 // the linkup state machine (pure + random-input fuzz), and in process a link group that ends
 // (or a partner that leaves the session) during the start.
 u32 MpSelftest_Battle(void);
+// PS-089 direct record mixing: INTERACT kind MIX_RECORDS (every kind byte, round trips), the
+// summary's CAN_MIX_RECORDS bit, and the record sanitizer (mp_mix_validate.c): a clean record
+// passes, every crafted bad field is rejected with the right code, a random-byte fuzz never
+// crashes and is deterministic.
+u32 MpSelftest_Mix(void);
 // PS-053: the netstats counters, and the traffic benchmark (host + 1 and host + 3 clients over
 // loopback at 60 Hz: idle, walk, bike, view, trade, battle). Prints the "[MP] netbench:" tables.
 u32 MpSelftest_NetBench(void);

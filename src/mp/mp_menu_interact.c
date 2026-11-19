@@ -3,7 +3,7 @@
 // Requester side
 //   Facing a remote avatar, A (field_control_avatar.c, "// MP:") calls MpInteractUi_TryOpenMenu.
 //   A start-menu-style window opens on the right with the player's name as header and
-//       TRAINER CARD / POKEMON / TRADE / BATTLE / EXIT
+//       TRAINER CARD / POKEMON / TRADE / BATTLE / MIX RECORDS / EXIT
 //   Field controls stay locked while it is open (ProcessPlayerFieldInput returned TRUE); our
 //   own NPCs are frozen like for the start menu, the remote player is not affected.
 //   - TRAINER CARD (PS-042): a TRAINER_CARD request (no prompt on the other side). On
@@ -21,7 +21,9 @@
 //     hand over to MpTrade_Start (src/mp/mp_trade.c). PS-045: BATTLE first asks SINGLE BATTLE /
 //     DOUBLE BATTLE (kind BATTLE / BATTLE_DOUBLE), is only sent if both can battle in that mode
 //     (MpBattle_CheckLocal / _CheckPartner), and on ACCEPTED both hand over to MpBattle_Start
-//     (src/mp/mp_battle.c).
+//     (src/mp/mp_battle.c). PS-089: MIX RECORDS (kind MIX_RECORDS) is prompted like TRADE, only
+//     sent if both can mix (MpMix_CheckLocal / _CheckPartner: the Record Corner's unlock), and on
+//     ACCEPTED both hand over to MpMix_Start (src/mp/mp_mix.c).
 //   - B / EXIT closes it. If the player leaves or the session ends, it closes with a message.
 //
 // Target side
@@ -67,6 +69,7 @@ enum
     MENU_ITEM_POKEMON,
     MENU_ITEM_TRADE,
     MENU_ITEM_BATTLE,
+    MENU_ITEM_MIX_RECORDS,  // PS-089
     MENU_ITEM_EXIT,
     MENU_ITEM_COUNT,
 };
@@ -77,18 +80,20 @@ static const u8 *const sMenuTexts[MENU_ITEM_COUNT] =
     gText_MpInteractPokemon,
     gText_MpInteractTrade,
     gText_MpInteractBattle,
+    gText_MpInteractMixRecords,
     gText_MenuExit,
 };
 
-// Field BG0 tiles 0x29..0xB7: clear of the toast (1..0x28), the map pop-up (0x107), YES/NO
-// (0x125), the start menu (0x139) and the dialog box (0x194). Right side like the start menu.
+// Field BG0 tiles 0x29..0xCD (11 x 15): clear of the toast (1..0x28), the map pop-up (0x107),
+// YES/NO (0x125), the start menu (0x139) and the dialog box (0x194). Right side like the start
+// menu. Height: the header plus MENU_ITEM_COUNT rows of MENU_LINE px (PS-089: 6 rows, 113 px).
 static const struct WindowTemplate sMenuWindowTemplate =
 {
     .bg = 0,
     .tilemapLeft = 18,
     .tilemapTop = 1,
     .width = 11,
-    .height = 13,
+    .height = 15,
     .paletteNum = 15,
     .baseBlock = 0x29
 };
@@ -223,6 +228,8 @@ static const u8 *IncomingText(u8 kind)
         return gText_MpIncomingDoubleBattle;
     case MP_INTERACT_VIEW_PARTY:
         return gText_MpIncomingViewParty;
+    case MP_INTERACT_MIX_RECORDS: // PS-089
+        return gText_MpIncomingMixRecords;
     default:
         return gText_MpIncomingTrade;
     }
@@ -347,20 +354,24 @@ static void HandleMenuInput(u8 taskId)
     case MENU_ITEM_POKEMON:         // PS-043: they are asked to allow it
     case MENU_ITEM_TRADE:
     case MENU_ITEM_BATTLE:
+    case MENU_ITEM_MIX_RECORDS:     // PS-089: prompted like a trade
         if (choice == MENU_ITEM_TRAINER_CARD)
             sMenuKind = MP_INTERACT_TRAINER_CARD;
         else if (choice == MENU_ITEM_POKEMON)
             sMenuKind = MP_INTERACT_VIEW_PARTY;
+        else if (choice == MENU_ITEM_MIX_RECORDS)
+            sMenuKind = MP_INTERACT_MIX_RECORDS;
         else
             sMenuKind = (choice == MENU_ITEM_TRADE) ? MP_INTERACT_TRADE : MP_INTERACT_BATTLE;
         sMenuResult = MP_INTERACT_RESULT_NONE;
-        if (sMenuKind == MP_INTERACT_TRADE)
+        if (sMenuKind == MP_INTERACT_TRADE || sMenuKind == MP_INTERACT_MIX_RECORDS)
         {
-            // PS-044: don't ask if one of us can't trade anyway.
-            const u8 *problem = MpTrade_CheckLocal();
+            // PS-044 / PS-089: don't ask if one of us can't trade / mix anyway.
+            bool8 mix = (sMenuKind == MP_INTERACT_MIX_RECORDS);
+            const u8 *problem = mix ? MpMix_CheckLocal() : MpTrade_CheckLocal();
 
             if (problem == NULL)
-                problem = MpTrade_CheckPartner(sMenuSlot);
+                problem = mix ? MpMix_CheckPartner(sMenuSlot) : MpTrade_CheckPartner(sMenuSlot);
             if (problem != NULL)
             {
                 ShowMenuMessage(taskId, problem, MENU_STATE_MESSAGE_CLOSE);
@@ -462,6 +473,14 @@ static void ShowResult(u8 taskId)
             sMenuActive = FALSE;
             DestroyTask(taskId);
             MpBattle_Start(sMenuSlot, sMenuName, sMenuKind);
+            break;
+        }
+        if (sMenuKind == MP_INTERACT_MIX_RECORDS)
+        {
+            // PS-089: hand over to the record mix (controls stay locked, the NPCs frozen).
+            sMenuActive = FALSE;
+            DestroyTask(taskId);
+            MpMix_Start(sMenuSlot, sMenuName);
             break;
         }
         end = StringCopy(sText, gText_MpResultAccepted);
@@ -661,15 +680,16 @@ static void Task_MpIncomingPrompt(u8 taskId)
             MP_RespondInteract(MP_INTERACT_RESULT_ACCEPTED);
             ClosePrompt(taskId);
         }
-        else if (choice == 0 && (sIncomingKind == MP_INTERACT_TRADE || MP_IsBattleKind(sIncomingKind)))
+        else if (choice == 0 && (sIncomingKind == MP_INTERACT_TRADE || MP_IsBattleKind(sIncomingKind) || sIncomingKind == MP_INTERACT_MIX_RECORDS))
         {
-            // PS-044 / PS-045: check that we can trade / battle (in that mode) before saying
-            // yes, then hand over to the trade / battle.
+            // PS-044 / PS-045 / PS-089: check that we can trade / battle (in that mode) / mix
+            // records before saying yes, then hand over to the trade / battle / mix.
             bool8 battle = MP_IsBattleKind(sIncomingKind);
-            const u8 *problem = battle ? MpBattle_CheckLocal(sIncomingKind) : MpTrade_CheckLocal();
+            bool8 mix = (sIncomingKind == MP_INTERACT_MIX_RECORDS);
+            const u8 *problem = battle ? MpBattle_CheckLocal(sIncomingKind) : (mix ? MpMix_CheckLocal() : MpTrade_CheckLocal());
 
             if (problem == NULL)
-                problem = battle ? MpBattle_CheckPartner(sIncomingSlot) : MpTrade_CheckPartner(sIncomingSlot);
+                problem = battle ? MpBattle_CheckPartner(sIncomingSlot) : (mix ? MpMix_CheckPartner(sIncomingSlot) : MpTrade_CheckPartner(sIncomingSlot));
             if (problem != NULL)
             {
                 MP_RespondInteract(MP_INTERACT_RESULT_DECLINED);
@@ -686,6 +706,8 @@ static void Task_MpIncomingPrompt(u8 taskId)
                 // Controls stay locked, the NPCs frozen.
                 if (battle)
                     MpBattle_Start(sIncomingSlot, sIncomingName, sIncomingKind);
+                else if (mix)
+                    MpMix_Start(sIncomingSlot, sIncomingName);
                 else
                     MpTrade_Start(sIncomingSlot, sIncomingName);
             }

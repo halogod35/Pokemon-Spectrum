@@ -126,6 +126,16 @@ const u8 gText_MpBattleNoMons[] = _("You have no POKéMON that\ncan battle.");
 const u8 gText_MpBattleNeedTwoMons[] = _("You need two POKéMON that can\nbattle for a DOUBLE BATTLE.");
 const u8 gText_MpBattleLinkFailed[] = _("Couldn’t link up with {STR_VAR_1}.\nThe battle was cancelled.");
 const u8 gText_MpBattleSaveFailed[] = _("The game couldn’t be saved.\nThe battle was cancelled.");
+// MP: PS-089 direct record mixing
+const u8 gText_MpInteractMixRecords[] = _("MIX RECORDS");
+const u8 gText_MpIncomingMixRecords[] = _("{STR_VAR_1} wants to mix records.\nAccept?");
+const u8 gText_MpMixCantHere[] = _("You can’t mix records here.");
+const u8 gText_MpMixNotYet[] = _("You can’t mix records yet.");
+const u8 gText_MpMixPartnerNotYet[] = _("{STR_VAR_1} can’t mix records yet.");
+const u8 gText_MpMixPartnerBusy[] = _("{STR_VAR_1} can’t mix records right now.");
+const u8 gText_MpMixLinkFailed[] = _("Couldn’t link up with {STR_VAR_1}.\nThe records weren’t mixed.");
+const u8 gText_MpMixSaveFailed[] = _("The game couldn’t be saved.\nThe records weren’t mixed.");
+const u8 gText_MpMixRejected[] = _("The records couldn’t be mixed.");
 const u8 gText_WirelessNotConnected[] = _("The Wireless Adapter is not\nconnected.");
 const u8 gText_MysteryGiftCantUse[] = _("MYSTERY GIFT can't be used while\nthe Wireless Adapter is attached.");
 const u8 gText_MysteryEventsCantUse[] = _("MYSTERY EVENTS can't be used while\nthe Wireless Adapter is attached.");

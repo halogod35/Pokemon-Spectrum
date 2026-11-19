@@ -428,6 +428,15 @@ extern const u8 gText_MpBattleNoMons[];           // MP: PS-045
 extern const u8 gText_MpBattleNeedTwoMons[];      // MP: PS-045
 extern const u8 gText_MpBattleLinkFailed[];       // MP: PS-045
 extern const u8 gText_MpBattleSaveFailed[];       // MP: PS-045
+extern const u8 gText_MpInteractMixRecords[];     // MP: PS-089
+extern const u8 gText_MpIncomingMixRecords[];     // MP: PS-089
+extern const u8 gText_MpMixCantHere[];            // MP: PS-089
+extern const u8 gText_MpMixNotYet[];              // MP: PS-089
+extern const u8 gText_MpMixPartnerNotYet[];       // MP: PS-089
+extern const u8 gText_MpMixPartnerBusy[];         // MP: PS-089
+extern const u8 gText_MpMixLinkFailed[];          // MP: PS-089
+extern const u8 gText_MpMixSaveFailed[];          // MP: PS-089
+extern const u8 gText_MpMixRejected[];            // MP: PS-089
 extern const u8 gText_WirelessNotConnected[];
 extern const u8 gText_MysteryGiftCantUse[];
 extern const u8 gText_MysteryEventsCantUse[];

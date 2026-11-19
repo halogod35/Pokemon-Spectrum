@@ -12,6 +12,7 @@
 #include "trainer_hill.h"
 #include "link.h"
 #include "constants/game_stat.h"
+#include "mp/mp.h" // MP: PS-089 direct record mix (MP_MixIsDirect in Task_LinkFullSave)
 
 static u16 CalculateChecksum(void *, u16);
 static bool8 ReadFlashSector(u8, struct SaveSector *);
@@ -1092,7 +1093,9 @@ void Task_LinkFullSave(u8 taskId)
         }
         break;
     case 3:
-        if (!tInBattleTower)
+        // MP: PS-089. A direct record mix (from the overworld) saves at the player's position, as
+        // a normal save: the dynamic warp (the Cable Club's way back out) does not apply.
+        if (!tInBattleTower && !MP_MixIsDirect())
             SetContinueGameWarpStatusToDynamicWarp();
         LinkFullSave_Init();
         tState = 4;
