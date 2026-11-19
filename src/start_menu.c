@@ -543,7 +543,10 @@ static bool32 InitStartMenuStep(void)
         LoadMessageBoxAndBorderGfx();
         DrawStdWindowFrame(AddStartMenuWindow(GetStartMenuVisibleRows()), FALSE); // PS-092: window of min(count, 8) rows
         // PS-092: arrows on the frame while the list is longer than the window. The task hides
-        // the top one at offset 0 and the bottom one at the last offset.
+        // the top one at offset 0 and the bottom one at the last offset. An id left over from a
+        // task reset (see RemoveStartMenuScrollArrows) is dropped so the arrows are made again.
+        if (sStartMenuArrowTaskId != TASK_NONE && !gTasks[sStartMenuArrowTaskId].isActive)
+            sStartMenuArrowTaskId = TASK_NONE;
         if (sNumStartMenuActions > START_MENU_VISIBLE_ROWS && sStartMenuArrowTaskId == TASK_NONE)
             sStartMenuArrowTaskId = AddScrollIndicatorArrowPairParameterized(SCROLL_ARROW_UP, START_MENU_ARROW_X,
                                                                              START_MENU_ARROW_Y_TOP, START_MENU_ARROW_Y_BOTTOM,
@@ -649,7 +652,10 @@ void RemoveStartMenuScrollArrows(void)
 {
     if (sStartMenuArrowTaskId != TASK_NONE)
     {
-        RemoveScrollIndicatorArrowPair(sStartMenuArrowTaskId);
+        // PS-092: the task table can be reset behind the menu (a CB2 change that calls ResetTasks),
+        // so a stale id may name another task: never free sprites and tags through it.
+        if (gTasks[sStartMenuArrowTaskId].isActive)
+            RemoveScrollIndicatorArrowPair(sStartMenuArrowTaskId);
         sStartMenuArrowTaskId = TASK_NONE;
     }
 }
