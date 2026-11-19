@@ -19,6 +19,7 @@
 #include "international_string_util.h"
 #include "item_menu.h"
 #include "link.h"
+#include "list_menu.h" // PS-092: scroll-indicator arrows
 #include "load_save.h"
 #include "main.h"
 #include "menu.h"
@@ -78,6 +79,17 @@ enum
     SAVE_ERROR
 };
 
+// PS-092: the window shows at most START_MENU_VISIBLE_ROWS entries (8 rows of 2 tiles plus the
+// frame fill the 160 px screen); a longer list scrolls, with the standard scroll-indicator
+// arrows on the frame's top and bottom edges. In a session with the Pokedex and PokeNav the
+// normal menu has 9 entries (PLAYERS and EXIT after OPTION).
+#define MAX_STARTMENU_ITEMS         10
+#define START_MENU_VISIBLE_ROWS     8
+#define TAG_START_MENU_SCROLL_ARROW 1092 // free on the field: not a field effect, event object, weather or MP avatar tag
+#define START_MENU_ARROW_X          204  // the window is columns 22..28, its frame 21 and 29: 168..240 centred
+#define START_MENU_ARROW_Y_TOP      5    // on frame row 0 (the arrow bounces 2 px, so not quite centred: no clipping)
+#define START_MENU_ARROW_Y_BOTTOM   155  // on frame row 19
+
 // IWRAM common
 COMMON_DATA bool8 (*gMenuCallback)(void) = NULL;
 
@@ -86,8 +98,10 @@ EWRAM_DATA static u8 sSafariBallsWindowId = 0;
 EWRAM_DATA static u8 sBattlePyramidFloorWindowId = 0;
 EWRAM_DATA static u8 sStartMenuCursorPos = 0;
 EWRAM_DATA static u8 sNumStartMenuActions = 0;
-EWRAM_DATA static u8 sCurrentStartMenuActions[9] = {0};
+EWRAM_DATA static u8 sCurrentStartMenuActions[MAX_STARTMENU_ITEMS] = {0}; // PS-092: was 9
 EWRAM_DATA static s8 sInitStartMenuData[2] = {0};
+EWRAM_DATA static u16 sStartMenuScrollOffset = 0;           // PS-092: first visible entry; the arrow task reads it every frame
+EWRAM_DATA static u8 sStartMenuArrowTaskId = TASK_NONE;     // PS-092: scroll-indicator arrow pair, TASK_NONE while the list fits
 
 EWRAM_DATA static u8 (*sSaveDialogCallback)(void) = NULL;
 EWRAM_DATA static u8 sSaveDialogTimer = 0;
@@ -267,6 +281,11 @@ static void ShowPyramidFloorWindow(void);
 static void RemoveExtraStartMenuWindows(void);
 static bool32 PrintStartMenuActions(s8 *pIndex, u32 count);
 static bool32 InitStartMenuStep(void);
+// PS-092: scrolling
+static u8 GetStartMenuVisibleRows(void);
+static void ClampStartMenuScroll(void);
+static void MoveStartMenuCursor(s8 delta);
+static void RedrawStartMenuRows(void);
 static void InitStartMenu(void);
 static void CreateStartMenuTask(TaskFunc followupFunc);
 static void InitSave(void);
@@ -353,15 +372,10 @@ static void BuildNormalStartMenu(void)
     AddStartMenuAction(MENU_ACTION_SAVE);
     AddStartMenuAction(MENU_ACTION_OPTION);
     // MP: one PLAYERS entry while in a session (PS-033); LEAVE GAME is inside the list (A),
-    // so multiplayer costs a single line. The menu window fits 8 entries on screen (2 tiles
-    // each + frame), so with all 7 normal entries EXIT is left out; B and START still close it.
+    // so multiplayer costs a single line. The menu scrolls when it is longer than the window
+    // (PS-092), so EXIT always follows.
     if (MP_IsActive())
-    {
         AddStartMenuAction(MENU_ACTION_MP_PLAYERS);
-        if (sNumStartMenuActions < 8)
-            AddStartMenuAction(MENU_ACTION_EXIT);
-        return;
-    }
     AddStartMenuAction(MENU_ACTION_EXIT);
 }
 
@@ -462,6 +476,7 @@ static void ShowPyramidFloorWindow(void)
 
 static void RemoveExtraStartMenuWindows(void)
 {
+    RemoveStartMenuScrollArrows(); // PS-092: the callbacks that fade out to another screen come through here
     if (GetSafariZoneFlag())
     {
         ClearStdWindowAndFrameToTransparent(sSafariBallsWindowId, FALSE);
@@ -475,24 +490,28 @@ static void RemoveExtraStartMenuWindows(void)
     }
 }
 
+// Prints the visible rows from *pIndex on, count per call. PS-092: index is the window row,
+// the entry is sStartMenuScrollOffset rows further into the list.
 static bool32 PrintStartMenuActions(s8 *pIndex, u32 count)
 {
     s8 index = *pIndex;
+    u8 action;
 
     do
     {
-        if (sStartMenuItems[sCurrentStartMenuActions[index]].func.u8_void == StartMenuPlayerNameCallback)
+        action = sCurrentStartMenuActions[sStartMenuScrollOffset + index]; // PS-092
+        if (sStartMenuItems[action].func.u8_void == StartMenuPlayerNameCallback)
         {
-            PrintPlayerNameOnWindow(GetStartMenuWindowId(), sStartMenuItems[sCurrentStartMenuActions[index]].text, 8, (index << 4) + 9);
+            PrintPlayerNameOnWindow(GetStartMenuWindowId(), sStartMenuItems[action].text, 8, (index << 4) + 9);
         }
         else
         {
-            StringExpandPlaceholders(gStringVar4, sStartMenuItems[sCurrentStartMenuActions[index]].text);
+            StringExpandPlaceholders(gStringVar4, sStartMenuItems[action].text);
             AddTextPrinterParameterized(GetStartMenuWindowId(), FONT_NORMAL, gStringVar4, 8, (index << 4) + 9, TEXT_SKIP_DRAW, NULL);
         }
 
         index++;
-        if (index >= sNumStartMenuActions)
+        if (index >= GetStartMenuVisibleRows()) // PS-092: only the visible rows
         {
             *pIndex = index;
             return TRUE;
@@ -517,11 +536,20 @@ static bool32 InitStartMenuStep(void)
         break;
     case 1:
         BuildStartMenuActions();
+        ClampStartMenuScroll(); // PS-092: the remembered cursor must be visible before the rows are printed
         sInitStartMenuData[0]++;
         break;
     case 2:
         LoadMessageBoxAndBorderGfx();
-        DrawStdWindowFrame(AddStartMenuWindow(sNumStartMenuActions), FALSE);
+        DrawStdWindowFrame(AddStartMenuWindow(GetStartMenuVisibleRows()), FALSE); // PS-092: window of min(count, 8) rows
+        // PS-092: arrows on the frame while the list is longer than the window. The task hides
+        // the top one at offset 0 and the bottom one at the last offset.
+        if (sNumStartMenuActions > START_MENU_VISIBLE_ROWS && sStartMenuArrowTaskId == TASK_NONE)
+            sStartMenuArrowTaskId = AddScrollIndicatorArrowPairParameterized(SCROLL_ARROW_UP, START_MENU_ARROW_X,
+                                                                             START_MENU_ARROW_Y_TOP, START_MENU_ARROW_Y_BOTTOM,
+                                                                             sNumStartMenuActions - START_MENU_VISIBLE_ROWS,
+                                                                             TAG_START_MENU_SCROLL_ARROW, TAG_START_MENU_SCROLL_ARROW,
+                                                                             &sStartMenuScrollOffset);
         sInitStartMenuData[1] = 0;
         sInitStartMenuData[0]++;
         break;
@@ -537,16 +565,93 @@ static bool32 InitStartMenuStep(void)
             sInitStartMenuData[0]++;
         break;
     case 5:
-        // MP: the entry count can shrink between openings (PLAYERS disappears when a session
-        // ends, EXIT may come back), so keep the remembered cursor inside the list (PS-033).
-        if (sStartMenuCursorPos >= sNumStartMenuActions)
-            sStartMenuCursorPos = sNumStartMenuActions - 1;
-        sStartMenuCursorPos = InitMenuNormal(GetStartMenuWindowId(), FONT_NORMAL, 0, 9, 16, sNumStartMenuActions, sStartMenuCursorPos);
+        // PS-092: the cursor from menu.c runs on the visible rows; sStartMenuCursorPos stays the
+        // index into the list (it is remembered between openings and after the EXIT question).
+        sStartMenuCursorPos = sStartMenuScrollOffset
+                            + InitMenuNormal(GetStartMenuWindowId(), FONT_NORMAL, 0, 9, 16, GetStartMenuVisibleRows(),
+                                             sStartMenuCursorPos - sStartMenuScrollOffset);
         CopyWindowToVram(GetStartMenuWindowId(), COPYWIN_MAP);
         return TRUE;
     }
 
     return FALSE;
+}
+
+// PS-092: rows the window has. A list that fits is drawn exactly as before (no arrows).
+static u8 GetStartMenuVisibleRows(void)
+{
+    if (sNumStartMenuActions > START_MENU_VISIBLE_ROWS)
+        return START_MENU_VISIBLE_ROWS;
+    return sNumStartMenuActions;
+}
+
+// PS-092: keeps the remembered cursor inside the (possibly rebuilt) list and scrolls so that
+// its row is visible.
+static void ClampStartMenuScroll(void)
+{
+    u8 visible = GetStartMenuVisibleRows();
+
+    // MP: the entry count can shrink between openings (PLAYERS disappears when a session
+    // ends), so keep the remembered cursor inside the list (PS-033).
+    if (sStartMenuCursorPos >= sNumStartMenuActions)
+        sStartMenuCursorPos = sNumStartMenuActions - 1;
+    if (sStartMenuScrollOffset > sNumStartMenuActions - visible)
+        sStartMenuScrollOffset = sNumStartMenuActions - visible;
+    if (sStartMenuCursorPos < sStartMenuScrollOffset)
+        sStartMenuScrollOffset = sStartMenuCursorPos;
+    else if (sStartMenuCursorPos >= sStartMenuScrollOffset + visible)
+        sStartMenuScrollOffset = sStartMenuCursorPos - visible + 1;
+}
+
+// PS-092: moves the cursor through the whole list with the vanilla wrap-around. Inside the
+// visible rows this is the usual cursor move; past them the list scrolls by one row (or to
+// the other end on a wrap) and the window is redrawn with the cursor on its new row.
+static void MoveStartMenuCursor(s8 delta)
+{
+    u8 visible = GetStartMenuVisibleRows();
+    s16 newPos = sStartMenuCursorPos + delta;
+
+    if (newPos < 0)
+        newPos = sNumStartMenuActions - 1;
+    else if (newPos >= sNumStartMenuActions)
+        newPos = 0;
+    sStartMenuCursorPos = newPos;
+
+    if (sStartMenuCursorPos >= sStartMenuScrollOffset && sStartMenuCursorPos < sStartMenuScrollOffset + visible)
+    {
+        Menu_MoveCursor(delta);
+        return;
+    }
+    if (sStartMenuCursorPos < sStartMenuScrollOffset)
+        sStartMenuScrollOffset = sStartMenuCursorPos;
+    else
+        sStartMenuScrollOffset = sStartMenuCursorPos - visible + 1;
+    RedrawStartMenuRows();
+}
+
+// PS-092: clears the window text, prints the visible entries again and puts the cursor on its
+// row (InitMenuNormal draws it and copies the window graphics to VRAM).
+static void RedrawStartMenuRows(void)
+{
+    s8 index = 0;
+
+    FillWindowPixelBuffer(GetStartMenuWindowId(), PIXEL_FILL(1));
+    PrintStartMenuActions(&index, START_MENU_VISIBLE_ROWS);
+    InitMenuNormal(GetStartMenuWindowId(), FONT_NORMAL, 0, 9, 16, GetStartMenuVisibleRows(),
+                   sStartMenuCursorPos - sStartMenuScrollOffset);
+    CopyWindowToVram(GetStartMenuWindowId(), COPYWIN_GFX);
+}
+
+// PS-092: the arrows live as long as the menu window. RemoveStartMenuWindow (menu.c) calls
+// this for every dialog that replaces the window and for closing the menu;
+// RemoveExtraStartMenuWindows for the callbacks that fade out to another screen.
+void RemoveStartMenuScrollArrows(void)
+{
+    if (sStartMenuArrowTaskId != TASK_NONE)
+    {
+        RemoveScrollIndicatorArrowPair(sStartMenuArrowTaskId);
+        sStartMenuArrowTaskId = TASK_NONE;
+    }
 }
 
 static void InitStartMenu(void)
@@ -628,13 +733,13 @@ static bool8 HandleStartMenuInput(void)
     if (JOY_NEW(DPAD_UP))
     {
         PlaySE(SE_SELECT);
-        sStartMenuCursorPos = Menu_MoveCursor(-1);
+        MoveStartMenuCursor(-1); // PS-092: scrolls when the cursor leaves the window
     }
 
     if (JOY_NEW(DPAD_DOWN))
     {
         PlaySE(SE_SELECT);
-        sStartMenuCursorPos = Menu_MoveCursor(1);
+        MoveStartMenuCursor(1); // PS-092
     }
 
     if (JOY_NEW(A_BUTTON))
