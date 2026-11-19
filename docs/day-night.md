@@ -79,14 +79,19 @@ unchanged (bit n = BG palette n for n < 16, OBJ palette n − 16 otherwise). Def
 | BG 15 | the dialogue box and its text (`LoadMessageBoxGfx`) |
 
 These are the same two slots the weather color maps leave alone (`sBasePaletteColorMapTypes`
-in `src/field_weather.c`). All 16 OBJ palettes are tinted so that every sprite on the map,
-local or remote, matches the tiles. The PS-053 network overlay is drawn by SDL after the frame
-and is untouched.
+in `src/field_weather.c`). OBJ palettes are tinted so that every sprite on the map, local or
+remote, matches the tiles, with one exception (PS-092): a sprite palette can be exempted by
+its tag with `DayNight_ExemptSpritePaletteTag(tag)`. The tag is resolved to its OBJ slot once
+per frame (`IndexOfSpritePaletteTag`), so the entry does nothing while the palette is not
+loaded and there is nothing to unregister when it is freed. The START menu registers its
+scroll-arrow tag so the arrows stay as bright as the menu frame at night. The PS-053 network
+overlay is drawn by SDL after the frame and is untouched.
 
 ## Known limits
 
 - `BlendPalettes(PALETTES_ALL, 16, RGB_WHITE)`-style flashes (not palette fades) are tinted
   like everything else, so a white flash at night is slightly blue-grey for its one or two frames.
 - Windows that use palette slots other than 14/15 in the field are tinted (text in them stays
-  legible; it is just darker at night). Add the slot to `sExemptPalettes` if one turns out to matter.
+  legible; it is just darker at night). Add the slot to `sExemptPalettes` if one turns out to matter;
+  for a sprite, register its palette tag with `DayNight_ExemptSpritePaletteTag`.
 - Nothing is sent over the network: each player sees their own clock's tint.

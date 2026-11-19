@@ -14,7 +14,10 @@
 //     coefficient of a normal palette fade toward a non-black color, and black stays black
 //     because the tint only scales channels (never adds).
 //   - Exempt palette slots (sExemptPalettes) are copied unchanged: text boxes and window
-//     frames stay readable at night.
+//     frames stay readable at night. Sprite palettes can be exempted by tag
+//     (DayNight_ExemptSpritePaletteTag, PS-092): the tag is resolved to its OBJ slot each
+//     frame, so the entry is inert while the palette is not loaded and never needs removing.
+//     The START menu's scroll arrows use it to stay as bright as the menu frame.
 
 #include "global.h"
 #include "day_night.h"
@@ -23,6 +26,7 @@
 #include "overworld.h"
 #include "palette.h"
 #include "rtc.h"
+#include "sprite.h" // PS-092: IndexOfSpritePaletteTag
 #include "constants/map_types.h"
 #include "constants/rgb.h"
 
@@ -51,6 +55,12 @@ static const struct DayNightBand sBands[DAY_NIGHT_BAND_COUNT] =
 // otherwise). 14 is the window frame / standard menu palette, 15 the dialogue box and its
 // text, the same two slots the weather color maps leave alone (field_weather.c).
 static const u32 sExemptPalettes = (1u << 14) | (1u << 15);
+
+// PS-092: sprite palette tags that are never tinted (TAG_NONE = free entry). Resolved to OBJ
+// slots once per frame by GetExemptPaletteMask, so an entry is harmless while its palette is
+// not loaded and needs no unregister when it is freed.
+#define EXEMPT_SPRITE_PALETTE_TAGS 4
+static u16 sExemptSpritePaletteTags[EXEMPT_SPRITE_PALETTE_TAGS] = {TAG_NONE, TAG_NONE, TAG_NONE, TAG_NONE};
 
 static u16 sMinuteOfDay;        // game clock minute of the day the multipliers were computed for
 static u8 sBand;                // DAY_NIGHT_* for sMinuteOfDay
@@ -158,6 +168,45 @@ bool8 DayNight_IsActive(void)
     return IsOutdoorMapType(gMapHeader.mapType);
 }
 
+// PS-092: idempotent; a tag already in the list or a full list changes nothing.
+void DayNight_ExemptSpritePaletteTag(u16 tag)
+{
+    u32 i;
+
+    for (i = 0; i < EXEMPT_SPRITE_PALETTE_TAGS; i++)
+    {
+        if (sExemptSpritePaletteTags[i] == tag)
+            return;
+    }
+    for (i = 0; i < EXEMPT_SPRITE_PALETTE_TAGS; i++)
+    {
+        if (sExemptSpritePaletteTags[i] == TAG_NONE)
+        {
+            sExemptSpritePaletteTags[i] = tag;
+            return;
+        }
+    }
+}
+
+// PS-092: sExemptPalettes plus the OBJ slots the exempt tags are loaded in right now.
+static u32 GetExemptPaletteMask(void)
+{
+    u32 mask = sExemptPalettes;
+    u32 i;
+
+    for (i = 0; i < EXEMPT_SPRITE_PALETTE_TAGS; i++)
+    {
+        u8 slot;
+
+        if (sExemptSpritePaletteTags[i] == TAG_NONE)
+            continue;
+        slot = IndexOfSpritePaletteTag(sExemptSpritePaletteTags[i]);
+        if (slot != 0xFF)
+            mask |= 1u << (16 + slot);
+    }
+    return mask;
+}
+
 // 0 .. 16: how much of the tint to apply this frame. A normal palette fade toward a
 // non-black color (white-outs, flashes) replaces the colors by blendColor at y = 16; the
 // tint shrinks with it so the screen really reaches that color. Fades to black need no
@@ -197,6 +246,7 @@ bool8 DayNight_TintPlttBuffer(void)
     u16 *dst = (u16 *)PLTT;
     u8 strength;
     u32 slot;
+    u32 exempt;
 
     if (!DayNight_IsActive())
         return FALSE;
@@ -209,12 +259,13 @@ bool8 DayNight_TintPlttBuffer(void)
     BuildChannelLut(lutR, sMulR, strength);
     BuildChannelLut(lutG, sMulG, strength);
     BuildChannelLut(lutB, sMulB, strength);
+    exempt = GetExemptPaletteMask(); // PS-092: resolved once per frame, before the slot loop
 
     for (slot = 0; slot < PLTT_BUFFER_SIZE / 16; slot++)
     {
         u32 i;
 
-        if (sExemptPalettes & (1u << slot))
+        if (exempt & (1u << slot))
         {
             for (i = 0; i < 16; i++)
                 dst[i] = src[i];

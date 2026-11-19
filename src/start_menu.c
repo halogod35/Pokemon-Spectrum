@@ -47,6 +47,7 @@
 #include "constants/battle_frontier.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
+#include "day_night.h" // PS-092: the scroll arrows are exempt from the night tint
 #include "mp/mp.h" // MP: LEAVE GAME while in a multiplayer session (PS-022)
 #include "mp_menu.h" // MP: PLAYERS list (PS-033)
 #include "exit_to_title.h" // PS-088: EXIT -> title screen
@@ -548,11 +549,14 @@ static bool32 InitStartMenuStep(void)
         if (sStartMenuArrowTaskId != TASK_NONE && !gTasks[sStartMenuArrowTaskId].isActive)
             sStartMenuArrowTaskId = TASK_NONE;
         if (sNumStartMenuActions > START_MENU_VISIBLE_ROWS && sStartMenuArrowTaskId == TASK_NONE)
+        {
             sStartMenuArrowTaskId = AddScrollIndicatorArrowPairParameterized(SCROLL_ARROW_UP, START_MENU_ARROW_X,
                                                                              START_MENU_ARROW_Y_TOP, START_MENU_ARROW_Y_BOTTOM,
                                                                              sNumStartMenuActions - START_MENU_VISIBLE_ROWS,
                                                                              TAG_START_MENU_SCROLL_ARROW, TAG_START_MENU_SCROLL_ARROW,
                                                                              &sStartMenuScrollOffset);
+            DayNight_ExemptSpritePaletteTag(TAG_START_MENU_SCROLL_ARROW); // PS-092: as bright as the frame at night
+        }
         sInitStartMenuData[1] = 0;
         sInitStartMenuData[0]++;
         break;
