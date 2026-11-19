@@ -58,8 +58,8 @@ void ContestLiveUpdates_SetWinnerAppealFlag(u8 flag);
 void ContestLiveUpdates_SetWinnerMoveUsed(u16 move);
 void ContestLiveUpdates_SetLoserData(u8 flag, u8 loser);
 void ResetGabbyAndTy(void);
-u8 CheckForPlayersHouseNews(void);
-bool8 IsGabbyAndTyShowOnTheAir(void);
+u16 CheckForPlayersHouseNews(void);
+bool16 IsGabbyAndTyShowOnTheAir(void);
 void TryPutTrainerFanClubOnAir(void);
 
 #endif //GUARD_TV_H

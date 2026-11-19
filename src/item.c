@@ -155,7 +155,7 @@ bool8 CheckBagHasItem(u16 itemId, u16 count)
     return FALSE;
 }
 
-bool8 HasAtLeastOneBerry(void)
+bool16 HasAtLeastOneBerry(void)
 {
     u16 i;
 

@@ -1421,7 +1421,7 @@ s16 GetFirstFreeBoxSpot(u8 boxId)
     return -1; // all spots are taken
 }
 
-u8 CountPartyNonEggMons(void)
+u16 CountPartyNonEggMons(void)
 {
     u16 i, count;
 

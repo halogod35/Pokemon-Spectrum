@@ -43,6 +43,7 @@ CI (`.github/workflows/build.yml`) runs linux and winwsl builds on pushes to `ma
 - 4-space indent, braces on their own line, `CamelCase` functions.
 - Types: `u8/u16/u32/s8/s16/s32/bool8/bool32` (`TRUE`/`FALSE`).
 - Globals `gName`, file statics `sName`, constants `UPPER_SNAKE`.
+- Script specials (`data/specials.inc`) and anything else called through a wider function-pointer type (field-effect natives, `u32 (*)(void)`) must return 16- or 32-bit types (`bool16/u16/s16/u32`), never `bool8/u8/s8`: on x86 the upper bits of an 8-bit return are undefined and the caller reads them (PS-090; `make checkspecials` enforces it for specials).
 - Multiplayer: public functions `MP_Name`, static helpers `MpName`. Game code only calls the `MP_*` API, never sockets.
 - No network threads: the network is pumped once per frame on the main thread.
 - Network input is untrusted: bounds/length-check everything, clamp every `memcpy`, null-terminate strings.

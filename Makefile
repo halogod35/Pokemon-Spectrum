@@ -181,7 +181,7 @@ MAKEFLAGS += --no-print-directory
 # Delete files that weren't built properly
 .DELETE_ON_ERROR:
 
-RULES_NO_SCAN += clean clean-assets tidy tidyportable clean-platform generated clean-generated
+RULES_NO_SCAN += clean clean-assets tidy tidyportable clean-platform generated clean-generated checkspecials
 .PHONY: all rom winwsl linux
 .PHONY: $(RULES_NO_SCAN)
 
@@ -293,6 +293,10 @@ tidyportable:
 clean-platform:
 	rm -f $(ROM)
 	rm -rf $(OBJ_DIR)/src/platform
+
+# PS-090: fail if any script special returns bool8/u8/s8 (specialvar reads 16 bits; x86 leaves the upper byte undefined). Also a CI step.
+checkspecials:
+	bash tools/check_specials.sh
 
 # Other rules
 include graphics_file_rules.mk

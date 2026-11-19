@@ -8,7 +8,7 @@ u8 GetPlayerAvatarGenderByGraphicsId(u8 gfxId);
 u8 TestPlayerAvatarFlags(u8 flag);
 u8 GetPlayerAvatarSpriteId(void);
 void PlayerGetDestCoords(s16 *x, s16 *y);
-u8 GetPlayerFacingDirection(void);
+u16 GetPlayerFacingDirection(void);
 u8 GetPlayerMovementDirection(void);
 u8 PlayerGetCopyableMovement(void);
 void PlayerWalkNormal(u8 direction);

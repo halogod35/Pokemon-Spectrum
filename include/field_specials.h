@@ -11,7 +11,7 @@ bool8 InMultiPartnerRoom(void);
 void UpdateTrainerFansAfterLinkBattle(void);
 void IncrementBirthIslandRockStepCount(void);
 bool8 AbnormalWeatherHasExpired(void);
-bool8 ShouldDoBrailleRegicePuzzle(void);
+bool16 ShouldDoBrailleRegicePuzzle(void);
 bool32 ShouldDoWallyCall(void);
 bool32 ShouldDoScottFortreeCall(void);
 bool32 ShouldDoScottBattleFrontierCall(void);
@@ -29,7 +29,7 @@ void UpdateFrontierGambler(u16 daysSince);
 void ResetCyclingRoadChallengeData(void);
 bool8 UsedPokemonCenterWarp(void);
 void ResetFanClub(void);
-bool8 ShouldShowBoxWasFullMessage(void);
+bool16 ShouldShowBoxWasFullMessage(void);
 void SetPCBoxToSendMon(u8 boxId);
 
 #endif // GUARD_FIELD_SPECIALS_H

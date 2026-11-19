@@ -156,7 +156,7 @@ static void ResetFavorLadyForRecordMix(void)
     sFavorLadyPtr->state = LILYCOVE_LADY_STATE_READY;
 }
 
-u8 GetFavorLadyState(void)
+u16 GetFavorLadyState(void)
 {
     sFavorLadyPtr = &gSaveBlock1Ptr->lilycoveLady.favor;
     if (sFavorLadyPtr->state == LILYCOVE_LADY_STATE_PRIZE)
@@ -178,7 +178,7 @@ void BufferFavorLadyRequest(void)
     StringCopy(gStringVar1, GetFavorLadyRequest(sFavorLadyPtr->favorId));
 }
 
-bool8 HasAnotherPlayerGivenFavorLadyItem(void)
+bool16 HasAnotherPlayerGivenFavorLadyItem(void)
 {
     sFavorLadyPtr = &gSaveBlock1Ptr->lilycoveLady.favor;
     if (sFavorLadyPtr->playerName[0] != EOS)
@@ -215,7 +215,7 @@ void BufferFavorLadyPlayerName(void)
 }
 
 // Only used to determine if a record-mixed player had given her an item she liked
-bool8 DidFavorLadyLikeItem(void)
+bool16 DidFavorLadyLikeItem(void)
 {
     sFavorLadyPtr = &gSaveBlock1Ptr->lilycoveLady.favor;
     return sFavorLadyPtr->likedItem ? TRUE : FALSE;
@@ -256,12 +256,12 @@ static bool8 DoesFavorLadyLikeItem(u16 itemId)
     return likedItem;
 }
 
-bool8 Script_DoesFavorLadyLikeItem(void)
+bool16 Script_DoesFavorLadyLikeItem(void)
 {
     return DoesFavorLadyLikeItem(gSpecialVar_ItemId);
 }
 
-bool8 IsFavorLadyThresholdMet(void)
+bool16 IsFavorLadyThresholdMet(void)
 {
     u8 numItemsGiven;
 
@@ -344,7 +344,7 @@ static void ResetQuizLadyForRecordMix(void)
     sQuizLadyPtr->playerAnswer = EC_EMPTY_WORD;
 }
 
-u8 GetQuizLadyState(void)
+u16 GetQuizLadyState(void)
 {
     sQuizLadyPtr = &gSaveBlock1Ptr->lilycoveLady.quiz;
     if (sQuizLadyPtr->state == LILYCOVE_LADY_STATE_PRIZE)
@@ -355,7 +355,7 @@ u8 GetQuizLadyState(void)
         return LILYCOVE_LADY_STATE_READY;
 }
 
-u8 GetQuizAuthor(void)
+u16 GetQuizAuthor(void)
 {
     s32 i, j;
     u8 authorNameId;
@@ -454,7 +454,7 @@ void BufferQuizPrizeName(void)
     StringCopy(gStringVar1, GetItemName(sQuizLadyPtr->prize));
 }
 
-bool8 BufferQuizAuthorNameAndCheckIfLady(void)
+bool16 BufferQuizAuthorNameAndCheckIfLady(void)
 {
     sQuizLadyPtr = &gSaveBlock1Ptr->lilycoveLady.quiz;
     if (BufferQuizAuthorName() == QUIZ_AUTHOR_NAME_LADY)
@@ -465,7 +465,7 @@ bool8 BufferQuizAuthorNameAndCheckIfLady(void)
     return FALSE;
 }
 
-bool8 IsQuizLadyWaitingForChallenger(void)
+bool16 IsQuizLadyWaitingForChallenger(void)
 {
     sQuizLadyPtr = &gSaveBlock1Ptr->lilycoveLady.quiz;
     return sQuizLadyPtr->waitingForChallenger;
@@ -476,7 +476,7 @@ void QuizLadyGetPlayerAnswer(void)
     ShowEasyChatScreen();
 }
 
-bool8 IsQuizAnswerCorrect(void)
+bool16 IsQuizAnswerCorrect(void)
 {
     sQuizLadyPtr = &gSaveBlock1Ptr->lilycoveLady.quiz;
     CopyEasyChatWord(gStringVar1, sQuizLadyPtr->correctAnswer);
@@ -736,7 +736,7 @@ u8 GetContestLadyPokeblockState(void)
 }
 
 
-bool8 HasPlayerGivenContestLadyPokeblock(void)
+bool16 HasPlayerGivenContestLadyPokeblock(void)
 {
     sContestLadyPtr = &gSaveBlock1Ptr->lilycoveLady.contest;
     if (sContestLadyPtr->givenPokeblock == TRUE)
@@ -744,7 +744,7 @@ bool8 HasPlayerGivenContestLadyPokeblock(void)
     return FALSE;
 }
 
-bool8 ShouldContestLadyShowGoOnAir(void)
+bool16 ShouldContestLadyShowGoOnAir(void)
 {
     bool8 putOnAir = FALSE;
 
@@ -778,7 +778,7 @@ void GetContestLadyMonSpecies(void)
     gSpecialVar_0x8005 = sContestLadyMonSpecies[sContestLadyPtr->category];
 }
 
-u8 GetContestLadyCategory(void)
+u16 GetContestLadyCategory(void)
 {
     sContestLadyPtr = &gSaveBlock1Ptr->lilycoveLady.contest;
     return sContestLadyPtr->category;

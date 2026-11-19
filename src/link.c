@@ -235,7 +235,7 @@ static const struct WindowTemplate sLinkErrorWindowTemplates[] = {
 static const u8 sTextColors[] = { TEXT_COLOR_TRANSPARENT, TEXT_COLOR_WHITE, TEXT_COLOR_DARK_GRAY };
 static const u8 sUnusedData[] = {0x00, 0xFF, 0xFE, 0xFF, 0x00};
 
-bool8 IsWirelessAdapterConnected(void)
+bool16 IsWirelessAdapterConnected(void)
 {
 #ifdef PORTABLE
     return FALSE;
@@ -2068,7 +2068,7 @@ bool32 IsLinkRecvQueueAtOverworldMax(void)
 }
 
 // Unused
-u8 GetWirelessCommType(void)
+u16 GetWirelessCommType(void)
 {
     return gWirelessCommType;
 }

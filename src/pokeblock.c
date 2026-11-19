@@ -1343,7 +1343,7 @@ u8 GetPokeblocksFeel(const struct Pokeblock *pokeblock)
     return feel;
 }
 
-s8 GetFirstFreePokeblockSlot(void)
+s16 GetFirstFreePokeblockSlot(void)
 {
     u8 i;
 

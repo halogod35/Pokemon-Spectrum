@@ -9,6 +9,6 @@ void ShowContestResults(void);
 void ContestLinkTransfer(u8 category);
 void ShowContestPainting(void);
 u16 GetContestRand(void);
-u8 CountPlayerMuseumPaintings(void);
+u16 CountPlayerMuseumPaintings(void);
 
 #endif // GUARD_CONTEST_UTIL_H

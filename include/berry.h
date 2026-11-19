@@ -22,7 +22,7 @@ void ObjectEventInteractionGetBerryTreeData(void);
 void ObjectEventInteractionPlantBerryTree(void);
 void ObjectEventInteractionPickBerryTree(void);
 void ObjectEventInteractionRemoveBerryTree(void);
-bool8 PlayerHasBerries(void);
+bool16 PlayerHasBerries(void);
 void SetBerryTreesSeen(void);
 
 extern const struct Berry gBerries[];

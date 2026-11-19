@@ -17,7 +17,7 @@ void InitDaycareMailRecordMixing(struct DayCare *daycare, struct RecordMixingDay
 void StoreSelectedPokemonInDaycare(void);
 u16 TakePokemonFromDaycare(void);
 void GetDaycareCostAndPrepareString(void);
-u8 GetNumLevelsGainedFromDaycare(void);
+u16 GetNumLevelsGainedFromDaycare(void);
 void TriggerPendingDaycareEgg(void);
 void RejectEggFromDayCare(void);
 void CreateEgg(struct Pokemon *mon, u16 species, bool8 setHotSpringsLocation);
@@ -25,7 +25,7 @@ void GiveEggFromDaycare(void);
 bool8 ShouldEggHatch(void);
 u16 GetSelectedMonNicknameAndSpecies(void);
 void GetDaycareMonNicknames(void);
-u8 GetDaycareState(void);
+u16 GetDaycareState(void);
 void SetDaycareCompatibilityString(void);
 bool8 NameHasGenderSymbol(const u8 *name, u8 genderRatio);
 void ShowDaycareLevelMenu(void);
