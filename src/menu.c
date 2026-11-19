@@ -13,6 +13,7 @@
 #include "pokemon_icon.h"
 #include "region_map.h"
 #include "sound.h"
+#include "start_menu.h" // PS-092: RemoveStartMenuScrollArrows
 #include "string_util.h"
 #include "strings.h"
 #include "task.h"
@@ -501,6 +502,7 @@ u8 GetStartMenuWindowId(void)
 
 void RemoveStartMenuWindow(void)
 {
+    RemoveStartMenuScrollArrows(); // PS-092: the scroll arrows go with the window
     if (sStartMenuWindowId != WINDOW_NONE)
     {
         RemoveWindow(sStartMenuWindowId);

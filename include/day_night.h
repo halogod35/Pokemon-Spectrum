@@ -33,4 +33,8 @@ bool8 DayNight_TintPlttBuffer(void);
 // The band the clock is in right now (DAY_NIGHT_*), for debugging and tests.
 u8 DayNight_GetBand(void);
 
+// PS-092: never tint the sprite palette loaded under this tag (resolved to its OBJ slot every
+// frame, so call it after LoadSpritePalette and forget about it; idempotent, a few entries).
+void DayNight_ExemptSpritePaletteTag(u16 tag);
+
 #endif // GUARD_DAY_NIGHT_H
