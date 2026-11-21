@@ -93,7 +93,7 @@ static const struct RegionTransitDestination sRegionTransitDestinations[] =
     { MAPSEC_SLATEPORT_CITY, MAP_SLATEPORT_CITY_HARBOR, 14, 12, FLAG_VISITED_SLATEPORT_CITY },
     // Kanto: the S.S. ANNE pier in Vermilion City, the Hoenn sailor stands at (24,33) (tools/kanto_import/extras).
     // Offered once Hoenn's Hall of Fame is done (a region's boat opens after its Hall of Fame).
-    { MAPSEC_KANTO_VERMILION_CITY, MAP_KANTO_VERMILION_CITY, 23, 33, FLAG_SYS_GAME_CLEAR },
+    { MAPSEC_KANTO_VERMILION_CITY, MAP_KANTO_VERMILION_CITY, 23, 33, FLAG_VISITED_LITTLEROOT_TOWN }, // TEST ONLY: no Hall of Fame gate (FLAG_SYS_GAME_CLEAR on master)
 };
 
 static EWRAM_DATA u8 sRegionTransitList[REGION_TRANSIT_MAX_ROWS] = {0};
