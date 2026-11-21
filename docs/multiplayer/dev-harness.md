@@ -37,6 +37,7 @@ its own save file and its own multiplayer role, without going through menus.
 | `--audio-queue-ms <n>` | PS-058: how much audio is kept ready ahead of the sound card, 20–200 ms. Larger survives longer hitches but delays sound effects. | 50 |
 | `--audio-legacy` | **Test only** (PS-058). The v0.1.0 audio pacing (one sound frame per loop, no fades), to compare by ear. | off |
 | `--debug-loop-hz <hz>` | **Test only** (PS-058). Hold the main loop to `<hz>` iterations per second (10–1000, up to 3 decimals, e.g. `59.94`), like vsync on a monitor with that refresh rate. Used by the CI audio check. | off |
+| `--debug-warp <group> <num> [<x> <y>]` | **Test only** (PS-071/PS-094, TEST ONLY commit, never on `master`). The first **Continue** of this run lands on map `group`/`num` (0–127 each) instead of the saved location: on the map's heal spot if it has one, else on `x y` (0–127) if given, else on the map's centre. A map that does not exist is logged and ignored. See "Test only: reaching Kanto" below. | off |
 | `-h`, `--help` | Print help and exit. | |
 
 Rules:
@@ -51,6 +52,34 @@ Rules:
 On Windows the help and errors appear in the console window that opens next to the game. If you double-click
 the `.exe` with bad flags (for example from a shortcut), that window closes immediately, so run it from `cmd`
 to read the message.
+
+### Test only: reaching Kanto (PS-094)
+
+Kanto (`REGION_KANTO`, `docs/regions.md`) is not reachable in normal play until PS-095's boat. The
+`TEST ONLY` commit at the end of branch `ps-094-kanto-feasibility` (never merged to `master`) adds
+`--debug-warp <group> <num> [<x> <y>]`: the first **Continue** of the run lands on that map (on its
+heal spot if it has one). The PS-094 slice, map group / number:
+
+| Map | `--debug-warp` |
+|---|---|
+| Pallet Town (`MAP_KANTO_PALLET_TOWN`, lands on the heal spot in front of the player's house) | `34 0` |
+| Viridian City (lands on the Pokémon Center heal spot) | `34 1` |
+| Route 1 | `34 2` |
+| Pallet Town: player's house 1F / 2F, rival's house, Oak's lab | `35 0` / `35 1` / `35 2` / `35 3` |
+| Viridian City: house, gym, school, mart, Pokémon Center 1F / 2F | `36 0` / `36 1` / `36 2` / `36 3` / `36 4` / `36 5` |
+
+```
+pokemon-spectrum64.exe --save mytest.sav --debug-warp 34 0
+```
+
+Use a copy of your save: the game saves to it as usual, so the saved location afterwards is Kanto.
+(Any Hoenn map works too, e.g. `--debug-warp 0 9` is Littleroot Town.) The visited flags
+(`FLAG_VISITED_KANTO_PALLET_TOWN`, `..._VIRIDIAN_CITY`) are ordinary saved flags since PS-070, so the
+two Fly spots stay unlocked across restarts.
+
+Way back to Hoenn: Fly, then L/R on the Fly map to switch to HOENN and pick any unlocked city (there
+is no boat yet). Two instances with `--host` / `--join` and the same `--debug-warp` see each other
+in Pallet Town like on any Hoenn map.
 
 ## Running a host + client pair
 
