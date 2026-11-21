@@ -1,0 +1,15 @@
+# PS-094 slice: Pallet Town, Route 1, Viridian City and every interior they warp into.
+# One pokefirered map name (data/maps/<name>) per line; '#' starts a comment.
+PalletTown
+PalletTown_PlayersHouse_1F
+PalletTown_PlayersHouse_2F
+PalletTown_RivalsHouse
+PalletTown_ProfessorOaksLab
+Route1
+ViridianCity
+ViridianCity_House
+ViridianCity_Gym
+ViridianCity_School
+ViridianCity_Mart
+ViridianCity_PokemonCenter_1F
+ViridianCity_PokemonCenter_2F

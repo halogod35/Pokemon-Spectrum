@@ -133,10 +133,16 @@
       "y": 52
     },
     {
-      "id": "HEAL_LOCATION_TEMPLATE_TOWN",
-      "map": "MAP_TEMPLATE_TOWN",
-      "x": 9,
-      "y": 12
+      "id": "HEAL_LOCATION_KANTO_PALLET_TOWN",
+      "map": "MAP_KANTO_PALLET_TOWN",
+      "x": 6,
+      "y": 8
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_VIRIDIAN_CITY",
+      "map": "MAP_KANTO_VIRIDIAN_CITY",
+      "x": 26,
+      "y": 27
     }
   ]
 }

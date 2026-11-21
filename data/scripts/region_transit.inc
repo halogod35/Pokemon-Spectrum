@@ -3,7 +3,7 @@
 @ src/region.c; an entry is offered when its flag is set and it lies in another region than
 @ the player's, or in any region when VAR_0x8004 = 1) and warp there.
 @
-@ Example NPC script (the template town's sailor, data/maps/TemplateTown/scripts.inc, uses it):
+@ Example NPC script (a ferry sailor; the Kanto boat of PS-095 will be the first user):
 @
 @ MyTown_EventScript_Sailor::
 @ 	lock

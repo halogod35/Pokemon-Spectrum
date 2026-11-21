@@ -1,0 +1,15 @@
+# PS-094: FRLG map header constants -> Emerald constants (tools/kanto_import/kanto_import.pl).
+# Music: a FRLG MUS_X is mapped automatically to MUS_RG_X when Emerald has it (Emerald ships the
+# FRLG soundtrack as MUS_RG_*), else to MUS_X when that exists, else to the row here.
+# Battle scenes: FRLG's Elite Four backgrounds map onto Emerald's Elite Four slots.
+#
+# frlg	emerald	note
+MUS_VERMILLION	MUS_RG_VERMILLION	same spelling in both, listed for clarity
+MUS_SLOW_PALLET	MUS_RG_PALLET	Emerald has no slow variant
+MAP_BATTLE_SCENE_INDOOR_1	MAP_BATTLE_SCENE_NORMAL	FRLG indoor backgrounds
+MAP_BATTLE_SCENE_INDOOR_2	MAP_BATTLE_SCENE_NORMAL	FRLG indoor backgrounds
+MAP_BATTLE_SCENE_LINK	MAP_BATTLE_SCENE_NORMAL	link rooms
+MAP_BATTLE_SCENE_LORELEI	MAP_BATTLE_SCENE_SIDNEY	Elite Four 1
+MAP_BATTLE_SCENE_BRUNO	MAP_BATTLE_SCENE_PHOEBE	Elite Four 2
+MAP_BATTLE_SCENE_AGATHA	MAP_BATTLE_SCENE_GLACIA	Elite Four 3
+MAP_BATTLE_SCENE_LANCE	MAP_BATTLE_SCENE_DRAKE	Elite Four 4
