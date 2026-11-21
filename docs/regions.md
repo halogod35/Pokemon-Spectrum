@@ -82,7 +82,7 @@ from a pokefirered checkout (README in that directory): maps `data/maps/Kanto*`,
 512-metatile / 6-palette primary split, see the card PS-094), the `MAPSEC_KANTO_*` sections,
 `HEAL_LOCATION_KANTO_*`, the `FLAG_VISITED_KANTO_*` block in `constants/flags.h`, the
 `gMapGroup_Kanto*` groups, `src/data/tilesets/kanto_*.h`, `src/data/region_map/kanto_region.h`
-(layout, Fly spots, section range), `src/data/kanto_mp_groups.h` and the placeholder picture
+(layout, Fly spots, section range), `src/mp/kanto_mp_groups.h` and the placeholder picture
 `graphics/pokenav/region_map/kanto_map.bin`. Edit the converter or its tables, not the output.
 The hand-written parts are the table entry in `src/region.c`, `REGION_KANTO` in
 `constants/regions.h`, and the include/marker hooks listed in the converter's README. Until the

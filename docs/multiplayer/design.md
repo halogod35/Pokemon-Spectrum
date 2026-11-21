@@ -530,7 +530,7 @@ regions do not, exactly as for two Hoenn maps. What a new region does touch:
 
 - **`MP_IsValidMap`** (`mp_presence.c`): the per-group map count table `sMapGroupSizes` must get one
   entry per new map group (the compile-time checks fail the build otherwise). The Kanto groups
-  (PS-094) come from the generated `src/data/kanto_mp_groups.h` (`KANTO_MP_GROUP_SIZES` /
+  (PS-094) come from the generated `src/mp/kanto_mp_groups.h` (`KANTO_MP_GROUP_SIZES` /
   `KANTO_MP_GROUP_CHECKS`), starting at entry 34.
 - **Build hash:** every map or region table change changes it; host and client must run the same
   build, as before.

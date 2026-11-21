@@ -801,7 +801,7 @@ my %edits; # path => new content
         push @checks, "    MP_CHECK_GROUP($idx, $last); \\";
     }
     $sizes[-1] =~ s/ \\$//; $checks[-1] =~ s/ \\$//;
-    queue_write("$repo/src/data/kanto_mp_groups.h", $genHeader
+    queue_write("$repo/src/mp/kanto_mp_groups.h", $genHeader
         . "// One MP_GROUP_SIZE entry and one MP_CHECK_GROUP per Kanto map group, in map_groups.json order\n"
         . "// (used by src/mp/mp_presence.c, see docs/regions.md step 10).\n\n"
         . "#define KANTO_MP_GROUP_SIZES \\\n" . join("\n", @sizes) . "\n\n"

@@ -46,13 +46,13 @@ not translate and exits 1 without writing anything unless `--allow-unknown` is g
 | `include/constants/flags.h` (between `// KANTO_IMPORT_BEGIN` / `END`) | `FLAG_VISITED_KANTO_<SECTION>` per town/city section from `REGION_FLAGS_START + 0x10`, and `KANTO_FLAGS_END` |
 | `data/event_scripts.s` (between `@ KANTO_IMPORT_BEGIN` / `END`) | the `.include` lines |
 | `src/data/region_map/kanto_region.h` | `MAPSEC_KANTO_FIRST/LAST`, `sKantoRegionMapLayout[15][28]` (outdoor sections at FRLG's coordinates), `sKantoRegionFlySpots[]` (towns with a heal location) |
-| `src/data/kanto_mp_groups.h` | `KANTO_MP_GROUP_SIZES` / `KANTO_MP_GROUP_CHECKS` for `src/mp/mp_presence.c` |
+| `src/mp/kanto_mp_groups.h` | `KANTO_MP_GROUP_SIZES` / `KANTO_MP_GROUP_CHECKS` for `src/mp/mp_presence.c` |
 | `graphics/pokenav/region_map/kanto_map.bin` | placeholder region picture: town (`0x0D`) and route (`0x4D`) markers on open sea at the sections' cells; PS-095 draws the real one |
 
 One-time hooks the converter expects (already in place; it warns if one is missing): the two marker
 pairs above, `#include "data/tilesets/kanto_*.h"` in `src/tilesets.c`,
 `#include "data/region_map/kanto_region.h"` and the `REGION_KANTO` entry in `src/region.c`,
-`#include "data/kanto_mp_groups.h"` plus `KANTO_MP_GROUP_SIZES` / `KANTO_MP_GROUP_CHECKS` in
+`#include "kanto_mp_groups.h"` plus `KANTO_MP_GROUP_SIZES` / `KANTO_MP_GROUP_CHECKS` in
 `src/mp/mp_presence.c`, `REGION_KANTO` in `include/constants/regions.h`.
 
 ## Tables
