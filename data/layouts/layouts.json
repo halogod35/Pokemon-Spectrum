@@ -4412,6 +4412,526 @@
       "blockdata_filepath": "data/layouts/SootopolisCity_MysteryEventsHouse_1F_StairsUnblocked/map.bin"
     },
     {
+      "id": "LAYOUT_KANTO_CELADON_CITY",
+      "name": "KantoCeladonCity_Layout",
+      "width": 60,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeladonCity",
+      "border_filepath": "data/layouts/KantoCeladonCity/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_CONDOMINIUMS_1F",
+      "name": "KantoCeladonCity_Condominiums_1F_Layout",
+      "width": 15,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoCondominiums",
+      "border_filepath": "data/layouts/KantoCeladonCity_Condominiums_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_Condominiums_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_CONDOMINIUMS_2F",
+      "name": "KantoCeladonCity_Condominiums_2F_Layout",
+      "width": 15,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoCondominiums",
+      "border_filepath": "data/layouts/KantoCeladonCity_Condominiums_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_Condominiums_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_CONDOMINIUMS_3F",
+      "name": "KantoCeladonCity_Condominiums_3F_Layout",
+      "width": 15,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoCondominiums",
+      "border_filepath": "data/layouts/KantoCeladonCity_Condominiums_3F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_Condominiums_3F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_CONDOMINIUMS_ROOF",
+      "name": "KantoCeladonCity_Condominiums_Roof_Layout",
+      "width": 14,
+      "height": 23,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoCondominiums",
+      "border_filepath": "data/layouts/KantoCeladonCity_Condominiums_Roof/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_Condominiums_Roof/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_CONDOMINIUMS_ROOF_ROOM",
+      "name": "KantoCeladonCity_Condominiums_RoofRoom_Layout",
+      "width": 10,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSchool",
+      "border_filepath": "data/layouts/KantoCeladonCity_Condominiums_RoofRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_Condominiums_RoofRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_DEPARTMENT_STORE_1F",
+      "name": "KantoCeladonCity_DepartmentStore_1F_Layout",
+      "width": 13,
+      "height": 16,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoDepartmentStore",
+      "border_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_DEPARTMENT_STORE_2F",
+      "name": "KantoCeladonCity_DepartmentStore_2F_Layout",
+      "width": 13,
+      "height": 15,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoDepartmentStore",
+      "border_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_DEPARTMENT_STORE_3F",
+      "name": "KantoCeladonCity_DepartmentStore_3F_Layout",
+      "width": 13,
+      "height": 15,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoDepartmentStore",
+      "border_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_3F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_3F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_DEPARTMENT_STORE_4F",
+      "name": "KantoCeladonCity_DepartmentStore_4F_Layout",
+      "width": 13,
+      "height": 15,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoDepartmentStore",
+      "border_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_4F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_4F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_DEPARTMENT_STORE_5F",
+      "name": "KantoCeladonCity_DepartmentStore_5F_Layout",
+      "width": 13,
+      "height": 15,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoDepartmentStore",
+      "border_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_5F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_5F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_DEPARTMENT_STORE_ELEVATOR",
+      "name": "KantoCeladonCity_DepartmentStore_Elevator_Layout",
+      "width": 5,
+      "height": 7,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_Elevator/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_Elevator/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_DEPARTMENT_STORE_ROOF",
+      "name": "KantoCeladonCity_DepartmentStore_Roof_Layout",
+      "width": 19,
+      "height": 14,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoDepartmentStore",
+      "border_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_Roof/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_DepartmentStore_Roof/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_GAME_CORNER",
+      "name": "KantoCeladonCity_GameCorner_Layout",
+      "width": 18,
+      "height": 15,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGameCorner",
+      "border_filepath": "data/layouts/KantoCeladonCity_GameCorner/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_GameCorner/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_GAME_CORNER_PRIZE_ROOM",
+      "name": "KantoCeladonCity_GameCorner_PrizeRoom_Layout",
+      "width": 9,
+      "height": 10,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGameCorner",
+      "border_filepath": "data/layouts/KantoCeladonCity_GameCorner_PrizeRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_GameCorner_PrizeRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_GYM",
+      "name": "KantoCeladonCity_Gym_Layout",
+      "width": 13,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoCeladonGym",
+      "border_filepath": "data/layouts/KantoCeladonCity_Gym/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_Gym/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_HOTEL",
+      "name": "KantoCeladonCity_Hotel_Layout",
+      "width": 17,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoRestaurantHotel",
+      "border_filepath": "data/layouts/KantoCeladonCity_Hotel/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_Hotel/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CELADON_CITY_RESTAURANT",
+      "name": "KantoCeladonCity_Restaurant_Layout",
+      "width": 15,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoRestaurantHotel",
+      "border_filepath": "data/layouts/KantoCeladonCity_Restaurant/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeladonCity_Restaurant/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CAVE_1F",
+      "name": "KantoCeruleanCave_1F_Layout",
+      "width": 40,
+      "height": 23,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCave",
+      "border_filepath": "data/layouts/KantoCeruleanCave_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCave_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CAVE_2F",
+      "name": "KantoCeruleanCave_2F_Layout",
+      "width": 40,
+      "height": 23,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCave",
+      "border_filepath": "data/layouts/KantoCeruleanCave_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCave_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CAVE_B1F",
+      "name": "KantoCeruleanCave_B1F_Layout",
+      "width": 40,
+      "height": 23,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCave",
+      "border_filepath": "data/layouts/KantoCeruleanCave_B1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCave_B1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CITY",
+      "name": "KantoCeruleanCity_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCity",
+      "border_filepath": "data/layouts/KantoCeruleanCity/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCity/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CITY_BIKE_SHOP",
+      "name": "KantoCeruleanCity_BikeShop_Layout",
+      "width": 11,
+      "height": 10,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoBikeShop",
+      "border_filepath": "data/layouts/KantoCeruleanCity_BikeShop/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCity_BikeShop/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CITY_GYM",
+      "name": "KantoCeruleanCity_Gym_Layout",
+      "width": 17,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoCeruleanGym",
+      "border_filepath": "data/layouts/KantoCeruleanCity_Gym/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCity_Gym/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CITY_HOUSE1",
+      "name": "KantoCeruleanCity_House1_Layout",
+      "width": 10,
+      "height": 10,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoCeruleanCity_House1/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCity_House1/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CITY_HOUSE2",
+      "name": "KantoCeruleanCity_House2_Layout",
+      "width": 10,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoBurgledHouse",
+      "border_filepath": "data/layouts/KantoCeruleanCity_House2/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCity_House2/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CERULEAN_CITY_HOUSE5",
+      "name": "KantoCeruleanCity_House5_Layout",
+      "width": 11,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoCeruleanCity_House5/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCeruleanCity_House5/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CINNABAR_ISLAND",
+      "name": "KantoCinnabarIsland_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCinnabarIsland",
+      "border_filepath": "data/layouts/KantoCinnabarIsland/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCinnabarIsland/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CINNABAR_ISLAND_GYM",
+      "name": "KantoCinnabarIsland_Gym_Layout",
+      "width": 30,
+      "height": 25,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoCinnabarGym",
+      "border_filepath": "data/layouts/KantoCinnabarIsland_Gym/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCinnabarIsland_Gym/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CINNABAR_ISLAND_POKEMON_LAB_ENTRANCE",
+      "name": "KantoCinnabarIsland_PokemonLab_Entrance_Layout",
+      "width": 28,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoLab",
+      "border_filepath": "data/layouts/KantoCinnabarIsland_PokemonLab_Entrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCinnabarIsland_PokemonLab_Entrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CINNABAR_ISLAND_POKEMON_LAB_EXPERIMENT_ROOM",
+      "name": "KantoCinnabarIsland_PokemonLab_ExperimentRoom_Layout",
+      "width": 15,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoLab",
+      "border_filepath": "data/layouts/KantoCinnabarIsland_PokemonLab_ExperimentRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCinnabarIsland_PokemonLab_ExperimentRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CINNABAR_ISLAND_POKEMON_LAB_LOUNGE",
+      "name": "KantoCinnabarIsland_PokemonLab_Lounge_Layout",
+      "width": 15,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoLab",
+      "border_filepath": "data/layouts/KantoCinnabarIsland_PokemonLab_Lounge/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCinnabarIsland_PokemonLab_Lounge/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_CINNABAR_ISLAND_POKEMON_LAB_RESEARCH_ROOM",
+      "name": "KantoCinnabarIsland_PokemonLab_ResearchRoom_Layout",
+      "width": 15,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoLab",
+      "border_filepath": "data/layouts/KantoCinnabarIsland_PokemonLab_ResearchRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoCinnabarIsland_PokemonLab_ResearchRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_DIGLETTS_CAVE_B1F",
+      "name": "KantoDiglettsCave_B1F_Layout",
+      "width": 85,
+      "height": 80,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoDiglettsCave",
+      "border_filepath": "data/layouts/KantoDiglettsCave_B1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoDiglettsCave_B1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_DIGLETTS_CAVE_NORTH_ENTRANCE",
+      "name": "KantoDiglettsCave_NorthEntrance_Layout",
+      "width": 10,
+      "height": 8,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoDiglettsCave",
+      "border_filepath": "data/layouts/KantoDiglettsCave_NorthEntrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoDiglettsCave_NorthEntrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_DIGLETTS_CAVE_SOUTH_ENTRANCE",
+      "name": "KantoDiglettsCave_SouthEntrance_Layout",
+      "width": 10,
+      "height": 8,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoDiglettsCave",
+      "border_filepath": "data/layouts/KantoDiglettsCave_SouthEntrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoDiglettsCave_SouthEntrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ENTRANCE_1F",
+      "name": "KantoEntrance_1F_Layout",
+      "width": 13,
+      "height": 12,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoEntrance_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoEntrance_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ENTRANCE_2F",
+      "name": "KantoEntrance_2F_Layout",
+      "width": 13,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoEntrance_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoEntrance_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_FUCHSIA_CITY",
+      "name": "KantoFuchsiaCity_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoFuchsiaCity",
+      "border_filepath": "data/layouts/KantoFuchsiaCity/border.bin",
+      "blockdata_filepath": "data/layouts/KantoFuchsiaCity/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_FUCHSIA_CITY_GYM",
+      "name": "KantoFuchsiaCity_Gym_Layout",
+      "width": 15,
+      "height": 23,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoFuchsiaGym",
+      "border_filepath": "data/layouts/KantoFuchsiaCity_Gym/border.bin",
+      "blockdata_filepath": "data/layouts/KantoFuchsiaCity_Gym/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_FUCHSIA_CITY_HOUSE2",
+      "name": "KantoFuchsiaCity_House2_Layout",
+      "width": 10,
+      "height": 10,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoMuseum",
+      "border_filepath": "data/layouts/KantoFuchsiaCity_House2/border.bin",
+      "blockdata_filepath": "data/layouts/KantoFuchsiaCity_House2/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_FUCHSIA_CITY_SAFARI_ZONE_ENTRANCE",
+      "name": "KantoFuchsiaCity_SafariZone_Entrance_Layout",
+      "width": 9,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSafariZoneBuilding",
+      "border_filepath": "data/layouts/KantoFuchsiaCity_SafariZone_Entrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoFuchsiaCity_SafariZone_Entrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_FUCHSIA_CITY_SAFARI_ZONE_OFFICE",
+      "name": "KantoFuchsiaCity_SafariZone_Office_Layout",
+      "width": 20,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSafariZoneBuilding",
+      "border_filepath": "data/layouts/KantoFuchsiaCity_SafariZone_Office/border.bin",
+      "blockdata_filepath": "data/layouts/KantoFuchsiaCity_SafariZone_Office/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_FUCHSIA_CITY_WARDENS_HOUSE",
+      "name": "KantoFuchsiaCity_WardensHouse_Layout",
+      "width": 13,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoMuseum",
+      "border_filepath": "data/layouts/KantoFuchsiaCity_WardensHouse/border.bin",
+      "blockdata_filepath": "data/layouts/KantoFuchsiaCity_WardensHouse/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_HOUSE1",
+      "name": "KantoHouse1_Layout",
+      "width": 11,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding1",
+      "border_filepath": "data/layouts/KantoHouse1/border.bin",
+      "blockdata_filepath": "data/layouts/KantoHouse1/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_HOUSE2",
+      "name": "KantoHouse2_Layout",
+      "width": 11,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoHouse2/border.bin",
+      "blockdata_filepath": "data/layouts/KantoHouse2/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_HOUSE4",
+      "name": "KantoHouse4_Layout",
+      "width": 11,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoHouse4/border.bin",
+      "blockdata_filepath": "data/layouts/KantoHouse4/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_HOUSE5",
+      "name": "KantoHouse5_Layout",
+      "width": 11,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding1",
+      "border_filepath": "data/layouts/KantoHouse5/border.bin",
+      "blockdata_filepath": "data/layouts/KantoHouse5/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_INDIGO_PLATEAU_EXTERIOR",
+      "name": "KantoIndigoPlateau_Exterior_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoIndigoPlateau",
+      "border_filepath": "data/layouts/KantoIndigoPlateau_Exterior/border.bin",
+      "blockdata_filepath": "data/layouts/KantoIndigoPlateau_Exterior/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_INDIGO_PLATEAU_POKEMON_CENTER_1F",
+      "name": "KantoIndigoPlateau_PokemonCenter_1F_Layout",
+      "width": 25,
+      "height": 18,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonCenter",
+      "border_filepath": "data/layouts/KantoIndigoPlateau_PokemonCenter_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoIndigoPlateau_PokemonCenter_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_LAVENDER_TOWN",
+      "name": "KantoLavenderTown_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoLavenderTown",
+      "border_filepath": "data/layouts/KantoLavenderTown/border.bin",
+      "blockdata_filepath": "data/layouts/KantoLavenderTown/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_LAVENDER_TOWN_VOLUNTEER_POKEMON_HOUSE",
+      "name": "KantoLavenderTown_VolunteerPokemonHouse_Layout",
+      "width": 12,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoFanClubDaycare",
+      "border_filepath": "data/layouts/KantoLavenderTown_VolunteerPokemonHouse/border.bin",
+      "blockdata_filepath": "data/layouts/KantoLavenderTown_VolunteerPokemonHouse/map.bin"
+    },
+    {
       "id": "LAYOUT_KANTO_MART",
       "name": "KantoMart_Layout",
       "width": 11,
@@ -4420,6 +4940,36 @@
       "secondary_tileset": "gTileset_KantoMart",
       "border_filepath": "data/layouts/KantoMart/border.bin",
       "blockdata_filepath": "data/layouts/KantoMart/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_MT_MOON_1F",
+      "name": "KantoMtMoon_1F_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCave",
+      "border_filepath": "data/layouts/KantoMtMoon_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoMtMoon_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_MT_MOON_B1F",
+      "name": "KantoMtMoon_B1F_Layout",
+      "width": 49,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCave",
+      "border_filepath": "data/layouts/KantoMtMoon_B1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoMtMoon_B1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_MT_MOON_B2F",
+      "name": "KantoMtMoon_B2F_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCave",
+      "border_filepath": "data/layouts/KantoMtMoon_B2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoMtMoon_B2F/map.bin"
     },
     {
       "id": "LAYOUT_KANTO_PALLET_TOWN",
@@ -4472,6 +5022,46 @@
       "blockdata_filepath": "data/layouts/KantoPalletTown_RivalsHouse/map.bin"
     },
     {
+      "id": "LAYOUT_KANTO_PEWTER_CITY",
+      "name": "KantoPewterCity_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoPewterCity",
+      "border_filepath": "data/layouts/KantoPewterCity/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPewterCity/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_PEWTER_CITY_GYM",
+      "name": "KantoPewterCity_Gym_Layout",
+      "width": 13,
+      "height": 16,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPewterGym",
+      "border_filepath": "data/layouts/KantoPewterCity_Gym/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPewterCity_Gym/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_PEWTER_CITY_MUSEUM_1F",
+      "name": "KantoPewterCity_Museum_1F_Layout",
+      "width": 28,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoMuseum",
+      "border_filepath": "data/layouts/KantoPewterCity_Museum_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPewterCity_Museum_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_PEWTER_CITY_MUSEUM_2F",
+      "name": "KantoPewterCity_Museum_2F_Layout",
+      "width": 19,
+      "height": 10,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoMuseum",
+      "border_filepath": "data/layouts/KantoPewterCity_Museum_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPewterCity_Museum_2F/map.bin"
+    },
+    {
       "id": "LAYOUT_KANTO_POKEMON_CENTER_1F",
       "name": "KantoPokemonCenter_1F_Layout",
       "width": 15,
@@ -4492,6 +5082,256 @@
       "blockdata_filepath": "data/layouts/KantoPokemonCenter_2F/map.bin"
     },
     {
+      "id": "LAYOUT_KANTO_POKEMON_LEAGUE_AGATHAS_ROOM",
+      "name": "KantoPokemonLeague_AgathasRoom_Layout",
+      "width": 13,
+      "height": 13,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonLeague",
+      "border_filepath": "data/layouts/KantoPokemonLeague_AgathasRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonLeague_AgathasRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_LEAGUE_BRUNOS_ROOM",
+      "name": "KantoPokemonLeague_BrunosRoom_Layout",
+      "width": 13,
+      "height": 13,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonLeague",
+      "border_filepath": "data/layouts/KantoPokemonLeague_BrunosRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonLeague_BrunosRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_LEAGUE_CHAMPIONS_ROOM",
+      "name": "KantoPokemonLeague_ChampionsRoom_Layout",
+      "width": 13,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonLeague",
+      "border_filepath": "data/layouts/KantoPokemonLeague_ChampionsRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonLeague_ChampionsRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_LEAGUE_HALL_OF_FAME",
+      "name": "KantoPokemonLeague_HallOfFame_Layout",
+      "width": 11,
+      "height": 13,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoHallOfFame",
+      "border_filepath": "data/layouts/KantoPokemonLeague_HallOfFame/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonLeague_HallOfFame/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_LEAGUE_LANCES_ROOM",
+      "name": "KantoPokemonLeague_LancesRoom_Layout",
+      "width": 28,
+      "height": 24,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonLeague",
+      "border_filepath": "data/layouts/KantoPokemonLeague_LancesRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonLeague_LancesRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_LEAGUE_LORELEIS_ROOM",
+      "name": "KantoPokemonLeague_LoreleisRoom_Layout",
+      "width": 13,
+      "height": 13,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonLeague",
+      "border_filepath": "data/layouts/KantoPokemonLeague_LoreleisRoom/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonLeague_LoreleisRoom/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_MANSION_1F",
+      "name": "KantoPokemonMansion_1F_Layout",
+      "width": 38,
+      "height": 35,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonMansion",
+      "border_filepath": "data/layouts/KantoPokemonMansion_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonMansion_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_MANSION_2F",
+      "name": "KantoPokemonMansion_2F_Layout",
+      "width": 38,
+      "height": 38,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonMansion",
+      "border_filepath": "data/layouts/KantoPokemonMansion_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonMansion_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_MANSION_3F",
+      "name": "KantoPokemonMansion_3F_Layout",
+      "width": 38,
+      "height": 35,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonMansion",
+      "border_filepath": "data/layouts/KantoPokemonMansion_3F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonMansion_3F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_MANSION_B1F",
+      "name": "KantoPokemonMansion_B1F_Layout",
+      "width": 38,
+      "height": 35,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonMansion",
+      "border_filepath": "data/layouts/KantoPokemonMansion_B1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonMansion_B1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_TOWER_1F",
+      "name": "KantoPokemonTower_1F_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonTower",
+      "border_filepath": "data/layouts/KantoPokemonTower_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonTower_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_TOWER_2F",
+      "name": "KantoPokemonTower_2F_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonTower",
+      "border_filepath": "data/layouts/KantoPokemonTower_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonTower_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_TOWER_3F",
+      "name": "KantoPokemonTower_3F_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonTower",
+      "border_filepath": "data/layouts/KantoPokemonTower_3F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonTower_3F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_TOWER_4F",
+      "name": "KantoPokemonTower_4F_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonTower",
+      "border_filepath": "data/layouts/KantoPokemonTower_4F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonTower_4F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_TOWER_5F",
+      "name": "KantoPokemonTower_5F_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonTower",
+      "border_filepath": "data/layouts/KantoPokemonTower_5F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonTower_5F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_TOWER_6F",
+      "name": "KantoPokemonTower_6F_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonTower",
+      "border_filepath": "data/layouts/KantoPokemonTower_6F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonTower_6F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POKEMON_TOWER_7F",
+      "name": "KantoPokemonTower_7F_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPokemonTower",
+      "border_filepath": "data/layouts/KantoPokemonTower_7F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPokemonTower_7F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_POWER_PLANT",
+      "name": "KantoPowerPlant_Layout",
+      "width": 49,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPowerPlant",
+      "border_filepath": "data/layouts/KantoPowerPlant/border.bin",
+      "blockdata_filepath": "data/layouts/KantoPowerPlant/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROCKET_HIDEOUT_B1F",
+      "name": "KantoRocketHideout_B1F_Layout",
+      "width": 28,
+      "height": 34,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoRocketHideout_B1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRocketHideout_B1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROCKET_HIDEOUT_B2F",
+      "name": "KantoRocketHideout_B2F_Layout",
+      "width": 32,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoRocketHideout_B2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRocketHideout_B2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROCKET_HIDEOUT_B3F",
+      "name": "KantoRocketHideout_B3F_Layout",
+      "width": 22,
+      "height": 27,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoRocketHideout_B3F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRocketHideout_B3F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROCKET_HIDEOUT_B4F",
+      "name": "KantoRocketHideout_B4F_Layout",
+      "width": 24,
+      "height": 26,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoRocketHideout_B4F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRocketHideout_B4F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROCKET_HIDEOUT_ELEVATOR",
+      "name": "KantoRocketHideout_Elevator_Layout",
+      "width": 5,
+      "height": 7,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoRocketHideout_Elevator/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRocketHideout_Elevator/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROCK_TUNNEL_1F",
+      "name": "KantoRockTunnel_1F_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoRockTunnel",
+      "border_filepath": "data/layouts/KantoRockTunnel_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRockTunnel_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROCK_TUNNEL_B1F",
+      "name": "KantoRockTunnel_B1F_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoRockTunnel",
+      "border_filepath": "data/layouts/KantoRockTunnel_B1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRockTunnel_B1F/map.bin"
+    },
+    {
       "id": "LAYOUT_KANTO_ROUTE1",
       "name": "KantoRoute1_Layout",
       "width": 24,
@@ -4500,6 +5340,826 @@
       "secondary_tileset": "gTileset_KantoPalletTown",
       "border_filepath": "data/layouts/KantoRoute1/border.bin",
       "blockdata_filepath": "data/layouts/KantoRoute1/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE10",
+      "name": "KantoRoute10_Layout",
+      "width": 24,
+      "height": 80,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoLavenderTown",
+      "border_filepath": "data/layouts/KantoRoute10/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute10/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE11",
+      "name": "KantoRoute11_Layout",
+      "width": 72,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoVermilionCity",
+      "border_filepath": "data/layouts/KantoRoute11/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute11/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE12",
+      "name": "KantoRoute12_Layout",
+      "width": 24,
+      "height": 120,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoLavenderTown",
+      "border_filepath": "data/layouts/KantoRoute12/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute12/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE12_NORTH_ENTRANCE_1F",
+      "name": "KantoRoute12_NorthEntrance_1F_Layout",
+      "width": 11,
+      "height": 13,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoRoute12_NorthEntrance_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute12_NorthEntrance_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE13",
+      "name": "KantoRoute13_Layout",
+      "width": 72,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoLavenderTown",
+      "border_filepath": "data/layouts/KantoRoute13/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute13/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE14",
+      "name": "KantoRoute14_Layout",
+      "width": 24,
+      "height": 60,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoLavenderTown",
+      "border_filepath": "data/layouts/KantoRoute14/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute14/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE15",
+      "name": "KantoRoute15_Layout",
+      "width": 72,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoFuchsiaCity",
+      "border_filepath": "data/layouts/KantoRoute15/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute15/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE16",
+      "name": "KantoRoute16_Layout",
+      "width": 48,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeladonCity",
+      "border_filepath": "data/layouts/KantoRoute16/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute16/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE16_NORTH_ENTRANCE_1F",
+      "name": "KantoRoute16_NorthEntrance_1F_Layout",
+      "width": 13,
+      "height": 18,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoRoute16_NorthEntrance_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute16_NorthEntrance_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE17",
+      "name": "KantoRoute17_Layout",
+      "width": 24,
+      "height": 160,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeladonCity",
+      "border_filepath": "data/layouts/KantoRoute17/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute17/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE18",
+      "name": "KantoRoute18_Layout",
+      "width": 60,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeladonCity",
+      "border_filepath": "data/layouts/KantoRoute18/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute18/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE19",
+      "name": "KantoRoute19_Layout",
+      "width": 24,
+      "height": 60,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoFuchsiaCity",
+      "border_filepath": "data/layouts/KantoRoute19/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute19/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE2",
+      "name": "KantoRoute2_Layout",
+      "width": 24,
+      "height": 80,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoViridianCity",
+      "border_filepath": "data/layouts/KantoRoute2/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute2/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE20",
+      "name": "KantoRoute20_Layout",
+      "width": 120,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCinnabarIsland",
+      "border_filepath": "data/layouts/KantoRoute20/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute20/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE21_NORTH",
+      "name": "KantoRoute21_North_Layout",
+      "width": 24,
+      "height": 50,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoPalletTown",
+      "border_filepath": "data/layouts/KantoRoute21_North/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute21_North/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE21_SOUTH",
+      "name": "KantoRoute21_South_Layout",
+      "width": 24,
+      "height": 50,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCinnabarIsland",
+      "border_filepath": "data/layouts/KantoRoute21_South/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute21_South/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE22",
+      "name": "KantoRoute22_Layout",
+      "width": 48,
+      "height": 24,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoViridianCity",
+      "border_filepath": "data/layouts/KantoRoute22/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute22/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE22_NORTH_ENTRANCE",
+      "name": "KantoRoute22_NorthEntrance_Layout",
+      "width": 15,
+      "height": 12,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoRoute22_NorthEntrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute22_NorthEntrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE23",
+      "name": "KantoRoute23_Layout",
+      "width": 24,
+      "height": 160,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoIndigoPlateau",
+      "border_filepath": "data/layouts/KantoRoute23/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute23/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE24",
+      "name": "KantoRoute24_Layout",
+      "width": 24,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCity",
+      "border_filepath": "data/layouts/KantoRoute24/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute24/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE25",
+      "name": "KantoRoute25_Layout",
+      "width": 72,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCity",
+      "border_filepath": "data/layouts/KantoRoute25/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute25/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE25_SEA_COTTAGE",
+      "name": "KantoRoute25_SeaCottage_Layout",
+      "width": 15,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSeaCottage",
+      "border_filepath": "data/layouts/KantoRoute25_SeaCottage/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute25_SeaCottage/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE2_ENTRANCE",
+      "name": "KantoRoute2_Entrance_Layout",
+      "width": 15,
+      "height": 12,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoRoute2_Entrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute2_Entrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE3",
+      "name": "KantoRoute3_Layout",
+      "width": 84,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoPewterCity",
+      "border_filepath": "data/layouts/KantoRoute3/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute3/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE4",
+      "name": "KantoRoute4_Layout",
+      "width": 108,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCity",
+      "border_filepath": "data/layouts/KantoRoute4/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute4/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE5",
+      "name": "KantoRoute5_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCity",
+      "border_filepath": "data/layouts/KantoRoute5/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute5/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE5_POKEMON_DAY_CARE",
+      "name": "KantoRoute5_PokemonDayCare_Layout",
+      "width": 12,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoFanClubDaycare",
+      "border_filepath": "data/layouts/KantoRoute5_PokemonDayCare/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute5_PokemonDayCare/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE6",
+      "name": "KantoRoute6_Layout",
+      "width": 24,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoVermilionCity",
+      "border_filepath": "data/layouts/KantoRoute6/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute6/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE7",
+      "name": "KantoRoute7_Layout",
+      "width": 24,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeladonCity",
+      "border_filepath": "data/layouts/KantoRoute7/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute7/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE8",
+      "name": "KantoRoute8_Layout",
+      "width": 72,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoLavenderTown",
+      "border_filepath": "data/layouts/KantoRoute8/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute8/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_ROUTE9",
+      "name": "KantoRoute9_Layout",
+      "width": 72,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCeruleanCity",
+      "border_filepath": "data/layouts/KantoRoute9/border.bin",
+      "blockdata_filepath": "data/layouts/KantoRoute9/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFARI_ZONE_CENTER",
+      "name": "KantoSafariZone_Center_Layout",
+      "width": 51,
+      "height": 36,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoFuchsiaCity",
+      "border_filepath": "data/layouts/KantoSafariZone_Center/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSafariZone_Center/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFARI_ZONE_EAST",
+      "name": "KantoSafariZone_East_Layout",
+      "width": 54,
+      "height": 35,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoFuchsiaCity",
+      "border_filepath": "data/layouts/KantoSafariZone_East/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSafariZone_East/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFARI_ZONE_NORTH",
+      "name": "KantoSafariZone_North_Layout",
+      "width": 57,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoFuchsiaCity",
+      "border_filepath": "data/layouts/KantoSafariZone_North/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSafariZone_North/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFARI_ZONE_REST_HOUSE",
+      "name": "KantoSafariZone_RestHouse_Layout",
+      "width": 13,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSafariZoneBuilding",
+      "border_filepath": "data/layouts/KantoSafariZone_RestHouse/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSafariZone_RestHouse/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFARI_ZONE_SECRET_HOUSE",
+      "name": "KantoSafariZone_SecretHouse_Layout",
+      "width": 13,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSafariZoneBuilding",
+      "border_filepath": "data/layouts/KantoSafariZone_SecretHouse/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSafariZone_SecretHouse/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFARI_ZONE_WEST",
+      "name": "KantoSafariZone_West_Layout",
+      "width": 48,
+      "height": 36,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoFuchsiaCity",
+      "border_filepath": "data/layouts/KantoSafariZone_West/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSafariZone_West/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY",
+      "name": "KantoSaffronCity_Layout",
+      "width": 66,
+      "height": 55,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSaffronCity",
+      "border_filepath": "data/layouts/KantoSaffronCity/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY_CONNECTION",
+      "name": "KantoSaffronCity_Connection_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSaffronCity",
+      "border_filepath": "data/layouts/KantoSaffronCity_Connection/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity_Connection/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY_COPYCATS_HOUSE_1F",
+      "name": "KantoSaffronCity_CopycatsHouse_1F_Layout",
+      "width": 13,
+      "height": 10,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding1",
+      "border_filepath": "data/layouts/KantoSaffronCity_CopycatsHouse_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity_CopycatsHouse_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY_COPYCATS_HOUSE_2F",
+      "name": "KantoSaffronCity_CopycatsHouse_2F_Layout",
+      "width": 12,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding1",
+      "border_filepath": "data/layouts/KantoSaffronCity_CopycatsHouse_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity_CopycatsHouse_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY_DOJO",
+      "name": "KantoSaffronCity_Dojo_Layout",
+      "width": 13,
+      "height": 16,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoPewterGym",
+      "border_filepath": "data/layouts/KantoSaffronCity_Dojo/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity_Dojo/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY_EAST_WEST_ENTRANCE",
+      "name": "KantoSaffronCity_EastWestEntrance_Layout",
+      "width": 13,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoSaffronCity_EastWestEntrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity_EastWestEntrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY_GYM",
+      "name": "KantoSaffronCity_Gym_Layout",
+      "width": 29,
+      "height": 25,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSaffronGym",
+      "border_filepath": "data/layouts/KantoSaffronCity_Gym/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity_Gym/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY_NORTH_SOUTH_ENTRANCE",
+      "name": "KantoSaffronCity_NorthSouthEntrance_Layout",
+      "width": 9,
+      "height": 11,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoSaffronCity_NorthSouthEntrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity_NorthSouthEntrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SAFFRON_CITY_POKEMON_TRAINER_FAN_CLUB",
+      "name": "KantoSaffronCity_PokemonTrainerFanClub_Layout",
+      "width": 11,
+      "height": 17,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoFanClubDaycare",
+      "border_filepath": "data/layouts/KantoSaffronCity_PokemonTrainerFanClub/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSaffronCity_PokemonTrainerFanClub/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SEAFOAM_ISLANDS_1F",
+      "name": "KantoSeafoamIslands_1F_Layout",
+      "width": 38,
+      "height": 24,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSeafoamIslands",
+      "border_filepath": "data/layouts/KantoSeafoamIslands_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSeafoamIslands_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SEAFOAM_ISLANDS_B1F",
+      "name": "KantoSeafoamIslands_B1F_Layout",
+      "width": 38,
+      "height": 23,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSeafoamIslands",
+      "border_filepath": "data/layouts/KantoSeafoamIslands_B1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSeafoamIslands_B1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SEAFOAM_ISLANDS_B2F",
+      "name": "KantoSeafoamIslands_B2F_Layout",
+      "width": 38,
+      "height": 24,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSeafoamIslands",
+      "border_filepath": "data/layouts/KantoSeafoamIslands_B2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSeafoamIslands_B2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SEAFOAM_ISLANDS_B3F",
+      "name": "KantoSeafoamIslands_B3F_Layout",
+      "width": 38,
+      "height": 24,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSeafoamIslands",
+      "border_filepath": "data/layouts/KantoSeafoamIslands_B3F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSeafoamIslands_B3F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SEAFOAM_ISLANDS_B4F",
+      "name": "KantoSeafoamIslands_B4F_Layout",
+      "width": 38,
+      "height": 24,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSeafoamIslands",
+      "border_filepath": "data/layouts/KantoSeafoamIslands_B4F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSeafoamIslands_B4F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_10F",
+      "name": "KantoSilphCo_10F_Layout",
+      "width": 17,
+      "height": 19,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_10F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_10F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_11F",
+      "name": "KantoSilphCo_11F_Layout",
+      "width": 17,
+      "height": 20,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_11F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_11F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_1F",
+      "name": "KantoSilphCo_1F_Layout",
+      "width": 36,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_2F",
+      "name": "KantoSilphCo_2F_Layout",
+      "width": 36,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_3F",
+      "name": "KantoSilphCo_3F_Layout",
+      "width": 36,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_3F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_3F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_4F",
+      "name": "KantoSilphCo_4F_Layout",
+      "width": 36,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_4F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_4F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_5F",
+      "name": "KantoSilphCo_5F_Layout",
+      "width": 36,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_5F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_5F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_6F",
+      "name": "KantoSilphCo_6F_Layout",
+      "width": 31,
+      "height": 19,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_6F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_6F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_7F",
+      "name": "KantoSilphCo_7F_Layout",
+      "width": 31,
+      "height": 19,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_7F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_7F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_8F",
+      "name": "KantoSilphCo_8F_Layout",
+      "width": 31,
+      "height": 19,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_8F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_8F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_9F",
+      "name": "KantoSilphCo_9F_Layout",
+      "width": 31,
+      "height": 19,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_9F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_9F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SILPH_CO_ELEVATOR",
+      "name": "KantoSilphCo_Elevator_Layout",
+      "width": 5,
+      "height": 7,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoSilphCo",
+      "border_filepath": "data/layouts/KantoSilphCo_Elevator/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSilphCo_Elevator/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_1F_CORRIDOR",
+      "name": "KantoSSAnne_1F_Corridor_Layout",
+      "width": 31,
+      "height": 21,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_1F_Corridor/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_1F_Corridor/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_2F_CORRIDOR",
+      "name": "KantoSSAnne_2F_Corridor_Layout",
+      "width": 34,
+      "height": 16,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_2F_Corridor/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_2F_Corridor/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_3F_CORRIDOR",
+      "name": "KantoSSAnne_3F_Corridor_Layout",
+      "width": 22,
+      "height": 7,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_3F_Corridor/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_3F_Corridor/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_B1F_CORRIDOR",
+      "name": "KantoSSAnne_B1F_Corridor_Layout",
+      "width": 23,
+      "height": 7,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_B1F_Corridor/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_B1F_Corridor/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_CAPTAINS_OFFICE",
+      "name": "KantoSSAnne_CaptainsOffice_Layout",
+      "width": 9,
+      "height": 10,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_CaptainsOffice/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_CaptainsOffice/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_DECK",
+      "name": "KantoSSAnne_Deck_Layout",
+      "width": 24,
+      "height": 19,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_Deck/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_Deck/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_EXTERIOR",
+      "name": "KantoSSAnne_Exterior_Layout",
+      "width": 70,
+      "height": 32,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoVermilionCity",
+      "border_filepath": "data/layouts/KantoSSAnne_Exterior/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_Exterior/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_KITCHEN",
+      "name": "KantoSSAnne_Kitchen_Layout",
+      "width": 16,
+      "height": 14,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_Kitchen/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_Kitchen/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_ROOM1",
+      "name": "KantoSSAnne_Room1_Layout",
+      "width": 6,
+      "height": 8,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_Room1/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_Room1/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_SSANNE_ROOM2",
+      "name": "KantoSSAnne_Room2_Layout",
+      "width": 6,
+      "height": 9,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoSSAnne",
+      "border_filepath": "data/layouts/KantoSSAnne_Room2/border.bin",
+      "blockdata_filepath": "data/layouts/KantoSSAnne_Room2/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_UNDERGROUND_PATH_EAST_WEST_TUNNEL",
+      "name": "KantoUndergroundPath_EastWestTunnel_Layout",
+      "width": 80,
+      "height": 7,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoUndergroundPath",
+      "border_filepath": "data/layouts/KantoUndergroundPath_EastWestTunnel/border.bin",
+      "blockdata_filepath": "data/layouts/KantoUndergroundPath_EastWestTunnel/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_UNDERGROUND_PATH_ENTRANCE",
+      "name": "KantoUndergroundPath_Entrance_Layout",
+      "width": 13,
+      "height": 10,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoGenericBuilding2",
+      "border_filepath": "data/layouts/KantoUndergroundPath_Entrance/border.bin",
+      "blockdata_filepath": "data/layouts/KantoUndergroundPath_Entrance/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_UNDERGROUND_PATH_NORTH_SOUTH_TUNNEL",
+      "name": "KantoUndergroundPath_NorthSouthTunnel_Layout",
+      "width": 8,
+      "height": 63,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoUndergroundPath",
+      "border_filepath": "data/layouts/KantoUndergroundPath_NorthSouthTunnel/border.bin",
+      "blockdata_filepath": "data/layouts/KantoUndergroundPath_NorthSouthTunnel/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_VERMILION_CITY",
+      "name": "KantoVermilionCity_Layout",
+      "width": 48,
+      "height": 40,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoVermilionCity",
+      "border_filepath": "data/layouts/KantoVermilionCity/border.bin",
+      "blockdata_filepath": "data/layouts/KantoVermilionCity/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_VERMILION_CITY_GYM",
+      "name": "KantoVermilionCity_Gym_Layout",
+      "width": 11,
+      "height": 21,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoVermilionGym",
+      "border_filepath": "data/layouts/KantoVermilionCity_Gym/border.bin",
+      "blockdata_filepath": "data/layouts/KantoVermilionCity_Gym/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_VERMILION_CITY_POKEMON_FAN_CLUB",
+      "name": "KantoVermilionCity_PokemonFanClub_Layout",
+      "width": 12,
+      "height": 12,
+      "primary_tileset": "gTileset_KantoBuilding",
+      "secondary_tileset": "gTileset_KantoFanClubDaycare",
+      "border_filepath": "data/layouts/KantoVermilionCity_PokemonFanClub/border.bin",
+      "blockdata_filepath": "data/layouts/KantoVermilionCity_PokemonFanClub/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_VICTORY_ROAD_1F",
+      "name": "KantoVictoryRoad_1F_Layout",
+      "width": 48,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCave",
+      "border_filepath": "data/layouts/KantoVictoryRoad_1F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoVictoryRoad_1F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_VICTORY_ROAD_2F",
+      "name": "KantoVictoryRoad_2F_Layout",
+      "width": 51,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCave",
+      "border_filepath": "data/layouts/KantoVictoryRoad_2F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoVictoryRoad_2F/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_VICTORY_ROAD_3F",
+      "name": "KantoVictoryRoad_3F_Layout",
+      "width": 45,
+      "height": 22,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoCave",
+      "border_filepath": "data/layouts/KantoVictoryRoad_3F/border.bin",
+      "blockdata_filepath": "data/layouts/KantoVictoryRoad_3F/map.bin"
     },
     {
       "id": "LAYOUT_KANTO_VIRIDIAN_CITY",
@@ -4540,6 +6200,16 @@
       "secondary_tileset": "gTileset_KantoSchool",
       "border_filepath": "data/layouts/KantoViridianCity_School/border.bin",
       "blockdata_filepath": "data/layouts/KantoViridianCity_School/map.bin"
+    },
+    {
+      "id": "LAYOUT_KANTO_VIRIDIAN_FOREST",
+      "name": "KantoViridianForest_Layout",
+      "width": 54,
+      "height": 69,
+      "primary_tileset": "gTileset_KantoGeneral",
+      "secondary_tileset": "gTileset_KantoViridianForest",
+      "border_filepath": "data/layouts/KantoViridianForest/border.bin",
+      "blockdata_filepath": "data/layouts/KantoViridianForest/map.bin"
     }
   ]
 }

@@ -143,6 +143,72 @@
       "map": "MAP_KANTO_VIRIDIAN_CITY",
       "x": 26,
       "y": 27
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_PEWTER_CITY",
+      "map": "MAP_KANTO_PEWTER_CITY",
+      "x": 17,
+      "y": 26
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_CERULEAN_CITY",
+      "map": "MAP_KANTO_CERULEAN_CITY",
+      "x": 22,
+      "y": 20
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_LAVENDER_TOWN",
+      "map": "MAP_KANTO_LAVENDER_TOWN",
+      "x": 6,
+      "y": 6
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_VERMILION_CITY",
+      "map": "MAP_KANTO_VERMILION_CITY",
+      "x": 15,
+      "y": 7
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_CELADON_CITY",
+      "map": "MAP_KANTO_CELADON_CITY",
+      "x": 48,
+      "y": 12
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_FUCHSIA_CITY",
+      "map": "MAP_KANTO_FUCHSIA_CITY",
+      "x": 25,
+      "y": 32
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_CINNABAR_ISLAND",
+      "map": "MAP_KANTO_CINNABAR_ISLAND",
+      "x": 14,
+      "y": 12
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_INDIGO_PLATEAU",
+      "map": "MAP_KANTO_INDIGO_PLATEAU_EXTERIOR",
+      "x": 11,
+      "y": 7
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_SAFFRON_CITY",
+      "map": "MAP_KANTO_SAFFRON_CITY",
+      "x": 24,
+      "y": 39
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_ROUTE4",
+      "map": "MAP_KANTO_ROUTE4",
+      "x": 12,
+      "y": 6
+    },
+    {
+      "id": "HEAL_LOCATION_KANTO_ROUTE10",
+      "map": "MAP_KANTO_ROUTE10",
+      "x": 13,
+      "y": 21
     }
   ]
 }

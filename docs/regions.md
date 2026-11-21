@@ -60,7 +60,8 @@ hold a section id above 0xFF. Rule (`GetMetLocationForMapSec`, `region.c`):
    `BG_PLTT_ID(7)`). Tile 0x0D is Hoenn's inland town marker, 0x00 is open sea.
 7. **Layout.** A `[REGION_MAP_HEIGHT][REGION_MAP_WIDTH]` array of `MAPSEC_*` (`MAPSEC_NONE`
    for empty cells), like the generated `src/data/region_map/kanto_region.h`. It must agree
-   with the `x`/`y` in step 2.
+   with the `x`/`y` in step 2: cell `(x, y)` of the layout is drawn on tile `(x + 1, y + 2)` of the
+   picture's tilemap (`MAPCURSOR_X_MIN` / `Y_MIN` in `src/region_map.c`).
 8. **Table entry.** `src/region.c` `sRegions[REGION_<NAME>]`: name (up to 10 characters fit
    the Fly window line), `mapSecStart`/`mapSecEnd`, `metLocation` (next free alias:
    `METLOC_REGION_START + n`), layout, graphics, Fly spots, `hasPokenavMap`, `popupTheme`,
@@ -76,18 +77,41 @@ hold a section id above 0xFF. Rule (`GetMetLocationForMapSec`, `region.c`):
 
 ## Kanto (PS-093, imported from pret/pokefirered)
 
-`REGION_KANTO` is region 1. Its map data is **generated** by `tools/kanto_import/kanto_import.pl`
-from a pokefirered checkout (README in that directory): maps `data/maps/Kanto*`, layouts
-`data/layouts/Kanto*`, tilesets `data/tilesets/*/kanto_*` (re-packed to Emerald's 512-tile /
-512-metatile / 6-palette primary split, see the card PS-094), the `MAPSEC_KANTO_*` sections,
-`HEAL_LOCATION_KANTO_*`, the `FLAG_VISITED_KANTO_*` block in `constants/flags.h`, the
-`gMapGroup_Kanto*` groups, `src/data/tilesets/kanto_*.h`, `src/data/region_map/kanto_region.h`
-(layout, Fly spots, section range), `src/mp/kanto_mp_groups.h` and the placeholder picture
-`graphics/pokenav/region_map/kanto_map.bin`. Edit the converter or its tables, not the output.
-The hand-written parts are the table entry in `src/region.c`, `REGION_KANTO` in
-`constants/regions.h`, and the include/marker hooks listed in the converter's README. Until the
-boat from Hoenn (PS-095) exists Kanto is **not reachable in normal play**; test builds add a
-`TEST ONLY` commit with `--debug-warp` (`docs/multiplayer/dev-harness.md`).
+`REGION_KANTO` is region 1: every Kanto map of FireRed/LeafGreen (PS-095: 256 maps in 29 groups,
+180 layouts, 51 tilesets, 53 map sections, 11 Fly spots, 13 heal locations; the Sevii Islands,
+FRLG's link rooms, Navel Rock / Birth Island and the Trainer Tower are left out, see
+`tools/kanto_import/maps_ps095.txt`). It is **map data only**: no NPCs, trainers, items, signs,
+scripts or dialogue (epic PS-093), no wild encounters (PS-097), no tileset animations, door
+animations, spinners or current water (PS-096). The two sailors of the boat are the only NPCs.
+
+**Generated** by `tools/kanto_import/kanto_import.pl` from a pokefirered checkout (README in that
+directory): maps `data/maps/Kanto*`, layouts `data/layouts/Kanto*`, tilesets
+`data/tilesets/*/kanto_*` (re-packed to Emerald's 512-tile / 512-metatile / 6-palette primary
+split, see the card PS-094) with their entries between the `KANTO_IMPORT` markers of
+`src/data/tilesets/{graphics,metatiles,headers}.h` (so Porymap lists `gTileset_Kanto*`), the
+`MAPSEC_KANTO_*` sections, `HEAL_LOCATION_KANTO_*`, the `FLAG_VISITED_KANTO_*` block in
+`constants/flags.h`, the `gMapGroup_Kanto*` groups, `src/data/region_map/kanto_region.h` (layout,
+Fly spots, section range) and `src/mp/kanto_mp_groups.h`. The Kanto picture
+(`graphics/pokenav/region_map/kanto_map.{png,pal,bin}`) is converted from pokefirered's region map
+by `tools/kanto_import/kanto_region_map.pl`. Edit the converter, its tables or its `extras/`, never
+the output; re-run both scripts after a change.
+
+**Hand-written**: the table entry in `src/region.c` (picture, `hasPokenavMap = TRUE`, popup theme,
+badges 9-16), `REGION_KANTO` in `constants/regions.h`, the marker hooks listed in the converter's
+README, and the boat: `sRegionTransitDestinations[]` holds one harbour per region, Slateport City's
+ferry terminal and Vermilion City's S.S. ANNE pier. The sailor in Slateport's harbour
+(`data/maps/SlateportCity_Harbor/scripts.inc`) sails to Vermilion once `FLAG_SYS_GAME_CLEAR` is
+set (Hoenn's Hall of Fame); the sailor on Vermilion's pier (`tools/kanto_import/extras/`) always
+sails back to Slateport. Both use `data/scripts/region_transit.inc`.
+
+**Region map.** The sections keep pokefirered's cell coordinates: towns and routes sit on the 22x15
+cursor grid as in FRLG; dungeons and indoor-only sections are off the grid but carry the cell of
+FRLG's dungeon icon or of the map that leads into them, so the cursor opens where the player is
+(the name shown is the dungeon's, moving the cursor shows the route's). Fly spots: the eleven towns
+with a heal location (every Pokémon Center town, Pallet Town and the Indigo Plateau), each with a
+visited flag set by its `ON_TRANSITION`. `kanto_region_map.pl` places FRLG's picture so that each
+cursor cell covers the same piece of the picture as in FRLG (FRLG tile `(gx + 4, gy + 4)` lands on
+Emerald's `(gx + 1, gy + 2)`), without FRLG's frame and buttons; 172 8bpp tiles and 25 colours.
 
 ## Flag space note
 

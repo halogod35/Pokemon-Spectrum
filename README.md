@@ -120,6 +120,10 @@ The Options menu scrolls: seven rows at a time, with arrows on the frame when th
 
 - **EXIT** in the START menu asks for confirmation and returns to the title screen without closing the game. Anything not saved is lost; CONTINUE picks up from your last save.
 
+### Kanto
+
+- **Kanto by boat.** After the Hall of Fame, a sailor in Slateport's harbour sails to Vermilion City: all of Kanto's maps from FireRed/LeafGreen are walkable, with their own Fly map, but there are no people, trainers, items or story there yet.
+
 ### Save file
 
 The game saves to `pokemon-spectrum.sav` next to its exe file. The same save works with the 32-bit and 64-bit builds, on Windows and Linux. Saving is crash-safe: the new save replaces the old one only once it's completely written.

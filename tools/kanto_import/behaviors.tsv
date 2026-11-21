@@ -8,7 +8,7 @@
 #
 # frlg	emerald	note
 MB_RUNNING_DISALLOWED	MB_NO_RUNNING	same id 0x0A, renamed
-MB_FAST_WATER	-	Sevii only (3025 cells): fast current water, no Emerald mechanic
+MB_FAST_WATER	MB_OCEAN_WATER	? current water: Seafoam Islands B3F/B4F (3 metatiles) and Sevii (3025 cells); the current that carries the player is not implemented (PS-096), plain surfable water until then
 MB_UNUSED_WATER	MB_POND_WATER	unused in layouts
 MB_UNDERWATER_BLOCKED_ABOVE	MB_NO_SURFACING	unused in layouts
 MB_CYCLING_ROAD_WATER	MB_OCEAN_WATER	? Route 17 water next to the cycling road (751 cells); FRLG only uses it for reflections
