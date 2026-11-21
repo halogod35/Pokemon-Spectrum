@@ -100,6 +100,7 @@ sub read_tsv
     my $f = shift; my %t;
     for (split /\n/, slurp($f))
     {
+        s/\r$//; # CRLF checkouts
         next if /^\s*(#|$)/;
         my ($from, $to, $noteText) = split /\t/;
         $t{$from} = { to => $to, note => $noteText // '' };
