@@ -53,33 +53,37 @@ On Windows the help and errors appear in the console window that opens next to t
 the `.exe` with bad flags (for example from a shortcut), that window closes immediately, so run it from `cmd`
 to read the message.
 
-### Test only: reaching Kanto (PS-094)
+### Test only: reaching Kanto (PS-094 / PS-095)
 
-Kanto (`REGION_KANTO`, `docs/regions.md`) is not reachable in normal play until PS-095's boat. The
-`TEST ONLY` commit at the end of branch `ps-094-kanto-feasibility` (never merged to `master`) adds
-`--debug-warp <group> <num> [<x> <y>]`: the first **Continue** of the run lands on that map (on its
-heal spot if it has one). The PS-094 slice, map group / number:
+Since PS-095 Kanto is reachable in normal play: the sailor by the quay in Slateport City's harbour
+(`--debug-warp 9 9` lands there; he stands at 14,11) sails to Vermilion City once the Hall of Fame
+flag is set. The `TEST ONLY` commits at the end of branch `ps-095-kanto-full-import` (never merged to
+`master`) remove that gate, so any save can board, and keep `--debug-warp <group> <num> [<x> <y>]`:
+the first **Continue** of the run lands on that map (on its heal spot if it has one). Kanto map
+group / number (full import; the PS-094 numbers moved):
 
 | Map | `--debug-warp` |
 |---|---|
-| Pallet Town (`MAP_KANTO_PALLET_TOWN`, lands on the heal spot in front of the player's house) | `34 0` |
-| Viridian City (lands on the Pokémon Center heal spot) | `34 1` |
-| Route 1 | `34 2` |
-| Pallet Town: player's house 1F / 2F, rival's house, Oak's lab | `35 0` / `35 1` / `35 2` / `35 3` |
-| Viridian City: house, gym, school, mart, Pokémon Center 1F / 2F | `36 0` / `36 1` / `36 2` / `36 3` / `36 4` / `36 5` |
+| Slateport City harbour (Hoenn, the Kanto sailor) | `9 9` |
+| Pallet Town, Viridian City, Pewter City, Cerulean City, Lavender Town | `35 0` .. `35 4` |
+| Vermilion City (the Hoenn sailor on the pier at 24,33), Celadon City, Fuchsia City, Cinnabar Island | `35 5` .. `35 8` |
+| Indigo Plateau exterior, Saffron City | `35 9`, `35 10` |
+| Route 1 .. Route 20, Route 21 north / south, Route 22 .. Route 25 | `35 12` .. `35 37` |
+| Dungeons group (group 34, `data/maps/map_groups.json` order): Viridian Forest `0`, Mt. Moon 1F `1`, S.S. Anne exterior `4`, Victory Road 1F `39`, Rock Tunnel 1F `81`, Seafoam Islands 1F `83`, Power Plant `95` | `34 <num>` |
+| Indoor groups 36 .. 62 (one per town / route, `map_groups.json` order) | `<group> <num>` |
 
 ```
-pokemon-spectrum64.exe --save mytest.sav --debug-warp 34 0
+pokemon-spectrum64.exe --save mytest.sav --debug-warp 35 0
 ```
 
 Use a copy of your save: the game saves to it as usual, so the saved location afterwards is Kanto.
 (Any Hoenn map works too, e.g. `--debug-warp 0 9` is Littleroot Town.) The visited flags
-(`FLAG_VISITED_KANTO_PALLET_TOWN`, `..._VIRIDIAN_CITY`) are ordinary saved flags since PS-070, so the
-two Fly spots stay unlocked across restarts.
+(`FLAG_VISITED_KANTO_*`) are ordinary saved flags since PS-070, so the Fly spots stay unlocked across
+restarts.
 
-Way back to Hoenn: Fly, then L/R on the Fly map to switch to HOENN and pick any unlocked city (there
-is no boat yet). Two instances with `--host` / `--join` and the same `--debug-warp` see each other
-in Pallet Town like on any Hoenn map.
+Way back to Hoenn: the sailor on Vermilion City's pier (Slateport City), or Fly, then L/R on the Fly
+map to switch to HOENN and pick any unlocked city. Two instances with `--host` / `--join` and the
+same `--debug-warp` see each other in Kanto like on any Hoenn map.
 
 ## Running a host + client pair
 
