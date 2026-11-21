@@ -545,7 +545,6 @@ SlateportCity_Harbor_Text_ThisWillHelpResearch:
 SlateportCity_Harbor_EventScript_KantoSailor::
 	lock
 	faceplayer
-	goto_if_unset FLAG_SYS_GAME_CLEAR, SlateportCity_Harbor_EventScript_KantoSailorNotYet
 	setvar VAR_0x8004, 0
 	special RegionTransit_CountDestinations
 	goto_if_eq VAR_RESULT, 0, SlateportCity_Harbor_EventScript_KantoSailorNotYet
