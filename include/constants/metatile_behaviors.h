@@ -237,10 +237,10 @@ enum {
     MB_WIRELESS_BOX_RESULTS,
     MB_TRAINER_HILL_TIMER,
     MB_SKY_PILLAR_CLOSED_DOOR,
-    MB_UNUSED_EB,
-    MB_UNUSED_EC,
-    MB_UNUSED_ED,
-    MB_UNUSED_EE,
+    MB_UP_RIGHT_STAIR_WARP,   // PS-098: pokefirered's directional stair warps (Kanto): the warp tile is the floor
+    MB_UP_LEFT_STAIR_WARP,    // beside a drawn staircase; walking into it sideways takes a diagonal step onto the
+    MB_DOWN_RIGHT_STAIR_WARP, // stairs and warps (field_control_avatar.c, field_screen_effect.c). Kept in FRLG's
+    MB_DOWN_LEFT_STAIR_WARP,  // order so MetatileBehavior_IsDirectionalStairWarp can range-check.
     MB_UNUSED_EF,
     NUM_METATILE_BEHAVIORS
 };

@@ -33,5 +33,6 @@ u8 TrySetDiveWarp(void);
 const u8 *GetInteractedLinkPlayerScript(struct MapPosition *position, u8 metatileBehavior, u8 direction);
 const u8 *GetCoordEventScriptAtMapPosition(struct MapPosition *position);
 void ClearPoisonStepCounter(void);
+bool8 IsDirectionalStairWarpMetatileBehavior(u16 metatileBehavior, u8 playerDirection); // PS-098
 
 #endif // GUARD_FIELDCONTROLAVATAR_H

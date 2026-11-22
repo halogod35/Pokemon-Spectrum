@@ -24,10 +24,10 @@ MB_CAVE_DOOR	MB_NON_ANIMATED_DOOR	cave entrance warp
 MB_FALL_WARP	MB_CRACKED_FLOOR_HOLE	fall through a hole
 MB_REGULAR_WARP	MB_AQUA_HIDEOUT_WARP	teleport pad (Sabrina's gym, Silph Co, Rocket Hideout)
 MB_WARP_DOOR	MB_ANIMATED_DOOR	building door; FRLG door animations are PS-096 (no entry in sDoorAnimGraphicsTable: the door just does not animate)
-MB_UP_RIGHT_STAIR_WARP	MB_LADDER	? stairs: warps on step, no diagonal walk (PS-096)
-MB_UP_LEFT_STAIR_WARP	MB_LADDER	? stairs
-MB_DOWN_RIGHT_STAIR_WARP	MB_LADDER	? stairs
-MB_DOWN_LEFT_STAIR_WARP	MB_LADDER	? stairs
+MB_UP_RIGHT_STAIR_WARP	MB_UP_RIGHT_STAIR_WARP	PS-098: directional stair warp (same name here): diagonal step onto the stairs + warp, field_control_avatar.c / field_screen_effect.c
+MB_UP_LEFT_STAIR_WARP	MB_UP_LEFT_STAIR_WARP	PS-098: directional stair warp
+MB_DOWN_RIGHT_STAIR_WARP	MB_DOWN_RIGHT_STAIR_WARP	PS-098: directional stair warp
+MB_DOWN_LEFT_STAIR_WARP	MB_DOWN_LEFT_STAIR_WARP	PS-098: directional stair warp
 MB_UNION_ROOM_WARP	MB_NORMAL	Pokemon Center 2F wireless rooms do not exist here; the warp never triggers
 MB_POKEMART_SHELF	MB_SHOP_SHELF	Emerald shows "It's full of items" style text
 MB_SIGNPOST	MB_NORMAL	FRLG marks sign tiles for the sign icon; signs are bg events (not imported)

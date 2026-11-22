@@ -693,13 +693,55 @@ static bool8 CheckStandardWildEncounter(u16 metatileBehavior)
 static bool8 TryArrowWarp(struct MapPosition *position, u16 metatileBehavior, u8 direction)
 {
     s8 warpEventId = GetWarpEventAtMapPosition(&gMapHeader, position);
+    u16 delay;
 
-    if (IsArrowWarpMetatileBehavior(metatileBehavior, direction) == TRUE && warpEventId != WARP_ID_NONE)
+    if (warpEventId != WARP_ID_NONE)
     {
-        StoreInitialPlayerAvatarState();
-        SetupWarp(&gMapHeader, warpEventId, position);
-        DoWarp();
-        return TRUE;
+        if (IsArrowWarpMetatileBehavior(metatileBehavior, direction) == TRUE)
+        {
+            StoreInitialPlayerAvatarState();
+            SetupWarp(&gMapHeader, warpEventId, position);
+            DoWarp();
+            return TRUE;
+        }
+        else if (IsDirectionalStairWarpMetatileBehavior(metatileBehavior, direction) == TRUE)
+        {
+            // PS-098: pokefirered's directional stair warp: pressing toward the stairs from the floor tile
+            // beside them (a bike is dismounted first, after a short pause as in FRLG).
+            delay = 0;
+            if (gPlayerAvatar.flags & (PLAYER_AVATAR_FLAG_MACH_BIKE | PLAYER_AVATAR_FLAG_ACRO_BIKE))
+            {
+                SetPlayerAvatarTransitionFlags(PLAYER_AVATAR_FLAG_ON_FOOT);
+                delay = 12;
+            }
+            StoreInitialPlayerAvatarState();
+            SetupWarp(&gMapHeader, warpEventId, position);
+            DoStairWarp(metatileBehavior, delay);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+// PS-098: TRUE when the behaviour is a directional stair warp entered by walking in playerDirection
+// (the *_LEFT ones are entered walking west, the *_RIGHT ones walking east). pokefirered's
+// field_control_avatar.c; also used by field_player_avatar.c for the collision check.
+bool8 IsDirectionalStairWarpMetatileBehavior(u16 metatileBehavior, u8 playerDirection)
+{
+    switch (playerDirection)
+    {
+    case DIR_WEST:
+        if (MetatileBehavior_IsDirectionalUpLeftStairWarp(metatileBehavior))
+            return TRUE;
+        if (MetatileBehavior_IsDirectionalDownLeftStairWarp(metatileBehavior))
+            return TRUE;
+        break;
+    case DIR_EAST:
+        if (MetatileBehavior_IsDirectionalUpRightStairWarp(metatileBehavior))
+            return TRUE;
+        if (MetatileBehavior_IsDirectionalDownRightStairWarp(metatileBehavior))
+            return TRUE;
+        break;
     }
     return FALSE;
 }

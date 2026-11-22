@@ -9,6 +9,7 @@
 #include "field_player_avatar.h"
 #include "fieldmap.h"
 #include "menu.h"
+#include "field_control_avatar.h" // PS-098: IsDirectionalStairWarpMetatileBehavior
 #include "metatile_behavior.h"
 #include "overworld.h"
 #include "party_menu.h"
@@ -616,6 +617,12 @@ static void PlayerNotOnBikeMoving(u8 direction, u16 heldKeys)
             PlayerJumpLedge(direction);
             return;
         }
+        else if (collision == COLLISION_DIRECTIONAL_STAIR_WARP)
+        {
+            // PS-098: on a stair-warp tile, facing the stairs: no step and no bump, TryArrowWarp takes over
+            PlayerFaceDirection(direction);
+            return;
+        }
         else if (collision == COLLISION_OBJECT_EVENT && IsPlayerCollidingWithFarawayIslandMew(direction))
         {
             PlayerNotOnBikeCollideWithFarawayIslandMew(direction);
@@ -675,6 +682,8 @@ static u8 CheckForPlayerAvatarCollision(u8 direction)
 
     x = playerObjEvent->currentCoords.x;
     y = playerObjEvent->currentCoords.y;
+    if (IsDirectionalStairWarpMetatileBehavior(MapGridGetMetatileBehaviorAt(x, y), direction)) // PS-098: the tile under the player
+        return COLLISION_DIRECTIONAL_STAIR_WARP;
     MoveCoords(direction, &x, &y);
     return CheckForObjectEventCollision(playerObjEvent, x, y, direction, MapGridGetMetatileBehaviorAt(x, y));
 }
@@ -1119,6 +1128,13 @@ static void PlayCollisionSoundIfNotFacingWarp(u8 direction)
 
     if (!sArrowWarpMetatileBehaviorChecks[direction - 1](metatileBehavior))
     {
+        // PS-098: no bump when facing the stairs from a directional stair-warp tile (pokefirered)
+        if (direction == DIR_WEST
+         && (MetatileBehavior_IsDirectionalUpLeftStairWarp(metatileBehavior) || MetatileBehavior_IsDirectionalDownLeftStairWarp(metatileBehavior)))
+            return;
+        if (direction == DIR_EAST
+         && (MetatileBehavior_IsDirectionalUpRightStairWarp(metatileBehavior) || MetatileBehavior_IsDirectionalDownRightStairWarp(metatileBehavior)))
+            return;
         // Check if walking up into a door
         if (direction == DIR_NORTH)
         {

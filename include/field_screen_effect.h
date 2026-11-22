@@ -26,6 +26,7 @@ void DoWhiteFadeWarp(void);
 void DoDoorWarp(void);
 void DoFallWarp(void);
 void DoEscalatorWarp(u8 metatileBehavior);
+void DoStairWarp(u16 metatileBehavior, u16 delay); // PS-098
 void DoLavaridgeGymB1FWarp(void);
 void DoLavaridgeGym1FWarp(void);
 void DoTeleportTileWarp(void);
