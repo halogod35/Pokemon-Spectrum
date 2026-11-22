@@ -787,4 +787,10 @@
 #define METATILE_RSMossdeepGym_Switch_Down     0x239
 #define METATILE_RSMossdeepGym_Switch_Up       0x238
 
+// PS-098: Kanto tilesets imported from pokefirered (tools/kanto_import). The ids are pokefirered's own
+// (its include/constants/metatile_labels.h): the converter's prefix re-pack keeps every metatile id.
+// gTileset_KantoBuilding
+#define METATILE_KantoBuilding_PC_Off  0x062
+#define METATILE_KantoBuilding_PC_On   0x063
+
 #endif // GUARD_METATILE_LABELS_H
