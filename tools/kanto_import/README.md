@@ -46,9 +46,12 @@ given.
 Every run checks and reports (the last lines of the output, `audit: ...`); any miss is an error:
 
 - **warps**: every warp's target map is imported and the warp id exists there. A warp to a map
-  outside the import (pokefirered's Union Room / Trade Center from the Pokémon Center upper floors,
-  `MAP_DYNAMIC` from elevators) is redirected to the map itself (it then sits on a plain metatile
-  and never triggers); a target that is no pokefirered map at all is an error.
+  outside the import (pokefirered's Union Room / Trade Center from the Pokémon Center upper floors)
+  is redirected to the map itself (it then sits on a plain metatile and never triggers); a target
+  that is no pokefirered map at all is an error. A `MAP_DYNAMIC` warp (the elevators of the Celadon
+  Dept. Store, Silph Co. and the Rocket Hideout, which pokefirered's scripts point at the chosen
+  floor) leads back to the first map that warps into its map, at that warp (the floor the elevator
+  is first entered from), reported as "dynamic -> first entrance" (PS-098).
 - **connections**: the target is imported (else the connection is dropped) and the other side
   connects back with the negated offset. A map with no connection back is reported as one-way
   (Saffron City's four routes point at pokefirered's display-only `SaffronCity_Connection`
@@ -75,6 +78,8 @@ Every run checks and reports (the last lines of the output, `audit: ...`); any m
 | `data/event_scripts.s` (between `@ KANTO_IMPORT_BEGIN` / `END`) | the `.include` lines |
 | `src/data/region_map/kanto_region.h` | `MAPSEC_KANTO_FIRST/LAST`, `sKantoRegionMapLayout[15][28]` (the on-grid sections at FRLG's coordinates), `sKantoRegionFlySpots[]` (towns with a heal location) |
 | `src/mp/kanto_mp_groups.h` | `KANTO_MP_GROUP_SIZES` / `KANTO_MP_GROUP_CHECKS` for `src/mp/mp_presence.c` |
+| `graphics/door_anims/kanto/<name>.png` | PS-098: pokefirered's door animation sheets (three frames of 16x16 or 16x32 px, 4bpp) for the Kanto door table in `src/field_door.c` (`sKantoDoorAnimGraphicsTable`, chosen by the map's primary tileset). The metatile ids and palette slots that table uses are pokefirered's own, which the prefix re-pack keeps. The list of sheets is in the script (`@DOOR_ANIMS`); the directory belongs to the converter. |
+| `graphics/object_events/pics/misc/kanto_ss_anne.png`, `palettes/kanto_ss_anne.pal` | PS-098: pokefirered's S.S. ANNE sprite (128x64) and palette for `OBJ_EVENT_GFX_SS_ANNE` (`src/data/object_events`), placed at its dock by `extras/SSAnne_Exterior.objects.json` (pokefirered draws the ship as an object event, not as part of the layout). |
 
 `kanto_region_map.pl` writes `graphics/pokenav/region_map/kanto_map.png` (8bpp tiles, pixel =
 `0x70` + colour slot), `kanto_map.pal` (48 colours, loaded at `BG_PLTT_ID(7)`) and `kanto_map.bin`
@@ -100,14 +105,17 @@ the `REGION_KANTO` entry and the `sKantoRegionMap_*` INCGFX lines in `src/region
 is spliced into that map's `object_events`; `extras/<Map>.scripts.inc` is appended verbatim to its
 `scripts.inc`. `<Map>` is the pokefirered map name (`VermilionCity`). Every object's `script` must
 be defined in the `.scripts.inc`. PS-095 uses them for the sailor on Vermilion City's pier (the
-boat back to Hoenn); nothing else.
+boat back to Hoenn), PS-098 for the S.S. ANNE object at its dock (`SSAnne_Exterior.objects.json`);
+nothing else.
 
 ## Tables
 
 - `behaviors.tsv`: FRLG metatile behaviour -> Emerald behaviour. A behaviour whose name exists in
   Emerald needs no row. `-` means "no equivalent" (reported; `MB_NORMAL` with `--allow-unknown`).
-  `?` in the note marks a stand-in for PS-096 (spinners as slides, directional stair warps as
-  ladders, cycling-road pull, strength buttons, rock stairs, current water as plain water).
+  `?` in the note marks a stand-in for PS-096 (spinners as slides, cycling-road pull, strength
+  buttons, rock stairs, current water as plain water). FRLG's four directional stair warps
+  (`MB_UP_LEFT_STAIR_WARP` etc.) exist here under the same names since PS-098 (the warp tile beside
+  a drawn staircase: a sideways step onto the stairs and the warp).
   FRLG's terrain and encounter-type attribute bits have no Emerald counterpart and are dropped (Emerald
   derives encounters from behaviours); the layer type is kept.
 - `constants.tsv`: map header constants. Music is mapped `MUS_X` -> `MUS_RG_X` automatically (Emerald
