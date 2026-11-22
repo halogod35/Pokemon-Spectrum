@@ -1425,6 +1425,19 @@ static const struct SpriteFrameImage sPicTable_SSTidal[] = {
     obj_frame_tiles(gObjectEventPic_SSTidal),
 };
 
+// PS-098: the S.S. ANNE has one picture for every direction (pokefirered)
+static const struct SpriteFrameImage sPicTable_SSAnne[] = {
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+    obj_frame_tiles(gObjectEventPic_SSAnne),
+};
+
 static const struct SpriteFrameImage sPicTable_SubmarineShadow[] = {
     obj_frame_tiles(gObjectEventPic_SubmarineShadow),
     obj_frame_tiles(gObjectEventPic_SubmarineShadow),
