@@ -3,6 +3,7 @@
 #include "global.h"
 #include "region.h"
 #include "event_data.h"
+#include "graphics.h" // PS-098: the PokéNav map headers
 #include "field_screen_effect.h"
 #include "map_name_popup.h"
 #include "overworld.h"
@@ -53,6 +54,7 @@ static const struct RegionInfo sRegions[REGIONS_COUNT] =
         .flySpots = NULL,                      // region_map.c keeps Emerald's Fly tables for Hoenn
         .flySpotCount = 0,
         .hasPokenavMap = TRUE,
+        .pokenavMapHeaderGfx = gPokenavLeftHeaderHoennMap_Gfx, // PS-098
         .popupTheme = MAPPOPUP_THEME_WOOD,     // unused: Hoenn has a theme per map section
         .firstBadgeFlag = FLAG_BADGE01_GET,
     },
@@ -69,6 +71,7 @@ static const struct RegionInfo sRegions[REGIONS_COUNT] =
         .flySpots = sKantoRegionFlySpots,
         .flySpotCount = ARRAY_COUNT(sKantoRegionFlySpots),
         .hasPokenavMap = TRUE,               // PS-095: the PokéNav shows the Kanto picture (city zoom pictures exist for Hoenn only: section names there)
+        .pokenavMapHeaderGfx = gPokenavLeftHeaderKantoMap_Gfx, // PS-098: "KANTO MAP" (graphics/pokenav/left_headers/kanto_map.png)
         .popupTheme = MAPPOPUP_THEME_STONE,
         .firstBadgeFlag = FLAG_BADGE09_GET,
     },

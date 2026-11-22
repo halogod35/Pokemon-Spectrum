@@ -4030,6 +4030,7 @@ extern const u16 gPokenavHeader_Pal[];
 extern const u32 gPokenavHeader_Gfx[];
 extern const u32 gPokenavHeader_Tilemap[];
 extern const u32 gPokenavLeftHeaderHoennMap_Gfx[];
+extern const u32 gPokenavLeftHeaderKantoMap_Gfx[]; // PS-098
 extern const u32 gPokenavLeftHeaderMainMenu_Gfx[];
 extern const u32 gPokenavLeftHeaderCondition_Gfx[];
 extern const u32 gPokenavLeftHeaderRibbons_Gfx[];

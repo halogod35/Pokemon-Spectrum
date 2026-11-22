@@ -1,5 +1,7 @@
 #include "global.h"
 #include "pokenav.h"
+#include "region.h"     // PS-098: the PokéNav map header of the shown region
+#include "region_map.h"
 #include "constants/songs.h"
 #include "sound.h"
 #include "constants/rgb.h"
@@ -677,6 +679,7 @@ static void LoadLeftHeaderGfxForMenu(u32 menuGfxId)
 {
     struct Pokenav_MainMenu *menu;
     u32 size, tag;
+    const u32 *data;
     u8 palIndex;
 
     if (menuGfxId >= POKENAV_GFX_SUBMENUS_START)
@@ -684,11 +687,14 @@ static void LoadLeftHeaderGfxForMenu(u32 menuGfxId)
 
     menu = GetSubstructPtr(POKENAV_SUBSTRUCT_MAIN_MENU);
     tag = sMenuLeftHeaderSpriteSheets[menuGfxId].tag;
-    size = GetDecompressedDataSize(sMenuLeftHeaderSpriteSheets[menuGfxId].data);
+    data = sMenuLeftHeaderSpriteSheets[menuGfxId].data;
+    if (menuGfxId == POKENAV_GFX_MAP_MENU_ZOOMED_OUT || menuGfxId == POKENAV_GFX_MAP_MENU_ZOOMED_IN)
+        data = GetRegionInfo(GetRegionMapShownRegion())->pokenavMapHeaderGfx; // PS-098: "<REGION> MAP" of the region the map shows
+    size = GetDecompressedDataSize(data);
     palIndex = IndexOfSpritePaletteTag(1);
     if (palIndex != 0xFF) // PS-091: a missing tag would write 8 KB past gPlttBufferUnfaded/Faded on PC
         LoadPalette(&gPokenavLeftHeader_Pal[tag * 16], OBJ_PLTT_ID(palIndex), PLTT_SIZE_4BPP);
-    LZ77UnCompWram(sMenuLeftHeaderSpriteSheets[menuGfxId].data, gDecompressionBuffer);
+    LZ77UnCompWram(data, gDecompressionBuffer);
     RequestDma3Copy(gDecompressionBuffer, (void *)OBJ_VRAM0 + (GetSpriteTileStartByTag(2) * 32), size, 1);
     menu->leftHeaderSprites[1]->oam.tileNum = GetSpriteTileStartByTag(2) + sMenuLeftHeaderSpriteSheets[menuGfxId].size;
 

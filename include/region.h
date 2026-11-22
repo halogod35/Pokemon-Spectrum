@@ -31,6 +31,7 @@ struct RegionInfo
     const struct RegionFlySpot *flySpots;          // NULL for Hoenn: region_map.c keeps the original Hoenn tables
     u8 flySpotCount;
     bool8 hasPokenavMap;                           // FALSE: the PokéNav map shows another visited region that has one
+    const u32 *pokenavMapHeaderGfx;               // PS-098: PokéNav left header sheet ("<REGION> MAP" / "FULL VIEW" / "ZOOM VIEW", LZ 4bpp, like gPokenavLeftHeaderHoennMap_Gfx)
     u8 popupTheme;                                 // MAPPOPUP_THEME_* used by map name popups in this region
     u16 firstBadgeFlag;                            // REGION_BADGE_COUNT consecutive flags
 };
