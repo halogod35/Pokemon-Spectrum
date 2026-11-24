@@ -862,6 +862,28 @@ for my $h (@{$frHeal->{heal_locations}})
 # maps
 my (@scriptIncludes, %warpCount);
 $warpCount{$_} = scalar(@{$map{$_}{fr}{warp_events} || []}) for @mapOrder;
+# PS-096: the only object events kept: pokefirered's Rock Smash rocks and cut trees (field-move obstacles with
+# pokefirered's generic scripts, which exist here under the same names in data/scripts/field_move_scripts.inc),
+# as Emerald's own rock / tree objects. Their FLAG_TEMP_* flags (cleared on every map load, so a smashed rock is
+# back next time) exist here with the same names and values; a flag we do not have becomes 0 (never hidden).
+# pokefirered's "clone" objects (a neighbouring map's tree shown across the map border) have no Emerald
+# counterpart and are dropped. Everything else (NPCs, items, boulders, story objects) stays dropped.
+my %KEPT_OBJECTS = (
+    OBJ_EVENT_GFX_ROCK_SMASH_ROCK => { gfx => 'OBJ_EVENT_GFX_BREAKABLE_ROCK', script => 'EventScript_RockSmash', what => 'rocks' },
+    OBJ_EVENT_GFX_CUT_TREE        => { gfx => 'OBJ_EVENT_GFX_CUTTABLE_TREE',  script => 'EventScript_CutTree',   what => 'trees' },
+);
+my $ourFlags = slurp("$repo/include/constants/flags.h");
+my $ourMovementTypes = slurp("$repo/include/constants/event_object_movement.h");
+my $ourTrainerTypes = slurp("$repo/include/constants/trainer_types.h");
+my $ourObjectGfx = slurp("$repo/include/constants/event_objects.h");
+my $ourFieldMoveScripts = slurp("$repo/data/scripts/field_move_scripts.inc");
+for my $k (sort keys %KEPT_OBJECTS)
+{
+    err("KEPT_OBJECTS: $KEPT_OBJECTS{$k}{gfx} is not an Emerald object graphic") unless our_has_define($ourObjectGfx, $KEPT_OBJECTS{$k}{gfx});
+    err("KEPT_OBJECTS: $KEPT_OBJECTS{$k}{script} is not defined in data/scripts/field_move_scripts.inc") unless $ourFieldMoveScripts =~ /^\Q$KEPT_OBJECTS{$k}{script}\E::/m;
+}
+my (%fieldObjectsPerMap, %fieldObjectTotals, %fieldObjectClones); # map => { rocks => n, trees => n }
+my $otherObjectsDropped = 0;
 sub jbool { return $_[0] ? 'true' : 'false' }
 sub jstr  { my $s = shift; $s =~ s/(["\\])/\\$1/g; return "\"$s\"" }
 my %opposite = (up => 'down', down => 'up', left => 'right', right => 'left', dive => 'emerge', emerge => 'dive');
@@ -897,7 +919,49 @@ for my $m (@mapOrder)
     my $mapType = translate_const($fr->{map_type}, $ourMapTypes, "map $m: map type");
     my $scene = translate_const($fr->{battle_scene}, $ourMapTypes, "map $m: battle scene");
     note("map $m: floor_number $fr->{floor_number} dropped (Emerald headers have none)") if ($fr->{floor_number} // 0) != 0;
-    for my $cat (qw(object_events coord_events bg_events))
+    # PS-096: Rock Smash rocks and cut trees are kept (see %KEPT_OBJECTS), every other object event is dropped
+    my @keptObjects;
+    {
+        my $dropped = 0;
+        for my $o (@{$fr->{object_events} || []})
+        {
+            my $k = $KEPT_OBJECTS{$o->{graphics_id} // ''};
+            if ($k && ($o->{type} // 'object') eq 'clone')
+            {
+                $fieldObjectClones{$m}++;
+                note("map $m: a $o->{graphics_id} clone of $o->{target_map} at ($o->{x},$o->{y}) dropped (no clone object events here)");
+                next;
+            }
+            if (!$k || ($o->{script} // '') ne $k->{script}) { $dropped++; next }
+            my $flag = $o->{flag} // '0';
+            if ($flag ne '0' && !our_has_define($ourFlags, $flag))
+            {
+                note("map $m: $o->{graphics_id} at ($o->{x},$o->{y}): flag $flag is not an Emerald flag, 0 is used (the object is never hidden)");
+                $flag = '0';
+            }
+            err("map $m: $o->{graphics_id} at ($o->{x},$o->{y}): movement type $o->{movement_type} does not exist here") unless our_has_define($ourMovementTypes, $o->{movement_type} // '');
+            err("map $m: $o->{graphics_id} at ($o->{x},$o->{y}): trainer type $o->{trainer_type} does not exist here") unless our_has_define($ourTrainerTypes, $o->{trainer_type} // '');
+            push @keptObjects, join("\n",
+                "    {",
+                "      \"graphics_id\": \"$k->{gfx}\",",
+                "      \"x\": $o->{x},",
+                "      \"y\": $o->{y},",
+                "      \"elevation\": " . ($o->{elevation} // 0) . ",",
+                "      \"movement_type\": \"$o->{movement_type}\",",
+                "      \"movement_range_x\": " . ($o->{movement_range_x} // 0) . ",",
+                "      \"movement_range_y\": " . ($o->{movement_range_y} // 0) . ",",
+                "      \"trainer_type\": \"$o->{trainer_type}\",",
+                "      \"trainer_sight_or_berry_tree_id\": " . jstr($o->{trainer_sight_or_berry_tree_id} // '0') . ",",
+                "      \"script\": \"$k->{script}\",",
+                "      \"flag\": \"$flag\"",
+                "    }");
+            $fieldObjectsPerMap{$m}{$k->{what}}++;
+            $fieldObjectTotals{$k->{what}}++;
+        }
+        $otherObjectsDropped += $dropped;
+        note("map $m: $dropped object_events dropped (scripts, NPCs, signs and items are not imported)" . (@keptObjects ? ", " . scalar(@keptObjects) . " kept (Rock Smash rocks / cut trees)" : "")) if $dropped;
+    }
+    for my $cat (qw(coord_events bg_events))
     {
         my $n = scalar(@{$fr->{$cat} || []});
         note("map $m: $n $cat dropped (scripts, NPCs, signs and items are not imported)") if $n;
@@ -985,7 +1049,7 @@ for my $m (@mapOrder)
         push @warps, "    {\n      \"x\": $w->{x},\n      \"y\": $w->{y},\n      \"elevation\": $w->{elevation},\n      \"dest_map\": \"$destMap\",\n      \"dest_warp_id\": " . jstr($destId) . "\n    }";
         $wi++;
     }
-    my $objects = "[]";
+    my @objectEntries = @keptObjects; # PS-096: the kept rocks / trees first, then the hand-written extras
     if (my $text = $extras{$m}{'objects.json'})
     {
         my $parsed = eval { decode_json($text) };
@@ -998,10 +1062,11 @@ for my $m (@mapOrder)
                 err("extras: $m.objects.json: script $o->{script} is not defined in $m.scripts.inc") if defined $o->{script} && $o->{script} ne '0x0' && ($extras{$m}{'scripts.inc'} // '') !~ /^\Q$o->{script}\E::/m;
             }
             $text =~ s/^\s+|\s+$//g;
-            $objects = $text;
+            push @objectEntries, map { "    $_" } json_array_elements(substr($text, 1, length($text) - 2)); # the elements of the extras array, as written there
             $extrasUsed{$m}{objects} = scalar @$parsed;
         }
     }
+    my $objects = @objectEntries ? "[\n" . join(",\n", @objectEntries) . "\n  ]" : "[]";
     my $json = join("\n",
         "{",
         "  \"id\": \"$id\",",
@@ -1266,6 +1331,11 @@ info("audit: warps: $auditWarps{checked} checked, $auditWarps{inside} inside the
 info("audit: connections: $auditConns{checked} checked, $auditConns{kept} kept with both sides agreeing on the offset, $auditConns{oneway} one-way (no connection back, as in pokefirered), $auditConns{standin} with pokefirered's own offset disagreement at its display-only stand-in map, $auditConns{dropped} dropped (targets outside the import: " . ($fmtTargets->(\%connDropTargets) || 'none') . "), $auditConns{mismatch} offset mismatches");
 info("audit: layouts: " . scalar(keys %layoutUsed) . " layouts, $cellsChecked cells (borders included): every metatile id inside its primary or secondary tileset");
 info("audit: music: " . scalar(@mapOrder) . " maps, " . scalar(keys %musicUsed) . " tracks, all known (" . join(", ", map { "$_ x$musicUsed{$_}" } sort keys %musicUsed) . ")");
+{
+    my $fmt = sub { my $what = shift; my @maps = grep { $fieldObjectsPerMap{$_}{$what} } @mapOrder; return ($fieldObjectTotals{$what} // 0) . " $what on " . scalar(@maps) . " maps (" . join(", ", map { "$_ x$fieldObjectsPerMap{$_}{$what}" } @maps) . ")" };
+    my $clones = 0; $clones += $_ for values %fieldObjectClones;
+    info("audit: field objects: " . $fmt->('rocks') . "; " . $fmt->('trees') . "; kept as Emerald's breakable rock / cuttable tree with EventScript_RockSmash / EventScript_CutTree and pokefirered's FLAG_TEMP_* flags; $clones clone objects and $otherObjectsDropped other object events dropped");
+}
 info("audit: behaviours: " . scalar(keys %behaviorUsed) . " distinct on the imported maps, every one translated (" . scalar(grep { exists $behaviorTable->{$_} } keys %behaviorUsed) . " through behaviors.tsv, the rest by name)");
 exit 0;
 
