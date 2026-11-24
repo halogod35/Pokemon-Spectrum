@@ -545,3 +545,11 @@ gSpecials::
 	def_special GetRegionTransitSelection
 	def_special RegionTransit_CountDestinations
 	def_special RegionTransit_Warp, waitstate=1
+	@ PS-100: the Kanto story import (src/kanto_specials.c; tools/kanto_import/specials.tsv maps pokefirered's specials to these)
+	def_special KantoStub_Nop
+	def_special KantoStub_True
+	def_special KantoStub_False
+	def_special KantoAnimatePcTurnOn
+	def_special KantoAnimatePcTurnOff
+	def_special KantoGetPokedexCount
+	def_special KantoDaisyMassageServices

@@ -34,7 +34,14 @@ struct RegionInfo
     const u32 *pokenavMapHeaderGfx;               // PS-098: PokéNav left header sheet ("<REGION> MAP" / "FULL VIEW" / "ZOOM VIEW", LZ 4bpp, like gPokenavLeftHeaderHoennMap_Gfx)
     u8 popupTheme;                                 // MAPPOPUP_THEME_* used by map name popups in this region
     u16 firstBadgeFlag;                            // REGION_BADGE_COUNT consecutive flags
+    u8 objectPaletteSet;                           // PS-100: OBJ_PAL_SET_* the region's NPC sprites were drawn for (event_object_movement.c loads it into the NPC palette slots on map load)
+    const u8 *rivalName;                           // PS-100: the name {RIVAL} expands to in this region's text; NULL: Emerald's rule (May / Brendan by player gender)
+    const u8 *bedroomPcOffScript;                  // PS-100: the script the bedroom PC runs when it is turned off in this region; NULL: Hoenn's Littleroot scripts
 };
+
+// PS-100: NPC object palette sets (slots PALSLOT_NPC_1..4 and their reflections), see InitObjectEventPalettes()
+#define OBJ_PAL_SET_HOENN 0 // Emerald's gObjectEventPal_Npc1..4
+#define OBJ_PAL_SET_KANTO 1 // pokefirered's npc_blue / pink / green / white (copied by tools/kanto_import --events)
 
 const struct RegionInfo *GetRegionInfo(u8 region);
 u8 GetRegionOfMapSec(mapsec_t mapSecId);

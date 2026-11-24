@@ -2,9 +2,16 @@
 
 Pokémon Spectrum keeps Emerald's save system (`src/save.c`: 4 KB flash sectors with a 128-byte
 footer, two alternating save slots, per-sector checksums) and mirrors the whole flash to one file,
-`pokemon-spectrum.sav` (`--save <path>` to choose another). This page documents **save format 3**
-(PS-079; format 2 was PS-070, written by v0.3.0) and what changed from the vanilla layout
-(format 1, written by v0.2.0 and earlier).
+`pokemon-spectrum.sav` (`--save <path>` to choose another). This page documents **save format 4**
+(PS-100; format 3 was PS-079, format 2 PS-070, written by v0.3.0) and what changed from the vanilla
+layout (format 1, written by v0.2.0 and earlier).
+
+Format 4 (PS-100, the Kanto story import) differs from format 3 only in `SaveBlock1`: the object
+event graphics id is a `u16` (pokefirered's sprites are ids 256 and up). `struct ObjectEvent` keeps
+its 0x24 bytes (`graphicsId` moved from 0x05 to 0x22, `playerCopyableMovement` took 0x05) and
+`struct ObjectEventTemplate` its 0x20 (`kind` at 0x01, `graphicsId` at 0x02), so nothing moves; a
+format 3 file would read every saved object's sprite wrong, so it is refused like any other older
+format. The flash layout and sector map are unchanged.
 
 Format 3 differs from format 2 only in `SaveBlock1`: the object event template is 0x20 bytes on
 every build and the block has 4 bytes of tail padding, so the **same `.sav` loads on the 32- and
@@ -52,7 +59,7 @@ Constants: `include/save.h` (`SECTOR_ID_*`, `NUM_SECTORS_PER_SLOT`, `SECTORS_COU
 ## Save format version and what the loader accepts
 
 `SaveBlock2.saveFormatVersion` (offset 0x90, unused filler before) is written as `SAVE_FORMAT_VERSION`
-(2) by every save (`src/save.c`). Bump the constant whenever the save layout changes.
+(4) by every save (`src/save.c`). Bump the constant whenever the save layout changes.
 
 `src/platform/sdl2.c` (`ReadSaveFile`) loads the file at startup:
 
@@ -61,7 +68,7 @@ Constants: `include/save.h` (`SECTOR_ID_*`, `NUM_SECTORS_PER_SLOT`, `SECTORS_COU
    (`src/save.c`) then reads `saveFormatVersion` from the newest SaveBlock2 sector with a valid
    signature and checksum (either slot; an erased image counts as current). If it is not
    `SAVE_FORMAT_VERSION`, the file is refused:
-   `[save] '<file>' is from an older or unknown version of the game (format N, this build needs 2). Saves from earlier versions are not supported: move it away and start a new game.`
+   `[save] '<file>' is from an older or unknown version of the game (format N, this build needs 4). Saves from earlier versions are not supported: move it away and start a new game.`
 3. Any other size (a v0.2.0 save, a truncated file, not a save at all) is refused without being
    read: `[save] '<file>' is N bytes, not 147456: it is from an older or unknown version of the game. Saves from earlier versions are not supported: move it away and start a new game.`
 

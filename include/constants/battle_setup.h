@@ -15,4 +15,8 @@
 #define TRAINER_BATTLE_SET_TRAINER_B                    11
 #define TRAINER_BATTLE_HILL                             12
 
+// PS-100: pokefirered's rival battle flags (trainerbattle_earlyrival, a shim in asm/macros/event.inc that ignores them)
+#define RIVAL_BATTLE_HEAL_AFTER                         1
+#define RIVAL_BATTLE_TUTORIAL                           3
+
 #endif // GUARD_CONSTANTS_BATTLE_SETUP_H

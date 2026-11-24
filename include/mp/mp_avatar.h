@@ -33,7 +33,7 @@ u8 MpAvatar_Budget(u8 activeOthers, u8 pendingNpcs);
 
 // OBJ_EVENT_GFX_* for a remote player: Brendan / May by `gender` (anything but FEMALE = male)
 // in the sprite of `avatarState` (MP_AVATAR_*; out of range = on foot).
-u8 MpAvatar_GraphicsId(u8 gender, u8 avatarState);
+u16 MpAvatar_GraphicsId(u8 gender, u8 avatarState); // PS-100: u16 graphics ids
 
 // DIR_* of a 1-tile step from (0,0) to (dx,dy); the dominant axis wins, x on a tie.
 // DIR_NONE for (0,0).

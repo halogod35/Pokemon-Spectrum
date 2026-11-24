@@ -92,9 +92,8 @@ struct BackupMapLayout
 struct ObjectEventTemplate
 {
     /*0x00*/ u8 localId;
-    /*0x01*/ u8 graphicsId;
-    /*0x02*/ u8 kind; // Always OBJ_KIND_NORMAL in Emerald.
-    /*0x03*/ //u8 padding1;
+    /*0x01*/ u8 kind; // Always OBJ_KIND_NORMAL in Emerald.
+    /*0x02*/ u16 graphicsId; // PS-100: u16 (was u8 at 0x01): OBJ_EVENT_GFX_KANTO_* start at 256, see constants/event_objects.h. Save format 4.
     /*0x04*/ s16 x;
     /*0x06*/ s16 y;
     /*0x08*/ u8 elevation;
@@ -233,7 +232,7 @@ struct ObjectEvent
              u32 hideReflection:1;
              //u32 padding:4;
     /*0x04*/ u8 spriteId;
-    /*0x05*/ u8 graphicsId;
+    /*0x05*/ u8 playerCopyableMovement; // COPY_MOVE_* (PS-100: moved here from 0x22, where the u16 graphicsId now lives)
     /*0x06*/ u8 movementType;
     /*0x07*/ u8 trainerType;
     /*0x08*/ u8 localId;
@@ -259,8 +258,7 @@ struct ObjectEvent
     /*0x1F*/ u8 previousMetatileBehavior;
     /*0x20*/ u8 previousMovementDirection;
     /*0x21*/ u8 directionSequenceIndex;
-    /*0x22*/ u8 playerCopyableMovement; // COPY_MOVE_*
-    /*0x23*/ //u8 padding2;
+    /*0x22*/ u16 graphicsId; // PS-100: u16 (was u8 at 0x05): OBJ_EVENT_GFX_KANTO_* start at 256. Saved in SaveBlock1 (save format 4).
     /*size = 0x24*/
 };
 

@@ -41,9 +41,9 @@ u8 MpAvatar_Budget(u8 activeOthers, u8 pendingNpcs)
     return (u8)freeSlots;
 }
 
-u8 MpAvatar_GraphicsId(u8 gender, u8 avatarState)
+u16 MpAvatar_GraphicsId(u8 gender, u8 avatarState) // PS-100: u16 graphics ids
 {
-    static const u8 sGfx[MP_AVATAR_STATE_COUNT][2] =
+    static const u16 sGfx[MP_AVATAR_STATE_COUNT][2] =
     {
         [MP_AVATAR_ON_FOOT]    = { OBJ_EVENT_GFX_BRENDAN_NORMAL,     OBJ_EVENT_GFX_MAY_NORMAL },
         [MP_AVATAR_MACH_BIKE]  = { OBJ_EVENT_GFX_BRENDAN_MACH_BIKE,  OBJ_EVENT_GFX_MAY_MACH_BIKE },

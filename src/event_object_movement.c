@@ -30,6 +30,7 @@
 #include "constants/mauville_old_man.h"
 #include "constants/trainer_types.h"
 #include "constants/union_room.h"
+#include "region.h" // PS-100: the region's NPC palette set
 
 #define SPECIAL_LOCALIDS_START (min(LOCALID_CAMERA, \
                                 min(LOCALID_PLAYER, \
@@ -472,6 +473,18 @@ const u8 gInitialMovementTypeFacingDirections[] = {
 #define OBJ_EVENT_PAL_TAG_RS_BRENDAN              0x1122
 #define OBJ_EVENT_PAL_TAG_RS_MAY                  0x1123
 #define OBJ_EVENT_PAL_TAG_SS_ANNE                 0x1124 // PS-098: pokefirered's S.S. ANNE (Kanto)
+// PS-100: pokefirered's NPC palettes (the Kanto sprites were drawn for them) and its special object palettes; the
+// .pal files are copied by tools/kanto_import --events (graphics/object_events/palettes/kanto_*.pal)
+#define OBJ_EVENT_PAL_TAG_KANTO_NPC_BLUE              0x1125
+#define OBJ_EVENT_PAL_TAG_KANTO_NPC_PINK              0x1126
+#define OBJ_EVENT_PAL_TAG_KANTO_NPC_GREEN             0x1127
+#define OBJ_EVENT_PAL_TAG_KANTO_NPC_WHITE             0x1128
+#define OBJ_EVENT_PAL_TAG_KANTO_NPC_BLUE_REFLECTION   0x1129
+#define OBJ_EVENT_PAL_TAG_KANTO_NPC_PINK_REFLECTION   0x112A
+#define OBJ_EVENT_PAL_TAG_KANTO_NPC_GREEN_REFLECTION  0x112B
+#define OBJ_EVENT_PAL_TAG_KANTO_NPC_WHITE_REFLECTION  0x112C
+#define OBJ_EVENT_PAL_TAG_KANTO_SEAGALLOP             0x112D
+#define OBJ_EVENT_PAL_TAG_KANTO_METEORITE             0x112E
 #define OBJ_EVENT_PAL_TAG_NONE                    0x11FF
 
 #include "data/object_events/object_event_graphics_info_pointers.h"
@@ -519,6 +532,16 @@ static const struct SpritePalette sObjectEventSpritePalettes[] = {
     {gObjectEventPal_RubySapphireBrendan,   OBJ_EVENT_PAL_TAG_RS_BRENDAN},
     {gObjectEventPal_RubySapphireMay,       OBJ_EVENT_PAL_TAG_RS_MAY},
     {gObjectEventPal_SSAnne,                OBJ_EVENT_PAL_TAG_SS_ANNE}, // PS-098
+    {gObjectEventPal_KantoNpcBlue,            OBJ_EVENT_PAL_TAG_KANTO_NPC_BLUE}, // PS-100: pokefirered's palettes for the Kanto sprites
+    {gObjectEventPal_KantoNpcPink,            OBJ_EVENT_PAL_TAG_KANTO_NPC_PINK},
+    {gObjectEventPal_KantoNpcGreen,           OBJ_EVENT_PAL_TAG_KANTO_NPC_GREEN},
+    {gObjectEventPal_KantoNpcWhite,           OBJ_EVENT_PAL_TAG_KANTO_NPC_WHITE},
+    {gObjectEventPal_KantoNpcBlueReflection,  OBJ_EVENT_PAL_TAG_KANTO_NPC_BLUE_REFLECTION},
+    {gObjectEventPal_KantoNpcPinkReflection,  OBJ_EVENT_PAL_TAG_KANTO_NPC_PINK_REFLECTION},
+    {gObjectEventPal_KantoNpcGreenReflection, OBJ_EVENT_PAL_TAG_KANTO_NPC_GREEN_REFLECTION},
+    {gObjectEventPal_KantoNpcWhiteReflection, OBJ_EVENT_PAL_TAG_KANTO_NPC_WHITE_REFLECTION},
+    {gObjectEventPal_KantoSeagallop,          OBJ_EVENT_PAL_TAG_KANTO_SEAGALLOP},
+    {gObjectEventPal_KantoMeteorite,          OBJ_EVENT_PAL_TAG_KANTO_METEORITE},
 #ifdef BUGFIX
     {NULL,                                  OBJ_EVENT_PAL_TAG_NONE},
 #else
@@ -706,6 +729,21 @@ static const u16 *const sObjectPaletteTagSets[] = {
     sObjectPaletteTags1,
     sObjectPaletteTags2,
     sObjectPaletteTags3,
+};
+
+// PS-100: the NPC palette set of a region whose sprites were drawn for other palettes (OBJ_PAL_SET_KANTO: pokefirered's
+// blue / pink / green / white in the four NPC slots, Emerald's player palette in slot 0). Chosen by InitObjectEventPalettes().
+static const u16 sKantoObjectPaletteTags[] = {
+    [PALSLOT_PLAYER]            = OBJ_EVENT_PAL_TAG_BRENDAN,
+    [PALSLOT_PLAYER_REFLECTION] = OBJ_EVENT_PAL_TAG_BRENDAN_REFLECTION,
+    [PALSLOT_NPC_1]             = OBJ_EVENT_PAL_TAG_KANTO_NPC_BLUE,
+    [PALSLOT_NPC_2]             = OBJ_EVENT_PAL_TAG_KANTO_NPC_PINK,
+    [PALSLOT_NPC_3]             = OBJ_EVENT_PAL_TAG_KANTO_NPC_GREEN,
+    [PALSLOT_NPC_4]             = OBJ_EVENT_PAL_TAG_KANTO_NPC_WHITE,
+    [PALSLOT_NPC_1_REFLECTION]  = OBJ_EVENT_PAL_TAG_KANTO_NPC_BLUE_REFLECTION,
+    [PALSLOT_NPC_2_REFLECTION]  = OBJ_EVENT_PAL_TAG_KANTO_NPC_PINK_REFLECTION,
+    [PALSLOT_NPC_3_REFLECTION]  = OBJ_EVENT_PAL_TAG_KANTO_NPC_GREEN_REFLECTION,
+    [PALSLOT_NPC_4_REFLECTION]  = OBJ_EVENT_PAL_TAG_KANTO_NPC_WHITE_REFLECTION,
 };
 
 #include "data/object_events/berry_tree_graphics_tables.h"
@@ -1535,7 +1573,7 @@ u8 SpawnSpecialObjectEvent(struct ObjectEventTemplate *objectEventTemplate)
     return TrySpawnObjectEventTemplate(objectEventTemplate, gSaveBlock1Ptr->location.mapNum, gSaveBlock1Ptr->location.mapGroup, cameraX, cameraY);
 }
 
-u8 SpawnSpecialObjectEventParameterized(u8 graphicsId, u8 movementBehavior, u8 localId, s16 x, s16 y, u8 elevation)
+u8 SpawnSpecialObjectEventParameterized(u16 graphicsId, u8 movementBehavior, u8 localId, s16 x, s16 y, u8 elevation)
 {
     struct ObjectEventTemplate objectEventTemplate;
 
@@ -1625,7 +1663,7 @@ u8 CreateObjectGraphicsSprite(u16 graphicsId, void (*callback)(struct Sprite *),
 // A unique id is given as an argument and stored in the sprite data to allow referring back to the same virtual object.
 // They can be turned (and, in the case of the Union Room, animated teleporting in and out) but do not have movement types
 // or any of the other data normally associated with object events.
-u8 CreateVirtualObject(u8 graphicsId, u8 virtualObjId, s16 x, s16 y, u8 elevation, u8 direction)
+u8 CreateVirtualObject(u16 graphicsId, u8 virtualObjId, s16 x, s16 y, u8 elevation, u8 direction)
 {
     u8 spriteId;
     struct Sprite *sprite;
@@ -1847,7 +1885,7 @@ static void SetPlayerAvatarObjectEventIdAndObjectId(u8 objectEventId, u8 spriteI
     SetPlayerAvatarExtraStateTransition(gObjectEvents[objectEventId].graphicsId, PLAYER_AVATAR_FLAG_CONTROLLABLE);
 }
 
-void ObjectEventSetGraphicsId(struct ObjectEvent *objectEvent, u8 graphicsId)
+void ObjectEventSetGraphicsId(struct ObjectEvent *objectEvent, u16 graphicsId)
 {
     const struct ObjectEventGraphicsInfo *graphicsInfo;
     struct Sprite *sprite;
@@ -1888,7 +1926,7 @@ void ObjectEventSetGraphicsId(struct ObjectEvent *objectEvent, u8 graphicsId)
         CameraObjectReset();
 }
 
-void ObjectEventSetGraphicsIdByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup, u8 graphicsId)
+void ObjectEventSetGraphicsIdByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup, u16 graphicsId)
 {
     u8 objectEventId;
 
@@ -1943,11 +1981,12 @@ static void SetBerryTreeGraphics(struct ObjectEvent *objectEvent, struct Sprite 
     }
 }
 
-const struct ObjectEventGraphicsInfo *GetObjectEventGraphicsInfo(u8 graphicsId)
+const struct ObjectEventGraphicsInfo *GetObjectEventGraphicsInfo(u16 graphicsId)
 {
     u8 bard;
 
-    if (graphicsId >= OBJ_EVENT_GFX_VARS)
+    // PS-100: ids are u16 now; the dynamic ids are still OBJ_EVENT_GFX_VAR_0..F (240..255), the Kanto sprites start at 256
+    if (graphicsId >= OBJ_EVENT_GFX_VARS && graphicsId <= OBJ_EVENT_GFX_VAR_F)
         graphicsId = VarGetObjectEventGraphicsId(graphicsId - OBJ_EVENT_GFX_VARS);
 
     if (graphicsId == OBJ_EVENT_GFX_BARD)
@@ -1956,7 +1995,7 @@ const struct ObjectEventGraphicsInfo *GetObjectEventGraphicsInfo(u8 graphicsId)
         return gMauvilleOldManGraphicsInfoPointers[bard];
     }
 
-    if (graphicsId >= NUM_OBJ_EVENT_GFX)
+    if (graphicsId >= NUM_OBJ_EVENT_GFX || gObjectEventGraphicsInfoPointers[graphicsId] == NULL) // PS-100: unallocated Kanto ids (and the VAR range) have no entry
         graphicsId = OBJ_EVENT_GFX_NINJA_BOY;
 
     return gObjectEventGraphicsInfoPointers[graphicsId];
@@ -1964,7 +2003,7 @@ const struct ObjectEventGraphicsInfo *GetObjectEventGraphicsInfo(u8 graphicsId)
 
 static void SetObjectEventDynamicGraphicsId(struct ObjectEvent *objectEvent)
 {
-    if (objectEvent->graphicsId >= OBJ_EVENT_GFX_VARS)
+    if (objectEvent->graphicsId >= OBJ_EVENT_GFX_VARS && objectEvent->graphicsId <= OBJ_EVENT_GFX_VAR_F) // PS-100: Kanto ids are above the VAR range
         objectEvent->graphicsId = VarGetObjectEventGraphicsId(objectEvent->graphicsId - OBJ_EVENT_GFX_VARS);
 }
 
@@ -2564,17 +2603,22 @@ void OverrideSecretBaseDecorationSpriteScript(u8 localId, u8 mapNum, u8 mapGroup
 
 void InitObjectEventPalettes(u8 reflectionType)
 {
+    const u16 *tags = sObjectPaletteTagSets[reflectionType];
+
+    // PS-100: a region whose sprites were drawn for other NPC palettes (Kanto: pokefirered's) gets its own set
+    if (GetRegionInfo(GetCurrentRegion())->objectPaletteSet == OBJ_PAL_SET_KANTO)
+        tags = sKantoObjectPaletteTags;
     FreeAndReserveObjectSpritePalettes();
     sCurrentSpecialObjectPaletteTag = OBJ_EVENT_PAL_TAG_NONE;
     sCurrentReflectionType = reflectionType;
     if (reflectionType == 1)
     {
-        PatchObjectPaletteRange(sObjectPaletteTagSets[sCurrentReflectionType], PALSLOT_PLAYER, PALSLOT_NPC_4 + 1);
+        PatchObjectPaletteRange(tags, PALSLOT_PLAYER, PALSLOT_NPC_4 + 1);
         gReservedSpritePaletteCount = 8;
     }
     else
     {
-        PatchObjectPaletteRange(sObjectPaletteTagSets[sCurrentReflectionType], PALSLOT_PLAYER, PALSLOT_NPC_4_REFLECTION + 1);
+        PatchObjectPaletteRange(tags, PALSLOT_PLAYER, PALSLOT_NPC_4_REFLECTION + 1);
     }
 }
 
@@ -8906,7 +8950,7 @@ void TurnVirtualObject(u8 virtualObjId, u8 direction)
         StartSpriteAnim(&gSprites[spriteId], GetFaceDirectionAnimNum(direction));
 }
 
-void SetVirtualObjectGraphics(u8 virtualObjId, u8 graphicsId)
+void SetVirtualObjectGraphics(u8 virtualObjId, u16 graphicsId)
 {
     int spriteId = GetVirtualObjectSpriteId(virtualObjId);
 

@@ -123,6 +123,8 @@
 #define MULTI_FALLARBOR_TENT_RULES         112
 #define MULTI_TAG_MATCH_TYPE               113
 #define MULTI_REGION_TRANSIT               114 // PS-071: populated by ScriptMenu_CreateRegionTransitMultichoice
+#define MULTI_KANTO_YES_NO                 115 // PS-100: pokefirered's MULTICHOICE_YES_NO (the Kanto scripts, e.g. the Pokémon Center nurse)
+#define MULTI_KANTO_TRAINER_SCHOOL_WHITEBOARD 116 // PS-100: pokefirered's MULTICHOICE_TRAINER_SCHOOL_WHITEBOARD (Viridian City school)
 
 // Lilycove SS Tidal Multichoice Selections
 #define SSTIDAL_SELECTION_SLATEPORT        0

@@ -776,6 +776,23 @@ static const struct MenuAction MultichoiceList_Exit[] =
     {gText_Exit},
 };
 
+// PS-100: pokefirered's multichoice lists used by the imported Kanto scripts (tools/kanto_import/script_constants.tsv)
+static const struct MenuAction MultichoiceList_KantoYesNo[] =
+{
+    {gText_Yes},
+    {gText_No},
+};
+
+static const struct MenuAction MultichoiceList_KantoTrainerSchoolWhiteboard[] =
+{
+    {gText_Slp},
+    {gText_Psn},
+    {gText_Par},
+    {gText_Brn},
+    {gText_Frz},
+    {gText_Exit},
+};
+
 struct MultichoiceListStruct
 {
     const struct MenuAction *list;
@@ -899,6 +916,8 @@ static const struct MultichoiceListStruct sMultichoiceLists[] =
     [MULTI_FALLARBOR_TENT_RULES]       = MULTICHOICE(MultichoiceList_FallarborTentRules),
     [MULTI_TAG_MATCH_TYPE]             = MULTICHOICE(MultichoiceList_TagMatchType),
     [MULTI_REGION_TRANSIT]             = MULTICHOICE(MultichoiceList_Exit), // PS-071: filled at run time
+    [MULTI_KANTO_YES_NO]               = MULTICHOICE(MultichoiceList_KantoYesNo), // PS-100
+    [MULTI_KANTO_TRAINER_SCHOOL_WHITEBOARD] = MULTICHOICE(MultichoiceList_KantoTrainerSchoolWhiteboard), // PS-100
 };
 
 const u8 *const gStdStrings[] =

@@ -2,6 +2,7 @@
 #include "string_util.h"
 #include "text.h"
 #include "strings.h"
+#include "region.h" // PS-100: the region's rival name
 
 EWRAM_DATA u8 gStringVar1[0x100] = {0};
 EWRAM_DATA u8 gStringVar2[0x100] = {0};
@@ -455,6 +456,10 @@ static const u8 *ExpandPlaceholder_KunChan(void)
 
 static const u8 *ExpandPlaceholder_RivalName(void)
 {
+    const u8 *regionRival = GetRegionInfo(GetCurrentRegion())->rivalName; // PS-100: a region with its own rival (Kanto: GREEN)
+
+    if (regionRival != NULL)
+        return regionRival;
     if (gSaveBlock2Ptr->playerGender == MALE)
         return gText_ExpandedPlaceholder_May;
     else

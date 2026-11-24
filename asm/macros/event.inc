@@ -1992,3 +1992,68 @@
 	setvar VAR_0x8006, \item
 	special CreateEnemyEventMon
 	.endm
+
+	/* PS-100: shims for pokefirered's script macros, used by the Kanto scripts imported by tools/kanto_import --events.
+	   The imported scripts are pokefirered's .inc files assembled with our macros (the bytecode is Emerald's), so only
+	   the macro layer differs. FRLG-only systems are silent no-ops here (quest log, fame checker, help system). */
+
+	/* FRLG: NPC text colours (the textcolor command is a no-op in Emerald, kept for the argument values) */
+	NPC_TEXT_COLOR_MALE = 0
+	NPC_TEXT_COLOR_FEMALE = 1
+	NPC_TEXT_COLOR_MON = 2
+	NPC_TEXT_COLOR_NEUTRAL = 3
+	NPC_TEXT_COLOR_DEFAULT = 255
+
+	/* FRLG famechecker person, index[, function]: records a Fame Checker entry. No Fame Checker here: nothing. */
+	.macro famechecker person:req, index:req, function=0
+	.endm
+
+	/* FRLG goto_if_questlog dest: jumps when the quest log is replaying. It never replays here: nothing. */
+	.macro goto_if_questlog dest:req
+	.endm
+
+	/* FRLG set_gym_trainers gym: marks the gym's trainers as defeated (KantoEventScript_SetGymTrainers is pokefirered's
+	   EventScript_SetGymTrainers from data/scripts/kanto_shared.inc). */
+	.macro set_gym_trainers gym:req
+	setvar VAR_0x8008, \gym
+	call KantoEventScript_SetGymTrainers
+	.endm
+
+	/* FRLG msgreceiveditem msg, item[, amount[, fanfare]]: "received item" message with the fanfare, then the
+	   item is put away (STD_RECEIVED_ITEM in FRLG; here the imported KantoStd_ReceivedItem). */
+	.macro msgreceiveditem msg:req, item:req, amount=1, fanfare=MUS_LEVEL_UP
+	loadword 0, \msg
+	setorcopyvar VAR_0x8000, \item
+	setorcopyvar VAR_0x8001, \amount
+	setorcopyvar VAR_0x8002, \fanfare
+	call KantoStd_ReceivedItem
+	.endm
+
+	/* FRLG giveitem_msg msg, item[, amount[, fanfare]]: additem + msgreceiveditem */
+	.macro giveitem_msg msg:req, item:req, amount=1, fanfare=MUS_LEVEL_UP
+	additem \item, \amount
+	msgreceiveditem \msg, \item, \amount, \fanfare
+	.endm
+
+	/* FRLG putitemaway item[, amount]: "put the item away in the pocket" (STD_PUT_ITEM_AWAY in FRLG) */
+	.macro putitemaway item:req, amount=1
+	setorcopyvar VAR_0x8000, \item
+	setorcopyvar VAR_0x8001, \amount
+	call KantoStd_PutItemAway
+	.endm
+
+	/* FRLG trainerbattle_earlyrival trainer, flags, defeat_text, victory_text: the rival battles the player can lose
+	   without blacking out (TRAINER_BATTLE_EARLY_RIVAL). Here: a plain battle without intro text; losing blacks out
+	   as any battle does (the rival controller is PS-102/PS-103 work). flags and victory_text are ignored. */
+	.macro trainerbattle_earlyrival trainer:req, flags:req, defeat_text:req, victory_text:req
+	trainerbattle TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT, \trainer, 0, \defeat_text
+	.endm
+
+	/* FRLG names of Emerald's checkmodernfatefulencounter / setmodernfatefulencounter */
+	.macro checkmonmodernfatefulencounter slot:req
+	checkmodernfatefulencounter \slot
+	.endm
+
+	.macro setmonmodernfatefulencounter slot:req
+	setmodernfatefulencounter \slot
+	.endm
