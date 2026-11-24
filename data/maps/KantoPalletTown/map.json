@@ -17,6 +17,11 @@
       "map": "MAP_KANTO_ROUTE1",
       "offset": 0,
       "direction": "up"
+    },
+    {
+      "map": "MAP_KANTO_ROUTE21_NORTH",
+      "offset": 0,
+      "direction": "down"
     }
   ],
   "object_events": [],

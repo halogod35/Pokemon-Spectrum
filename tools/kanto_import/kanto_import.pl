@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# tools/kanto_import/kanto_import.pl -- PS-093/PS-094: import Kanto map data from a pret pokefirered
+# tools/kanto_import/kanto_import.pl -- PS-093/PS-094/PS-095: import Kanto map data from a pret pokefirered
 # checkout into this repository as REGION_KANTO (maps, layouts, tilesets, sections, heal
 # locations, visited flags, map groups, region map layout/Fly spots, mp_presence group table).
 #
@@ -10,7 +10,12 @@
 # what it writes, the one-time hooks it expects in the repository, and the tileset re-pack
 # ("prefix re-pack", card PS-094: FRLG primaries hold 640 tiles / 640 metatiles / 7 palettes,
 # Emerald's engine splits at 512 / 512 / 6; the tail of a FRLG primary is prepended to every
-# secondary paired with it, so no metatile or tile id changes).
+# secondary paired with it, so no metatile or tile id changes). PS-095 added: one re-packed copy
+# per primary for a secondary used with several primaries, shared tileset graphics (silph_co uses
+# condominiums' tiles), map coordinates for dungeon / indoor sections, the Porymap marker blocks in
+# src/data/tilesets/*.h, every heal location, hand-written extras (tools/kanto_import/extras) and
+# the audits printed at the end (warps, connections, layouts, music, behaviours).
+# The Kanto picture is a separate step: tools/kanto_import/kanto_region_map.pl.
 #
 # The pokefirered files are data: nothing is executed from that checkout.
 use strict;
@@ -42,16 +47,12 @@ my $TILE_PX = 8;
 my $PNG_WIDTH = 128;                # every tileset png is 16 tiles wide
 my $REGION_MAP_WIDTH = 28;          # include/region.h
 my $REGION_MAP_HEIGHT = 15;
-my $REGION_MAP_TILEMAP_SIDE = 64;   # graphics/pokenav/region_map/*.bin: 64x64 bytes
-my $REGION_MAP_TOWN_TILE = 0x0D;    # Hoenn picture's inland town marker (docs/regions.md)
-my $REGION_MAP_ROUTE_TILE = 0x4D;   # the template picture's route segment
-my $REGION_MAP_CURSOR_X_MIN = 1;    # src/region_map.c MAPCURSOR_X_MIN / Y_MIN
-my $REGION_MAP_CURSOR_Y_MIN = 2;
 my $FIRST_REGION_MAPSEC = '0x100';  # MAPSEC_REGIONS_START: Kanto is the first region after Hoenn
 my $FIRST_FLAG_OFFSET = 0x10;       # REGION_FLAGS_START + 0x00..0x0F are FLAG_BADGE09..24
 
 my $PREFIX = 'Kanto';               # map / layout / tileset name prefix
 my $UPREFIX = 'KANTO';              # constant prefix
+my $CARDS = 'PS-094/PS-095';
 
 # ---------------------------------------------------------------------------------------------
 # Arguments
@@ -65,17 +66,19 @@ die "--maps <list file> is required\n" unless defined $mapsFile && -f $mapsFile;
 $repo //= File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..', '..'));
 die "repo root $repo has no data/maps\n" unless -d "$repo/data/maps";
 my $toolDir = dirname(__FILE__);
+my $extrasDir = "$toolDir/extras";
 
-my (@errors, @notes);
+my (@errors, @notes, @audit);
 sub err  { push @errors, shift }
 sub note { push @notes, shift }
+sub audit { push @audit, shift }
 sub info { print @_, "\n" unless $quiet }
 
 # ---------------------------------------------------------------------------------------------
 # File helpers
 # ---------------------------------------------------------------------------------------------
 sub slurp { my $f = shift; open my $h, '<', $f or die "cannot read $f: $!\n"; binmode $h; local $/; my $d = <$h>; close $h; return $d }
-sub rjson { return decode_json(slurp(shift)) }
+sub rjson { return JSON::PP->new->decode(slurp(shift)) } # bytes in, bytes out: non-ASCII names (POKéMON) pass through unchanged
 my %pendingWrites; # path => content, written at the end (phase 2)
 sub queue_write { my ($path, $content) = @_; $pendingWrites{$path} = $content }
 sub flush_writes
@@ -151,15 +154,18 @@ sub translate_behavior
     return ($frName, $to);
 }
 
+my %musicUsed; # our track => count
 sub translate_music
 {
     my $mus = shift;
     (my $rg = $mus) =~ s/^MUS_/MUS_RG_/;
-    return $rg if our_has_define($ourSongs, $rg);
-    return $mus if our_has_define($ourSongs, $mus);
-    return $constTable->{$mus}{to} if exists $constTable->{$mus} && our_has_define($ourSongs, $constTable->{$mus}{to});
-    err("music $mus has no Emerald track (add a row to constants.tsv)");
-    return 'MUS_NONE';
+    my $to;
+    if    (our_has_define($ourSongs, $rg)) { $to = $rg }
+    elsif (our_has_define($ourSongs, $mus)) { $to = $mus }
+    elsif (exists $constTable->{$mus} && our_has_define($ourSongs, $constTable->{$mus}{to})) { $to = $constTable->{$mus}{to} }
+    else { err("music $mus has no Emerald track (add a row to constants.tsv)"); $to = 'MUS_NONE' }
+    $musicUsed{$to}++;
+    return $to;
 }
 sub translate_const
 {
@@ -247,7 +253,7 @@ sub png_build
 # pokefirered data
 # ---------------------------------------------------------------------------------------------
 # tileset symbol -> directory
-my %frTileset; # gTileset_X => { dir, base, primary }
+my %frTileset; # gTileset_X => { dir, base, primary, gfxOwner }
 for my $kind (qw(primary secondary))
 {
     for my $d (glob("$frlg/data/tilesets/$kind/*"))
@@ -259,10 +265,20 @@ for my $kind (qw(primary secondary))
     }
 }
 {
+    # pokefirered's headers.h says which tileset's tiles / palettes a tileset draws with (silph_co uses
+    # condominiums' graphics and only has metatiles of its own)
     my $hdr = slurp("$frlg/src/data/tilesets/headers.h");
-    for my $sym ($hdr =~ /const struct Tileset (gTileset_\w+)/g)
+    while ($hdr =~ /const struct Tileset (gTileset_\w+) =\s*\{(.*?)\};/sg)
     {
-        note("pokefirered tileset $sym has no data/tilesets directory with that name (fine unless a chosen map uses it)") unless $frTileset{$sym};
+        my ($sym, $body) = ($1, $2);
+        unless ($frTileset{$sym}) { note("pokefirered tileset $sym has no data/tilesets directory with that name (fine unless a chosen map uses it)"); next }
+        (my $own = $sym) =~ s/^gTileset_//;
+        my ($tiles) = $body =~ /\.tiles\s*=\s*gTilesetTiles_(\w+)/;
+        my ($pals) = $body =~ /\.palettes\s*=\s*gTilesetPalettes_(\w+)/;
+        next unless defined $tiles && defined $pals;
+        next if $tiles eq $own && $pals eq $own;
+        if ($tiles eq $pals && $frTileset{"gTileset_$tiles"}) { $frTileset{$sym}{gfxOwner} = "gTileset_$tiles" }
+        else { err("tileset $sym: draws with gTilesetTiles_$tiles / gTilesetPalettes_$pals, which is not one tileset's graphics; not supported") }
     }
 }
 sub fr_tileset
@@ -271,24 +287,21 @@ sub fr_tileset
     my $t = $frTileset{$sym} or die "unknown pokefirered tileset $sym\n";
     return $t if $t->{loaded};
     $t->{loaded} = 1;
-    for my $f (qw(metatiles.bin metatile_attributes.bin tiles.png))
+    my $gfxDir = $t->{gfxOwner} ? $frTileset{$t->{gfxOwner}}{dir} : $t->{dir};
+    for my $f (["$t->{dir}/metatiles.bin"], ["$t->{dir}/metatile_attributes.bin"], ["$gfxDir/tiles.png"])
     {
-        unless (-f "$t->{dir}/$f")
-        {
-            err("tileset $sym: $t->{dir}/$f is missing (pokefirered shares another tileset's graphics for it; not supported, copy them by hand)");
-            $t->{broken} = 1;
-        }
+        unless (-f $f->[0]) { err("tileset $sym: $f->[0] is missing"); $t->{broken} = 1 }
     }
-    unless (-d "$t->{dir}/palettes") { err("tileset $sym: no palettes directory"); $t->{broken} = 1 }
+    unless (-d "$gfxDir/palettes") { err("tileset $sym: no palettes directory in $gfxDir"); $t->{broken} = 1 }
     return $t if $t->{broken};
     $t->{metatiles} = [ unpack('v*', slurp("$t->{dir}/metatiles.bin")) ];
     $t->{attrs} = [ unpack('V*', slurp("$t->{dir}/metatile_attributes.bin")) ];
     $t->{nMetatiles} = scalar(@{$t->{attrs}});
     die "tileset $sym: metatiles.bin and metatile_attributes.bin disagree\n" unless scalar(@{$t->{metatiles}}) == 8 * $t->{nMetatiles};
-    $t->{png} = png_read("$t->{dir}/tiles.png");
+    $t->{png} = png_read("$gfxDir/tiles.png");
     for my $i (0 .. $PALS_TOTAL - 1)
     {
-        my $p = sprintf("%s/palettes/%02d.pal", $t->{dir}, $i);
+        my $p = sprintf("%s/palettes/%02d.pal", $gfxDir, $i);
         if (-f $p) { $t->{pal}[$i] = slurp($p) } else { err("tileset $sym: palette file $p is missing") }
     }
     return $t;
@@ -300,8 +313,27 @@ my $frGroups = rjson("$frlg/data/maps/map_groups.json");
 my $frSections = rjson("$frlg/src/data/region_map/region_map_sections.json");
 my %frSectionById = map { $_->{id} => $_ } @{$frSections->{map_sections}};
 my $frHeal = rjson("$frlg/src/data/heal_locations.json");
-my %frHealByMap; # MAP_X => entry
+my %frHealByMap; # MAP_X => entry (the first one)
 for my $h (@{$frHeal->{heal_locations}}) { $frHealByMap{$h->{map}} //= $h }
+# pokefirered's region map layers: which sections sit on the cursor grid (LAYER_MAP) and where its
+# dungeon icons are (LAYER_DUNGEON); region_map_sections.json carries x=0,y=0 for the dungeons
+my (%frOnMapLayer, %frDungeonCell);
+{
+    my $text = slurp("$frlg/src/data/region_map/region_map_layout_kanto.h");
+    my ($mapLayer, $dungeonLayer) = $text =~ /\[LAYER_MAP\]\s*=\s*\{(.*?)\[LAYER_DUNGEON\]\s*=\s*\{(.*)/s;
+    die "could not parse pokefirered's region_map_layout_kanto.h\n" unless defined $dungeonLayer;
+    $frOnMapLayer{$_} = 1 for $mapLayer =~ /(MAPSEC_\w+)/g;
+    my $y = 0;
+    while ($dungeonLayer =~ /\{([^{}]*)\}/g)
+    {
+        my @cells = map { s/^\s+|\s+$//gr } split /,/, $1;
+        for my $x (0 .. $#cells) { $frDungeonCell{$cells[$x]} //= [$x, $y] if $cells[$x] =~ /^MAPSEC_/ && $cells[$x] ne 'MAPSEC_NONE' }
+        $y++;
+    }
+}
+# every pokefirered map id (to tell a warp to a map outside the import from a typo)
+my %frAllMapIds; # MAP_X => map name
+for my $g (@{$frGroups->{group_order}}) { for my $m (@{$frGroups->{$g}}) { my $j = rjson("$frlg/data/maps/$m/map.json"); $frAllMapIds{$j->{id}} = $m } }
 
 # map list
 my @mapNames;
@@ -321,9 +353,20 @@ sub our_map_name   { return $PREFIX . shift }                                   
 sub our_map_id     { my $id = shift; $id =~ s/^MAP_/MAP_${UPREFIX}_/; return $id }
 sub our_layout_id  { my $id = shift; $id =~ s/^LAYOUT_/LAYOUT_${UPREFIX}_/; return $id }
 sub our_layout_dir { my $name = shift; $name =~ s/_Layout$//; return $PREFIX . $name }   # PalletTown_Layout -> KantoPalletTown
-sub our_tileset_sym{ my $sym = shift; $sym =~ s/^gTileset_/gTileset_$PREFIX/; return $sym }
-sub our_tileset_var{ my ($sym, $what) = @_; (my $s = $sym) =~ s/^gTileset_//; return "$what\_$PREFIX$s" } # gTilesetTiles_KantoGeneral
-sub our_tileset_dir{ my $t = shift; return ($t->{primary} ? 'primary' : 'secondary') . '/' . lc($PREFIX) . "_$t->{base}" }
+# A secondary used with several primaries gets one re-packed copy per primary, named after the
+# primary (kanto_seafoam_islands_general / gTileset_KantoSeafoamIslandsGeneral); with one primary the
+# plain name is kept.
+my %tilesetPairs;  # secondary sym => { primary sym => 1 }
+sub tileset_suffix
+{
+    my ($sym, $psym) = @_;
+    return '' if $frTileset{$sym}{primary} || !defined $psym || scalar(keys %{$tilesetPairs{$sym}}) < 2;
+    (my $p = $psym) =~ s/^gTileset_//;
+    return $p;
+}
+sub our_tileset_sym{ my ($sym, $psym) = @_; (my $s = $sym) =~ s/^gTileset_//; return "gTileset_$PREFIX$s" . tileset_suffix($sym, $psym) }
+sub our_tileset_var{ my ($sym, $psym, $what) = @_; (my $s = $sym) =~ s/^gTileset_//; return "$what\_$PREFIX$s" . tileset_suffix($sym, $psym) } # gTilesetTiles_KantoGeneral
+sub our_tileset_dir{ my ($sym, $psym) = @_; my $t = $frTileset{$sym}; my $sfx = tileset_suffix($sym, $psym); $sfx = '_' . lc($frTileset{$psym}{base}) if $sfx ne ''; return ($t->{primary} ? 'primary' : 'secondary') . '/' . lc($PREFIX) . "_$t->{base}$sfx" }
 # Emerald already defines a few MAPSEC_KANTO_* (met-location names for Pokémon traded from FRLG, e.g.
 # MAPSEC_KANTO_VICTORY_ROAD, in Hoenn's id range); a Kanto map section that would collide gets "_MAP".
 my $GENERATED_MARK = 'kanto_import';
@@ -373,7 +416,7 @@ err("map $_ is not in pokefirered's map_groups.json") for sort keys %chosen;
 my %frIdToName = map { $map{$_}{fr}{id} => $_ } keys %map;
 
 # layouts and tilesets used
-my (%layoutUsed, %tilesetPairs, %tilesetUsed);
+my (%layoutUsed, %tilesetUsed);
 for my $m (@mapOrder)
 {
     my $L = $frLayoutById{$map{$m}{fr}{layout}} or do { err("map $m: layout $map{$m}{fr}{layout} not in layouts.json"); next };
@@ -392,7 +435,20 @@ for my $L (values %layoutUsed)
 for my $s (sort keys %tilesetPairs)
 {
     my @p = sort keys %{$tilesetPairs{$s}};
-    err("secondary tileset $s is used with several primaries (@p): the prefix re-pack needs one copy per primary, not supported yet") if @p > 1;
+    note("secondary tileset $s is used with several primaries (@p): one re-packed copy per primary") if @p > 1;
+}
+# hand-written extras (tools/kanto_import/extras/<Map>.objects.json / <Map>.scripts.inc)
+my %extras;
+if (-d $extrasDir)
+{
+    for my $f (sort glob("$extrasDir/*"))
+    {
+        my $base = basename($f);
+        my ($m, $kind) = $base =~ /^(\w+)\.(objects\.json|scripts\.inc)$/ or do { note("extras: $base ignored (expected <Map>.objects.json or <Map>.scripts.inc)"); next };
+        unless ($map{$m}) { err("extras: $base belongs to map $m, which is not in the map list"); next }
+        $extras{$m}{$kind} = slurp($f);
+        $extras{$m}{$kind} =~ s/\r\n/\n/g;
+    }
 }
 exit_if_errors('reading the map list');
 
@@ -402,16 +458,28 @@ exit_if_errors('loading tilesets');
 
 # metatile ids referenced by the chosen layouts, per tileset symbol and (FRLG) metatile id
 my %referenced; # sym => { frMetatileId => 1 }
+my $cellsChecked = 0;
 for my $L (sort { $a->{id} cmp $b->{id} } values %layoutUsed)
 {
-    my @cells = (unpack('v*', slurp("$frlg/$L->{blockdata_filepath}")), unpack('v*', slurp("$frlg/$L->{border_filepath}")));
+    my @body = unpack('v*', slurp("$frlg/$L->{blockdata_filepath}"));
+    my @borderAll = unpack('v*', slurp("$frlg/$L->{border_filepath}"));
     my $nCells = $L->{width} * $L->{height};
-    err("layout $L->{id}: map.bin has " . (scalar(@cells) - 4) . " cells, expected $nCells") unless scalar(@cells) == $nCells + 4;
+    err("layout $L->{id}: map.bin has " . scalar(@body) . " cells, expected $nCells") unless scalar(@body) == $nCells;
+    # pokefirered tiles borders of any size (border_width / border_height); Emerald's engine tiles a
+    # 2x2 border, so the top-left 2x2 of a bigger one is kept
+    my ($bw, $bh) = ($L->{border_width} // 2, $L->{border_height} // 2);
+    err("layout $L->{id}: border.bin has " . scalar(@borderAll) . " cells, expected ${bw}x$bh") unless scalar(@borderAll) == $bw * $bh;
+    err("layout $L->{id}: border ${bw}x$bh is smaller than Emerald's 2x2") if $bw < 2 || $bh < 2;
+    next if $bw < 2 || $bh < 2 || scalar(@borderAll) != $bw * $bh;
+    note("layout $L->{id}: pokefirered border is ${bw}x$bh, Emerald tiles a 2x2 border: its top-left 2x2 is used (the pattern outside the map edge differs from FRLG)") if $bw != 2 || $bh != 2;
+    my @border = ($borderAll[0], $borderAll[1], $borderAll[$bw], $borderAll[$bw + 1]);
+    my @cells = (@body, @border);
     my $s = fr_tileset($L->{secondary_tileset});
     my $secondaryCount = $s->{nMetatiles} > $MAX_SECONDARY_METATILES ? $MAX_SECONDARY_METATILES : $s->{nMetatiles};
     for my $c (@cells)
     {
         my $id = $c & 0x3FF;
+        $cellsChecked++;
         if ($id < $FR_METATILES_IN_PRIMARY) { $referenced{$L->{primary_tileset}}{$id} = 1 }
         elsif ($id - $FR_METATILES_IN_PRIMARY < $secondaryCount) { $referenced{$L->{secondary_tileset}}{$id} = 1 }
         else { err("layout $L->{id}: metatile id $id is outside $L->{secondary_tileset} ($secondaryCount metatiles)") }
@@ -445,14 +513,18 @@ sub convert_attributes
     return @out;
 }
 
-# tilesets -> files
+# tilesets -> files. Primaries first, then every (secondary, primary) pair.
 my (@gfxLines, @metaLines, @hdrLines);
 my %writtenTilesets;
-for my $sym (sort { ($frTileset{$b}{primary} <=> $frTileset{$a}{primary}) || ($a cmp $b) } keys %tilesetUsed)
+my @tilesetOutputs = map { [$_, undef] } sort grep { $frTileset{$_}{primary} } keys %tilesetUsed;
+for my $s (sort grep { !$frTileset{$_}{primary} } keys %tilesetUsed) { push @tilesetOutputs, map { [$s, $_] } sort keys %{$tilesetPairs{$s}} }
+my %attrsConverted; # "$sym|$psym" => 1: convert_attributes is counted once per output copy
+for my $out (@tilesetOutputs)
 {
+    my ($sym, $psym) = @$out;
     my $t = fr_tileset($sym);
-    my $oursym = our_tileset_sym($sym);
-    my $dir = our_tileset_dir($t);
+    my $oursym = our_tileset_sym($sym, $psym);
+    my $dir = our_tileset_dir($sym, $psym);
     my $relDir = "data/tilesets/$dir";
     my (@rows, @metatiles, @attrs, @pal);
     my $nTiles;
@@ -468,7 +540,6 @@ for my $sym (sort { ($frTileset{$b}{primary} <=> $frTileset{$a}{primary}) || ($a
     }
     else
     {
-        my ($psym) = keys %{$tilesetPairs{$sym}};
         my $p = fr_tileset($psym);
         my $secRows = $t->{png}{h};
         my $maxRows = $MAX_SECONDARY_TILES / 16 * $TILE_PX;
@@ -483,20 +554,32 @@ for my $sym (sort { ($frTileset{$b}{primary} <=> $frTileset{$a}{primary}) || ($a
         $pal[$EM_PALS_IN_PRIMARY] = $p->{pal}[$EM_PALS_IN_PRIMARY]; # FRLG primary palette 6 lives in Emerald's first secondary slot
         $nTiles = $PREFIX_TILES + $secRows / $TILE_PX * 16;
     }
-    queue_write("$repo/$relDir/tiles.png", png_build($PNG_WIDTH, $t->{png}{plte}, \@rows));
+    # shared graphics: when the tileset draws with another imported tileset's tiles and palettes and
+    # both pair with the same primary, the re-packed graphics are identical, so the symbols are shared
+    my $owner = $t->{gfxOwner};
+    my $shareWith = (defined $owner && $tilesetUsed{$owner} && (!defined $psym || $tilesetPairs{$owner}{$psym})) ? $owner : undef;
+    my $gfxSym = $shareWith // $sym;
+    my $tilesVar = our_tileset_var($gfxSym, $psym, 'gTilesetTiles');
+    my $palVar = our_tileset_var($gfxSym, $psym, 'gTilesetPalettes');
+    my $metaVar = our_tileset_var($sym, $psym, 'gMetatiles');
+    my $attrVar = our_tileset_var($sym, $psym, 'gMetatileAttributes');
+    if (defined $shareWith)
+    {
+        note("tileset $sym: shares " . our_tileset_sym($shareWith, $psym) . "'s tiles and palettes (as in pokefirered)");
+    }
+    else
+    {
+        note("tileset $sym: pokefirered draws it with $owner\'s graphics, which is not imported with the same primary; it gets its own copy") if defined $owner;
+        queue_write("$repo/$relDir/tiles.png", png_build($PNG_WIDTH, $t->{png}{plte}, \@rows));
+        queue_write(sprintf("$repo/$relDir/palettes/%02d.pal", $_), $pal[$_]) for 0 .. $PALS_TOTAL - 1;
+        push @gfxLines, "const u32 ${tilesVar}[] = INCGFX_U32(\"$relDir/tiles.png\", \".4bpp.lz\", \"-num_tiles $nTiles -Wnum_tiles\");", "",
+                        "const u16 ${palVar}[][16] =", "{",
+                        (map { sprintf("\tINCGFX_U16(\"%s/palettes/%02d.pal\", \".gbapal\"),", $relDir, $_) } 0 .. $PALS_TOTAL - 1),
+                        "};", "";
+    }
     queue_write("$repo/$relDir/metatiles.bin", pack('v*', @metatiles));
     queue_write("$repo/$relDir/metatile_attributes.bin", pack('v*', @attrs));
-    queue_write(sprintf("$repo/$relDir/palettes/%02d.pal", $_), $pal[$_]) for 0 .. $PALS_TOTAL - 1;
-    $writtenTilesets{$sym} = { oursym => $oursym, dir => $relDir, nTiles => $nTiles, nMetatiles => scalar(@attrs) };
-
-    my $tilesVar = our_tileset_var($sym, 'gTilesetTiles');
-    my $palVar = our_tileset_var($sym, 'gTilesetPalettes');
-    my $metaVar = our_tileset_var($sym, 'gMetatiles');
-    my $attrVar = our_tileset_var($sym, 'gMetatileAttributes');
-    push @gfxLines, "const u32 ${tilesVar}[] = INCGFX_U32(\"$relDir/tiles.png\", \".4bpp.lz\", \"-num_tiles $nTiles -Wnum_tiles\");", "",
-                    "const u16 ${palVar}[][16] =", "{",
-                    (map { sprintf("\tINCGFX_U16(\"%s/palettes/%02d.pal\", \".gbapal\"),", $relDir, $_) } 0 .. $PALS_TOTAL - 1),
-                    "};", "";
+    $writtenTilesets{$oursym} = { dir => $relDir, nTiles => $nTiles, nMetatiles => scalar(@attrs), shared => $shareWith };
     push @metaLines, "const u16 ${metaVar}[] = INCBIN_U16(\"$relDir/metatiles.bin\");",
                      "const u16 ${attrVar}[] = INCBIN_U16(\"$relDir/metatile_attributes.bin\");", "";
     push @hdrLines, "const struct Tileset $oursym =", "{",
@@ -519,10 +602,8 @@ for my $n (sort keys %behaviorUnknownUnref)
     note("behaviour $n has no Emerald equivalent but only appears in metatiles no chosen map uses ($behaviorUnknownUnref{$n} metatiles, set to MB_NORMAL)");
 }
 
-my $genHeader = "// Generated by tools/kanto_import/kanto_import.pl (PS-094) from pret/pokefirered data. Do not edit:\n// re-run the converter (tools/kanto_import/README.md).\n";
-queue_write("$repo/src/data/tilesets/kanto_graphics.h", $genHeader . "\n" . join("\n", @gfxLines));
-queue_write("$repo/src/data/tilesets/kanto_metatiles.h", $genHeader . "\n" . join("\n", @metaLines));
-queue_write("$repo/src/data/tilesets/kanto_headers.h", $genHeader . "\n" . join("\n", @hdrLines));
+my $genHeader = "// Generated by tools/kanto_import/kanto_import.pl ($CARDS) from pret/pokefirered data. Do not edit:\n// re-run the converter (tools/kanto_import/README.md).\n";
+my $genBlockNote = "// Generated by tools/kanto_import/kanto_import.pl ($CARDS) from pret/pokefirered data: do not edit, re-run the converter.\n";
 
 # layouts
 my @layoutEntries;
@@ -541,16 +622,17 @@ for my $L (sort { $a->{id} cmp $b->{id} } values %layoutUsed)
         "      \"name\": \"${dirName}_Layout\",",
         "      \"width\": $L->{width},",
         "      \"height\": $L->{height},",
-        "      \"primary_tileset\": \"" . our_tileset_sym($L->{primary_tileset}) . "\",",
-        "      \"secondary_tileset\": \"" . our_tileset_sym($L->{secondary_tileset}) . "\",",
+        "      \"primary_tileset\": \"" . our_tileset_sym($L->{primary_tileset}, undef) . "\",",
+        "      \"secondary_tileset\": \"" . our_tileset_sym($L->{secondary_tileset}, $L->{primary_tileset}) . "\",",
         "      \"border_filepath\": \"data/layouts/$dirName/border.bin\",",
         "      \"blockdata_filepath\": \"data/layouts/$dirName/map.bin\"",
         "    }");
 }
 
 # sections (FRLG order), heal locations, visited flags
-my (@sectionIds, %sectionOf, %townSections, %healOf, @healEntries, %flagOf);
+my (@sectionIds, %sectionOf, %townSections, %healOf, @healEntries, %flagOf, %sectionMaps, %ourSecOfFrSec);
 my %isTownType = (MAP_TYPE_TOWN => 1, MAP_TYPE_CITY => 1);
+my %isOutdoorType = (MAP_TYPE_TOWN => 1, MAP_TYPE_CITY => 1, MAP_TYPE_ROUTE => 1, MAP_TYPE_OCEAN_ROUTE => 1);
 for my $S (@{$frSections->{map_sections}})
 {
     my @mapsHere = grep { $map{$_}{fr}{region_map_section} eq $S->{id} } @mapOrder;
@@ -558,6 +640,8 @@ for my $S (@{$frSections->{map_sections}})
     my $ours = our_section_id($S->{id});
     push @sectionIds, $ours;
     $sectionOf{$ours} = $S;
+    $ourSecOfFrSec{$S->{id}} = $ours;
+    $sectionMaps{$ours} = \@mapsHere;
     for my $m (@mapsHere)
     {
         if ($isTownType{$map{$m}{fr}{map_type}})
@@ -571,6 +655,76 @@ for my $m (@mapOrder)
 {
     err("map $m: section $map{$m}{fr}{region_map_section} is not in pokefirered's region_map_sections.json") unless $frSectionById{$map{$m}{fr}{region_map_section}};
 }
+# Map coordinates. Sections on pokefirered's cursor grid keep their x/y/width/height. The others
+# (dungeons, indoor-only sections) carry x=0,y=0 in pokefirered: they get the cell of pokefirered's
+# dungeon icon when there is one, else the cell of the first already placed map that warps into them
+# (an outdoor map's warp position scaled to its section, an indoor map's own cell), so the cursor lands
+# where the player is when the Fly map opens inside them. They are not placed on the cursor grid
+# (the outdoor section stays under the cursor; Fly only needs the towns).
+my %placed; # ours => [x, y, w, h]
+for my $ours (@sectionIds)
+{
+    my $S = $sectionOf{$ours};
+    if ($frOnMapLayer{$S->{id}} && defined $S->{x})
+    {
+        $placed{$ours} = [$S->{x}, $S->{y}, $S->{width} || 1, $S->{height} || 1];
+        $S->{onGrid} = 1;
+    }
+    elsif (my $cell = $frDungeonCell{$S->{id}})
+    {
+        $placed{$ours} = [$cell->[0], $cell->[1], 1, 1];
+        $S->{placedBy} = "pokefirered's dungeon icon";
+    }
+}
+sub cell_of_map_at
+{
+    my ($m, $x, $y) = @_; # cursor cell of map $m at its tile ($x, $y)
+    my $ours = $ourSecOfFrSec{$map{$m}{fr}{region_map_section}};
+    my $p = $placed{$ours} or return;
+    return [$p->[0], $p->[1]] unless $isOutdoorType{$map{$m}{fr}{map_type}};
+    my $L = $frLayoutById{$map{$m}{fr}{layout}};
+    my $cx = int($x * $p->[2] / $L->{width});  $cx = $p->[2] - 1 if $cx >= $p->[2];
+    my $cy = int($y * $p->[3] / $L->{height}); $cy = $p->[3] - 1 if $cy >= $p->[3];
+    return [$p->[0] + $cx, $p->[1] + $cy];
+}
+{
+    my $progress = 1;
+    while ($progress)
+    {
+        $progress = 0;
+        for my $ours (@sectionIds)
+        {
+            next if $placed{$ours};
+            my $S = $sectionOf{$ours};
+            SEARCH: for my $m (@mapOrder)
+            {
+                next unless $placed{$ourSecOfFrSec{$map{$m}{fr}{region_map_section}}};
+                for my $w (@{$map{$m}{fr}{warp_events} || []})
+                {
+                    my $destName = $frIdToName{$w->{dest_map}} or next;
+                    next unless $map{$destName}{fr}{region_map_section} eq $S->{id};
+                    my $cell = cell_of_map_at($m, $w->{x}, $w->{y}) or next;
+                    $placed{$ours} = [$cell->[0], $cell->[1], 1, 1];
+                    $S->{placedBy} = "the warp from $m";
+                    $progress = 1;
+                    last SEARCH;
+                }
+            }
+        }
+    }
+}
+for my $ours (@sectionIds)
+{
+    my $S = $sectionOf{$ours};
+    unless ($placed{$ours})
+    {
+        $placed{$ours} = [$S->{x} // 0, $S->{y} // 0, $S->{width} || 1, $S->{height} || 1];
+        note("section $ours is on neither of pokefirered's map layers and no placed map warps into it; it keeps pokefirered's coordinates ($placed{$ours}[0],$placed{$ours}[1])");
+    }
+    my $p = $placed{$ours};
+    err("section $ours: cells ($p->[0]..@{[$p->[0] + $p->[2] - 1]},$p->[1]..@{[$p->[1] + $p->[3] - 1]}) do not fit the ${REGION_MAP_WIDTH}x$REGION_MAP_HEIGHT region map")
+        if $p->[0] + $p->[2] > $REGION_MAP_WIDTH || $p->[1] + $p->[3] > $REGION_MAP_HEIGHT;
+}
 my $flagOffset = $FIRST_FLAG_OFFSET;
 for my $sec (grep { $townSections{$_} } @sectionIds)
 {
@@ -582,27 +736,28 @@ for my $i (0 .. $#sectionIds)
 {
     my $ours = $sectionIds[$i];
     my $S = $sectionOf{$ours};
-    my @lines = ("{", "      \"id\": \"$ours\",", "      \"comment\": \"$GENERATED_MARK: generated by tools/kanto_import from pokefirered $S->{id}\",");
+    my $p = $placed{$ours};
+    my $how = $S->{onGrid} ? "on the cursor grid" : "off the grid, placed by " . ($S->{placedBy} // "pokefirered's coordinates");
+    my @lines = ("{", "      \"id\": \"$ours\",", "      \"comment\": \"$GENERATED_MARK: generated by tools/kanto_import from pokefirered $S->{id}; $how\",");
     push @lines, "      \"value\": \"$FIRST_REGION_MAPSEC\"," if $i == 0;
-    push @lines, "      \"name\": \"$S->{name}\"" . (defined $S->{x} ? "," : "");
-    if (defined $S->{x})
-    {
-        push @lines, "      \"x\": $S->{x},", "      \"y\": $S->{y},", "      \"width\": $S->{width},", "      \"height\": $S->{height}";
-    }
+    push @lines, "      \"name\": \"$S->{name}\",";
+    push @lines, "      \"x\": $p->[0],", "      \"y\": $p->[1],", "      \"width\": $p->[2],", "      \"height\": $p->[3]";
     push @lines, "    }";
     push @sectionEntries, join("\n", @lines);
 }
-for my $sec (grep { $healOf{$_} } @sectionIds)
+# heal locations: every imported map that has one in pokefirered (towns' spots and the Route 4 / Route 10
+# Pokémon Centers); Fly spots use the towns' ones
+for my $h (@{$frHeal->{heal_locations}})
 {
-    my $h = $healOf{$sec}{h};
+    my $m = $frIdToName{$h->{map}} or next;
     my $id = our_heal_id($h->{id});
-    $healOf{$sec}{ourId} = $id;
     push @healEntries, join("\n", "{",
         "      \"id\": \"$id\",",
         "      \"map\": \"" . our_map_id($h->{map}) . "\",",
         "      \"x\": $h->{x},",
         "      \"y\": $h->{y}",
         "    }");
+    for my $sec (grep { $healOf{$_} && $healOf{$_}{h} == $h } keys %healOf) { $healOf{$sec}{ourId} = $id }
 }
 
 # maps
@@ -610,6 +765,16 @@ my (@scriptIncludes, %warpCount);
 $warpCount{$_} = scalar(@{$map{$_}{fr}{warp_events} || []}) for @mapOrder;
 sub jbool { return $_[0] ? 'true' : 'false' }
 sub jstr  { my $s = shift; $s =~ s/(["\\])/\\$1/g; return "\"$s\"" }
+my %opposite = (up => 'down', down => 'up', left => 'right', right => 'left', dive => 'emerge', emerge => 'dive');
+my %auditWarps = (checked => 0, inside => 0, redirected => 0, bad => 0);
+my %auditConns = (checked => 0, kept => 0, dropped => 0, mismatch => 0, oneway => 0, standin => 0);
+sub is_standin_map
+{
+    my $m = shift;
+    my $fr = $map{$m}{fr};
+    return $m =~ /_Connection$/ && !@{$fr->{warp_events} || []} && !@{$fr->{object_events} || []} && !@{$fr->{coord_events} || []} && !@{$fr->{bg_events} || []};
+}
+my (%warpRedirectTargets, %connDropTargets, %extrasUsed);
 for my $m (@mapOrder)
 {
     my $fr = $map{$m}{fr};
@@ -630,12 +795,40 @@ for my $m (@mapOrder)
     my @conns;
     for my $c (@{$fr->{connections} || []})
     {
+        $auditConns{checked}++;
         if (my $destName = $frIdToName{$c->{map}})
         {
             push @conns, "    {\n      \"map\": \"" . our_map_id($c->{map}) . "\",\n      \"offset\": $c->{offset},\n      \"direction\": \"$c->{direction}\"\n    }";
+            $auditConns{kept}++;
+            # the other side: the same pair in the opposite direction with the negated offset
+            my $opp = $opposite{$c->{direction}} // '';
+            my ($back) = grep { $_->{direction} eq $opp && $_->{map} eq $fr->{id} } @{$map{$destName}{fr}{connections} || []};
+            if (!$back)
+            {
+                $auditConns{oneway}++;
+                note("map $m: connection $c->{direction} to $destName has no connection back (one-way, as in pokefirered)");
+            }
+            elsif ($back->{offset} != -$c->{offset})
+            {
+                # pokefirered's SaffronCity_Connection is a display-only stand-in for Saffron City seen
+                # from its routes (no warps, no events, the routes' gates block the border): its own
+                # offsets disagree with the routes' in pokefirered itself, which is kept as it is
+                if (grep { is_standin_map($_) } ($m, $destName))
+                {
+                    $auditConns{standin}++;
+                    note("map $m: connection $c->{direction} to $destName has offset $c->{offset} but the way back has $back->{offset}: kept, one of them is pokefirered's display-only stand-in map");
+                }
+                else
+                {
+                    $auditConns{mismatch}++;
+                    err("map $m: connection $c->{direction} to $destName has offset $c->{offset} but the way back has $back->{offset} (expected " . (-$c->{offset}) . ")");
+                }
+            }
         }
         else
         {
+            $auditConns{dropped}++;
+            $connDropTargets{$c->{map}}++;
             note("map $m: connection $c->{direction} to $c->{map} dropped (not imported)");
         }
     }
@@ -644,18 +837,48 @@ for my $m (@mapOrder)
     for my $w (@{$fr->{warp_events} || []})
     {
         my ($destMap, $destId) = ($w->{dest_map}, $w->{dest_warp_id});
+        $auditWarps{checked}++;
         if (my $destName = $frIdToName{$destMap})
         {
             $destMap = our_map_id($destMap);
-            err("map $m: warp $wi goes to $destName warp $destId but that map has only $warpCount{$destName} warps") if $destId =~ /^\d+$/ && $destId >= $warpCount{$destName};
+            if ($destId !~ /^\d+$/ || $destId >= $warpCount{$destName})
+            {
+                $auditWarps{bad}++;
+                err("map $m: warp $wi goes to $destName warp $destId but that map has only $warpCount{$destName} warps");
+            }
+            else { $auditWarps{inside}++ }
         }
-        else
+        elsif ($destMap eq 'MAP_DYNAMIC' || $frAllMapIds{$destMap})
         {
+            $auditWarps{redirected}++;
+            $warpRedirectTargets{$destMap}++;
             note("map $m: warp $wi to $destMap redirected to itself (not imported)");
             $destMap = $id; $destId = "$wi";
         }
+        else
+        {
+            $auditWarps{bad}++;
+            err("map $m: warp $wi goes to $destMap, which is no pokefirered map");
+        }
         push @warps, "    {\n      \"x\": $w->{x},\n      \"y\": $w->{y},\n      \"elevation\": $w->{elevation},\n      \"dest_map\": \"$destMap\",\n      \"dest_warp_id\": " . jstr($destId) . "\n    }";
         $wi++;
+    }
+    my $objects = "[]";
+    if (my $text = $extras{$m}{'objects.json'})
+    {
+        my $parsed = eval { decode_json($text) };
+        if (!$parsed || ref $parsed ne 'ARRAY') { err("extras: $m.objects.json is not a JSON array") }
+        else
+        {
+            for my $o (@$parsed)
+            {
+                for my $k (qw(graphics_id x y elevation movement_type script flag)) { err("extras: $m.objects.json: an object event lacks \"$k\"") unless defined $o->{$k} }
+                err("extras: $m.objects.json: script $o->{script} is not defined in $m.scripts.inc") if defined $o->{script} && $o->{script} ne '0x0' && ($extras{$m}{'scripts.inc'} // '') !~ /^\Q$o->{script}\E::/m;
+            }
+            $text =~ s/^\s+|\s+$//g;
+            $objects = $text;
+            $extrasUsed{$m}{objects} = scalar @$parsed;
+        }
     }
     my $json = join("\n",
         "{",
@@ -673,14 +896,14 @@ for my $m (@mapOrder)
         "  \"show_map_name\": " . jbool($fr->{show_map_name}) . ",",
         "  \"battle_scene\": \"$scene\",",
         "  \"connections\": " . (@conns ? "[\n" . join(",\n", @conns) . "\n  ]" : "null") . ",",
-        "  \"object_events\": [],",
+        "  \"object_events\": $objects,",
         "  \"warp_events\": " . (@warps ? "[\n" . join(",\n", @warps) . "\n  ]" : "[]") . ",",
         "  \"coord_events\": [],",
         "  \"bg_events\": []",
         "}") . "\n";
     queue_write("$repo/data/maps/$name/map.json", $json);
 
-    my $scripts = "@ Generated by tools/kanto_import/kanto_import.pl (PS-094) from pokefirered data/maps/$m.\n"
+    my $scripts = "@ Generated by tools/kanto_import/kanto_import.pl ($CARDS) from pokefirered data/maps/$m.\n"
                 . "@ No NPCs, signs, items or story (epic PS-093): only what a walkable map needs.\n";
     if ($isTownType{$fr->{map_type}} && $flagOf{$sec})
     {
@@ -690,6 +913,12 @@ for my $m (@mapOrder)
     else
     {
         $scripts .= "${name}_MapScripts::\n\t.byte 0\n";
+    }
+    if (my $extra = $extras{$m}{'scripts.inc'})
+    {
+        $scripts .= "\n@ Hand-written part from tools/kanto_import/extras/$m.scripts.inc (copied verbatim by the converter):\n" . $extra;
+        $scripts .= "\n" unless $extra =~ /\n$/;
+        $extrasUsed{$m}{scripts} = 1;
     }
     queue_write("$repo/data/maps/$name/scripts.inc", $scripts);
     push @scriptIncludes, "\t.include \"data/maps/$name/scripts.inc\"";
@@ -807,7 +1036,7 @@ my %edits; # path => new content
         . "#define KANTO_MP_GROUP_SIZES \\\n" . join("\n", @sizes) . "\n\n"
         . "#define KANTO_MP_GROUP_CHECKS \\\n" . join("\n", @checks) . "\n");
 }
-# flags.h and event_scripts.s: marked blocks
+# marked blocks: flags.h, event_scripts.s and the three Porymap-visible tileset files
 sub replace_marked_block
 {
     my ($path, $begin, $end, $body) = @_;
@@ -827,42 +1056,44 @@ sub replace_marked_block
     push @lines, sprintf("#define %-43s %s", "KANTO_FLAGS_END", $endValue);
     replace_marked_block("$repo/include/constants/flags.h", "// KANTO_IMPORT_BEGIN", "// KANTO_IMPORT_END", join("\n", @lines) . "\n");
     replace_marked_block("$repo/data/event_scripts.s", "@ KANTO_IMPORT_BEGIN", "@ KANTO_IMPORT_END", join("\n", @scriptIncludes) . "\n");
+    replace_marked_block("$repo/src/data/tilesets/graphics.h", "// KANTO_IMPORT_BEGIN", "// KANTO_IMPORT_END", $genBlockNote . join("\n", @gfxLines) . "\n");
+    replace_marked_block("$repo/src/data/tilesets/metatiles.h", "// KANTO_IMPORT_BEGIN", "// KANTO_IMPORT_END", $genBlockNote . join("\n", @metaLines) . "\n");
+    replace_marked_block("$repo/src/data/tilesets/headers.h", "// KANTO_IMPORT_BEGIN", "// KANTO_IMPORT_END", $genBlockNote . join("\n", @hdrLines) . "\n");
 }
 
-# region map layout, Fly spots, placeholder picture
+# region map layout and Fly spots (the picture is kanto_region_map.pl's)
 {
     my @grid = map { [ ('N') x $REGION_MAP_WIDTH ] } 1 .. $REGION_MAP_HEIGHT;
-    my $tilemap = "\0" x ($REGION_MAP_TILEMAP_SIDE * $REGION_MAP_TILEMAP_SIDE);
-    my %outdoor = (MAP_TYPE_TOWN => 1, MAP_TYPE_CITY => 1, MAP_TYPE_ROUTE => 1, MAP_TYPE_OCEAN_ROUTE => 1);
     for my $ours (@sectionIds)
     {
         my $S = $sectionOf{$ours};
-        next unless defined $S->{x};
-        next unless grep { $outdoor{$map{$_}{fr}{map_type}} && our_section_id($map{$_}{fr}{region_map_section}) eq $ours } @mapOrder;
-        for my $dy (0 .. $S->{height} - 1)
+        next unless $S->{onGrid};
+        my $p = $placed{$ours};
+        for my $dy (0 .. $p->[3] - 1)
         {
-            for my $dx (0 .. $S->{width} - 1)
+            for my $dx (0 .. $p->[2] - 1)
             {
-                my ($x, $y) = ($S->{x} + $dx, $S->{y} + $dy);
-                if ($x >= $REGION_MAP_WIDTH || $y >= $REGION_MAP_HEIGHT) { err("section $ours cell ($x,$y) is outside the ${REGION_MAP_WIDTH}x$REGION_MAP_HEIGHT region map"); next }
+                my ($x, $y) = ($p->[0] + $dx, $p->[1] + $dy);
+                next if $x >= $REGION_MAP_WIDTH || $y >= $REGION_MAP_HEIGHT; # reported above
+                err("region map cell ($x,$y) is claimed by both $grid[$y][$x] and $ours") if $grid[$y][$x] ne 'N';
                 $grid[$y][$x] = $ours;
-                my $tile = $townSections{$ours} ? $REGION_MAP_TOWN_TILE : $REGION_MAP_ROUTE_TILE;
-                substr($tilemap, ($y + $REGION_MAP_CURSOR_Y_MIN) * $REGION_MAP_TILEMAP_SIDE + $x + $REGION_MAP_CURSOR_X_MIN, 1) = chr($tile);
             }
         }
     }
-    my @fly = map { "    { $_, $healOf{$_}{ourId}, $flagOf{$_} }," } grep { $healOf{$_} && $flagOf{$_} } @sectionIds;
+    my @fly = map { "    { $_, $healOf{$_}{ourId}, $flagOf{$_} }," } grep { $healOf{$_} && $healOf{$_}{ourId} && $flagOf{$_} } @sectionIds;
     push @fly, "    { MAPSEC_NONE, HEAL_LOCATION_NONE, 0 }, // no Fly spot in the imported maps" unless @fly;
     my $h = $genHeader
         . "// Region map layout of REGION_KANTO (the map section under each cursor cell, coordinates from\n"
-        . "// pokefirered's region_map_sections.json), its Fly spots, and its section id range.\n\n"
+        . "// pokefirered's region_map_sections.json; the picture behind it is graphics/pokenav/region_map/kanto_map.*\n"
+        . "// from tools/kanto_import/kanto_region_map.pl), its Fly spots, and its section id range.\n\n"
         . "#define MAPSEC_${UPREFIX}_FIRST $sectionIds[0]\n#define MAPSEC_${UPREFIX}_LAST  $sectionIds[-1]\n\n"
         . "#define N MAPSEC_NONE\nstatic const mapsec_t sKantoRegionMapLayout[REGION_MAP_HEIGHT][REGION_MAP_WIDTH] = {\n"
         . join("", map { "    {" . join(", ", @$_) . "},\n" } @grid)
         . "};\n#undef N\n\n"
         . "static const struct RegionFlySpot sKantoRegionFlySpots[] =\n{\n" . join("\n", @fly) . "\n};\n";
     queue_write("$repo/src/data/region_map/kanto_region.h", $h);
-    queue_write("$repo/graphics/pokenav/region_map/kanto_map.bin", $tilemap);
+    note("graphics/pokenav/region_map/kanto_map.bin is missing: run tools/kanto_import/kanto_region_map.pl for the Kanto picture")
+        unless -f "$repo/graphics/pokenav/region_map/kanto_map.bin";
 }
 exit_if_errors('generating region data');
 
@@ -880,13 +1111,15 @@ else
     {
         remove_tree($d) if -d $d;
     }
+    # PS-094 wrote the tileset data to separate files; the marker blocks replaced them (PS-095)
+    for my $old (qw(kanto_graphics.h kanto_metatiles.h kanto_headers.h)) { unlink "$repo/src/data/tilesets/$old" if -f "$repo/src/data/tilesets/$old" }
     flush_writes();
     for my $path (sort keys %edits)
     {
         open my $h, '>', $path or die "cannot write $path: $!\n";
         binmode $h; print $h $edits{$path}; close $h;
     }
-    for my $hook (["$repo/src/tilesets.c", 'kanto_headers.h'], ["$repo/src/region.c", 'kanto_region.h'], ["$repo/src/mp/mp_presence.c", 'KANTO_MP_GROUP_SIZES'])
+    for my $hook (["$repo/src/region.c", 'kanto_region.h'], ["$repo/src/mp/mp_presence.c", 'KANTO_MP_GROUP_SIZES'])
     {
         note("$hook->[0] does not reference $hook->[1]: add the one-time hook (tools/kanto_import/README.md)") unless slurp($hook->[0]) =~ /\Q$hook->[1]\E/;
     }
@@ -895,12 +1128,21 @@ else
 # ---------------------------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------------------------
-info(sprintf("kanto_import: %d maps, %d layouts, %d tilesets (%d primary), %d map sections, %d Fly spots, %d visited flags, %d heal locations",
-     scalar(@mapOrder), scalar(keys %layoutUsed), scalar(keys %writtenTilesets), scalar(grep { $frTileset{$_}{primary} } keys %writtenTilesets),
-     scalar(@sectionIds), scalar(grep { $healOf{$_} && $flagOf{$_} } @sectionIds), scalar(grep { $townSections{$_} } @sectionIds), scalar(@healEntries)));
-for my $sym (sort keys %writtenTilesets) { my $w = $writtenTilesets{$sym}; info("  tileset $w->{oursym}: $w->{dir} ($w->{nTiles} tiles, $w->{nMetatiles} metatiles)") }
+my $nPrimary = scalar(grep { $_->[0] && !defined $_->[1] } @tilesetOutputs);
+info(sprintf("kanto_import: %d maps in %d groups, %d layouts, %d tilesets (%d primary, %d sharing graphics), %d map sections (%d on the cursor grid), %d Fly spots, %d visited flags, %d heal locations",
+     scalar(@mapOrder), scalar(@groupOrder), scalar(keys %layoutUsed), scalar(keys %writtenTilesets), $nPrimary, scalar(grep { $writtenTilesets{$_}{shared} } keys %writtenTilesets),
+     scalar(@sectionIds), scalar(grep { $sectionOf{$_}{onGrid} } @sectionIds), scalar(grep { $healOf{$_} && $healOf{$_}{ourId} && $flagOf{$_} } @sectionIds), scalar(grep { $townSections{$_} } @sectionIds), scalar(@healEntries)));
+for my $sym (sort keys %writtenTilesets) { my $w = $writtenTilesets{$sym}; info("  tileset $sym: $w->{dir} ($w->{nTiles} tiles, $w->{nMetatiles} metatiles" . ($w->{shared} ? ", graphics of " . our_tileset_sym($w->{shared}, undef) : "") . ")") }
 info("  behaviours on the imported maps: " . join(", ", map { "$_" } sort keys %behaviorUsed));
+for my $m (sort keys %extrasUsed) { info("  extras: $m: " . join(", ", ($extrasUsed{$m}{objects} ? "$extrasUsed{$m}{objects} object event(s)" : ()), ($extrasUsed{$m}{scripts} ? "scripts appended" : ()))) }
 info("  note: $_") for @notes;
+# the audits (every one of them fails the run above when something is wrong; this is the summary)
+my $fmtTargets = sub { my $h = shift; return join(", ", map { "$_ x$h->{$_}" } sort keys %$h) };
+info("audit: warps: $auditWarps{checked} checked, $auditWarps{inside} inside the import (target map and warp id exist), $auditWarps{redirected} redirected to their own map (targets outside the import: " . ($fmtTargets->(\%warpRedirectTargets) || 'none') . "), $auditWarps{bad} bad");
+info("audit: connections: $auditConns{checked} checked, $auditConns{kept} kept with both sides agreeing on the offset, $auditConns{oneway} one-way (no connection back, as in pokefirered), $auditConns{standin} with pokefirered's own offset disagreement at its display-only stand-in map, $auditConns{dropped} dropped (targets outside the import: " . ($fmtTargets->(\%connDropTargets) || 'none') . "), $auditConns{mismatch} offset mismatches");
+info("audit: layouts: " . scalar(keys %layoutUsed) . " layouts, $cellsChecked cells (borders included): every metatile id inside its primary or secondary tileset");
+info("audit: music: " . scalar(@mapOrder) . " maps, " . scalar(keys %musicUsed) . " tracks, all known (" . join(", ", map { "$_ x$musicUsed{$_}" } sort keys %musicUsed) . ")");
+info("audit: behaviours: " . scalar(keys %behaviorUsed) . " distinct on the imported maps, every one translated (" . scalar(grep { exists $behaviorTable->{$_} } keys %behaviorUsed) . " through behaviors.tsv, the rest by name)");
 exit 0;
 
 sub exit_if_errors

@@ -1,0 +1,519 @@
+# PS-095: every Kanto map of pret/pokefirered (data/maps/<name>, one per line, in map_groups.json order), for
+# tools/kanto_import/kanto_import.pl. A map is Kanto when its region_map_section is one of FRLG's Kanto sections
+# (MAPSEC_PALLET_TOWN .. MAPSEC_POWER_PLANT in region_map_sections.json). Excluded maps are listed where they
+# sit in FRLG's order, commented out, each with its reason:
+#   link    - FRLG's link rooms (Trade Center, Record Corner, Colosseums, Union Room): Emerald has its own
+#   sevii   - Sevii Islands (towns, routes, dungeons, houses, harbours): not part of Kanto (epic PS-093)
+#   event   - Navel Rock / Birth Island (event islands, MAPSEC_NAVEL_ROCK / MAPSEC_BIRTH_ISLAND): Emerald has its own
+#   tower   - Trainer Tower (Seven Island): FRLG's counterpart of Emerald's Trainer Hill
+
+# gMapGroup_Link
+# BattleColosseum_2P	(link, MAPSEC_SPECIAL_AREA)
+# TradeCenter	(link, MAPSEC_SPECIAL_AREA)
+# RecordCorner	(link, MAPSEC_SPECIAL_AREA)
+# BattleColosseum_4P	(link, MAPSEC_SPECIAL_AREA)
+# UnionRoom	(link, MAPSEC_SPECIAL_AREA)
+
+# gMapGroup_Dungeons
+ViridianForest
+MtMoon_1F
+MtMoon_B1F
+MtMoon_B2F
+SSAnne_Exterior
+SSAnne_1F_Corridor
+SSAnne_2F_Corridor
+SSAnne_3F_Corridor
+SSAnne_B1F_Corridor
+SSAnne_Deck
+SSAnne_Kitchen
+SSAnne_CaptainsOffice
+SSAnne_1F_Room1
+SSAnne_1F_Room2
+SSAnne_1F_Room3
+SSAnne_1F_Room4
+SSAnne_1F_Room5
+SSAnne_1F_Room7
+SSAnne_2F_Room1
+SSAnne_2F_Room2
+SSAnne_2F_Room3
+SSAnne_2F_Room4
+SSAnne_2F_Room5
+SSAnne_2F_Room6
+SSAnne_B1F_Room1
+SSAnne_B1F_Room2
+SSAnne_B1F_Room3
+SSAnne_B1F_Room4
+SSAnne_B1F_Room5
+SSAnne_1F_Room6
+UndergroundPath_NorthEntrance
+UndergroundPath_NorthSouthTunnel
+UndergroundPath_SouthEntrance
+UndergroundPath_WestEntrance
+UndergroundPath_EastWestTunnel
+UndergroundPath_EastEntrance
+DiglettsCave_NorthEntrance
+DiglettsCave_B1F
+DiglettsCave_SouthEntrance
+VictoryRoad_1F
+VictoryRoad_2F
+VictoryRoad_3F
+RocketHideout_B1F
+RocketHideout_B2F
+RocketHideout_B3F
+RocketHideout_B4F
+RocketHideout_Elevator
+SilphCo_1F
+SilphCo_2F
+SilphCo_3F
+SilphCo_4F
+SilphCo_5F
+SilphCo_6F
+SilphCo_7F
+SilphCo_8F
+SilphCo_9F
+SilphCo_10F
+SilphCo_11F
+SilphCo_Elevator
+PokemonMansion_1F
+PokemonMansion_2F
+PokemonMansion_3F
+PokemonMansion_B1F
+SafariZone_Center
+SafariZone_East
+SafariZone_North
+SafariZone_West
+SafariZone_Center_RestHouse
+SafariZone_East_RestHouse
+SafariZone_North_RestHouse
+SafariZone_West_RestHouse
+SafariZone_SecretHouse
+CeruleanCave_1F
+CeruleanCave_2F
+CeruleanCave_B1F
+PokemonLeague_LoreleisRoom
+PokemonLeague_BrunosRoom
+PokemonLeague_AgathasRoom
+PokemonLeague_LancesRoom
+PokemonLeague_ChampionsRoom
+PokemonLeague_HallOfFame
+RockTunnel_1F
+RockTunnel_B1F
+SeafoamIslands_1F
+SeafoamIslands_B1F
+SeafoamIslands_B2F
+SeafoamIslands_B3F
+SeafoamIslands_B4F
+PokemonTower_1F
+PokemonTower_2F
+PokemonTower_3F
+PokemonTower_4F
+PokemonTower_5F
+PokemonTower_6F
+PokemonTower_7F
+PowerPlant
+# MtEmber_RubyPath_B4F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_Exterior	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_SummitPath_1F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_SummitPath_2F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_SummitPath_3F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_Summit	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_RubyPath_B5F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_RubyPath_1F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_RubyPath_B1F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_RubyPath_B2F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_RubyPath_B3F	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_RubyPath_B1F_Stairs	(sevii, MAPSEC_MT_EMBER)
+# MtEmber_RubyPath_B2F_Stairs	(sevii, MAPSEC_MT_EMBER)
+# ThreeIsland_BerryForest	(sevii, MAPSEC_BERRY_FOREST)
+# FourIsland_IcefallCave_Entrance	(sevii, MAPSEC_ICEFALL_CAVE)
+# FourIsland_IcefallCave_1F	(sevii, MAPSEC_ICEFALL_CAVE)
+# FourIsland_IcefallCave_B1F	(sevii, MAPSEC_ICEFALL_CAVE)
+# FourIsland_IcefallCave_Back	(sevii, MAPSEC_ICEFALL_CAVE)
+# FiveIsland_RocketWarehouse	(sevii, MAPSEC_ROCKET_WAREHOUSE)
+# SixIsland_DottedHole_1F	(sevii, MAPSEC_DOTTED_HOLE)
+# SixIsland_DottedHole_B1F	(sevii, MAPSEC_DOTTED_HOLE)
+# SixIsland_DottedHole_B2F	(sevii, MAPSEC_DOTTED_HOLE)
+# SixIsland_DottedHole_B3F	(sevii, MAPSEC_DOTTED_HOLE)
+# SixIsland_DottedHole_B4F	(sevii, MAPSEC_DOTTED_HOLE)
+# SixIsland_DottedHole_SapphireRoom	(sevii, MAPSEC_DOTTED_HOLE)
+# SixIsland_PatternBush	(sevii, MAPSEC_PATTERN_BUSH)
+# SixIsland_AlteringCave	(sevii, MAPSEC_ALTERING_CAVE)
+
+# gMapGroup_SpecialArea
+# NavelRock_Exterior	(event, MAPSEC_NAVEL_ROCK)
+# TrainerTower_1F	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_2F	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_3F	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_4F	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_5F	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_6F	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_7F	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_8F	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_Roof	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_Lobby	(tower, MAPSEC_TRAINER_TOWER_2)
+# TrainerTower_Elevator	(tower, MAPSEC_TRAINER_TOWER_2)
+# FiveIsland_LostCave_Entrance	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room1	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room2	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room3	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room4	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room5	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room6	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room7	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room8	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room9	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room10	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room11	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room12	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room13	(sevii, MAPSEC_LOST_CAVE)
+# FiveIsland_LostCave_Room14	(sevii, MAPSEC_LOST_CAVE)
+# SevenIsland_TanobyRuins_MoneanChamber	(sevii, MAPSEC_MONEAN_CHAMBER)
+# SevenIsland_TanobyRuins_LiptooChamber	(sevii, MAPSEC_LIPTOO_CHAMBER)
+# SevenIsland_TanobyRuins_WeepthChamber	(sevii, MAPSEC_WEEPTH_CHAMBER)
+# SevenIsland_TanobyRuins_DilfordChamber	(sevii, MAPSEC_DILFORD_CHAMBER)
+# SevenIsland_TanobyRuins_ScufibChamber	(sevii, MAPSEC_SCUFIB_CHAMBER)
+# SevenIsland_TanobyRuins_RixyChamber	(sevii, MAPSEC_RIXY_CHAMBER)
+# SevenIsland_TanobyRuins_ViapoisChamber	(sevii, MAPSEC_VIAPOIS_CHAMBER)
+# ThreeIsland_DunsparceTunnel	(sevii, MAPSEC_THREE_ISLE_PATH)
+# SevenIsland_SevaultCanyon_TanobyKey	(sevii, MAPSEC_TANOBY_KEY)
+# NavelRock_1F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_Summit	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_Base	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_SummitPath_2F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_SummitPath_3F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_SummitPath_4F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_SummitPath_5F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B1F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B2F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B3F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B4F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B5F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B6F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B7F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B8F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B9F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B10F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_BasePath_B11F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_B1F	(event, MAPSEC_NAVEL_ROCK)
+# NavelRock_Fork	(event, MAPSEC_NAVEL_ROCK)
+# BirthIsland_Exterior	(event, MAPSEC_BIRTH_ISLAND)
+# OneIsland_KindleRoad_EmberSpa	(sevii, MAPSEC_EMBER_SPA)
+# BirthIsland_Harbor	(event, MAPSEC_BIRTH_ISLAND)
+# NavelRock_Harbor	(event, MAPSEC_NAVEL_ROCK)
+
+# gMapGroup_TownsAndRoutes
+PalletTown
+ViridianCity
+PewterCity
+CeruleanCity
+LavenderTown
+VermilionCity
+CeladonCity
+FuchsiaCity
+CinnabarIsland
+IndigoPlateau_Exterior
+SaffronCity
+SaffronCity_Connection
+# OneIsland	(sevii, MAPSEC_ONE_ISLAND)
+# TwoIsland	(sevii, MAPSEC_TWO_ISLAND)
+# ThreeIsland	(sevii, MAPSEC_THREE_ISLAND)
+# FourIsland	(sevii, MAPSEC_FOUR_ISLAND)
+# FiveIsland	(sevii, MAPSEC_FIVE_ISLAND)
+# SevenIsland	(sevii, MAPSEC_SEVEN_ISLAND)
+# SixIsland	(sevii, MAPSEC_SIX_ISLAND)
+Route1
+Route2
+Route3
+Route4
+Route5
+Route6
+Route7
+Route8
+Route9
+Route10
+Route11
+Route12
+Route13
+Route14
+Route15
+Route16
+Route17
+Route18
+Route19
+Route20
+Route21_North
+Route21_South
+Route22
+Route23
+Route24
+Route25
+# OneIsland_KindleRoad	(sevii, MAPSEC_KINDLE_ROAD)
+# OneIsland_TreasureBeach	(sevii, MAPSEC_TREASURE_BEACH)
+# TwoIsland_CapeBrink	(sevii, MAPSEC_CAPE_BRINK)
+# ThreeIsland_BondBridge	(sevii, MAPSEC_BOND_BRIDGE)
+# ThreeIsland_Port	(sevii, MAPSEC_THREE_ISLE_PORT)
+# Prototype_SeviiIsle_6	(sevii, MAPSEC_SEVII_ISLE_6)
+# Prototype_SeviiIsle_7	(sevii, MAPSEC_SEVII_ISLE_7)
+# Prototype_SeviiIsle_8	(sevii, MAPSEC_SEVII_ISLE_8)
+# Prototype_SeviiIsle_9	(sevii, MAPSEC_SEVII_ISLE_9)
+# FiveIsland_ResortGorgeous	(sevii, MAPSEC_RESORT_GORGEOUS)
+# FiveIsland_WaterLabyrinth	(sevii, MAPSEC_WATER_LABYRINTH)
+# FiveIsland_Meadow	(sevii, MAPSEC_FIVE_ISLE_MEADOW)
+# FiveIsland_MemorialPillar	(sevii, MAPSEC_MEMORIAL_PILLAR)
+# SixIsland_OutcastIsland	(sevii, MAPSEC_OUTCAST_ISLAND)
+# SixIsland_GreenPath	(sevii, MAPSEC_GREEN_PATH)
+# SixIsland_WaterPath	(sevii, MAPSEC_WATER_PATH)
+# SixIsland_RuinValley	(sevii, MAPSEC_RUIN_VALLEY)
+# SevenIsland_TrainerTower	(tower, MAPSEC_TRAINER_TOWER)
+# SevenIsland_SevaultCanyon_Entrance	(sevii, MAPSEC_CANYON_ENTRANCE)
+# SevenIsland_SevaultCanyon	(sevii, MAPSEC_SEVAULT_CANYON)
+# SevenIsland_TanobyRuins	(sevii, MAPSEC_TANOBY_RUINS)
+
+# gMapGroup_IndoorPallet
+PalletTown_PlayersHouse_1F
+PalletTown_PlayersHouse_2F
+PalletTown_RivalsHouse
+PalletTown_ProfessorOaksLab
+
+# gMapGroup_IndoorViridian
+ViridianCity_House
+ViridianCity_Gym
+ViridianCity_School
+ViridianCity_Mart
+ViridianCity_PokemonCenter_1F
+ViridianCity_PokemonCenter_2F
+
+# gMapGroup_IndoorPewter
+PewterCity_Museum_1F
+PewterCity_Museum_2F
+PewterCity_Gym
+PewterCity_Mart
+PewterCity_House1
+PewterCity_PokemonCenter_1F
+PewterCity_PokemonCenter_2F
+PewterCity_House2
+
+# gMapGroup_IndoorCerulean
+CeruleanCity_House1
+CeruleanCity_House2
+CeruleanCity_House3
+CeruleanCity_PokemonCenter_1F
+CeruleanCity_PokemonCenter_2F
+CeruleanCity_Gym
+CeruleanCity_BikeShop
+CeruleanCity_Mart
+CeruleanCity_House4
+CeruleanCity_House5
+
+# gMapGroup_IndoorLavender
+LavenderTown_PokemonCenter_1F
+LavenderTown_PokemonCenter_2F
+LavenderTown_VolunteerPokemonHouse
+LavenderTown_House1
+LavenderTown_House2
+LavenderTown_Mart
+
+# gMapGroup_IndoorVermilion
+VermilionCity_House1
+VermilionCity_PokemonCenter_1F
+VermilionCity_PokemonCenter_2F
+VermilionCity_PokemonFanClub
+VermilionCity_House2
+VermilionCity_Mart
+VermilionCity_Gym
+VermilionCity_House3
+
+# gMapGroup_IndoorCeladon
+CeladonCity_DepartmentStore_1F
+CeladonCity_DepartmentStore_2F
+CeladonCity_DepartmentStore_3F
+CeladonCity_DepartmentStore_4F
+CeladonCity_DepartmentStore_5F
+CeladonCity_DepartmentStore_Roof
+CeladonCity_DepartmentStore_Elevator
+CeladonCity_Condominiums_1F
+CeladonCity_Condominiums_2F
+CeladonCity_Condominiums_3F
+CeladonCity_Condominiums_Roof
+CeladonCity_Condominiums_RoofRoom
+CeladonCity_PokemonCenter_1F
+CeladonCity_PokemonCenter_2F
+CeladonCity_GameCorner
+CeladonCity_GameCorner_PrizeRoom
+CeladonCity_Gym
+CeladonCity_Restaurant
+CeladonCity_House1
+CeladonCity_Hotel
+
+# gMapGroup_IndoorFuchsia
+FuchsiaCity_SafariZone_Entrance
+FuchsiaCity_Mart
+FuchsiaCity_SafariZone_Office
+FuchsiaCity_Gym
+FuchsiaCity_House1
+FuchsiaCity_PokemonCenter_1F
+FuchsiaCity_PokemonCenter_2F
+FuchsiaCity_WardensHouse
+FuchsiaCity_House2
+FuchsiaCity_House3
+
+# gMapGroup_IndoorCinnabar
+CinnabarIsland_Gym
+CinnabarIsland_PokemonLab_Entrance
+CinnabarIsland_PokemonLab_Lounge
+CinnabarIsland_PokemonLab_ResearchRoom
+CinnabarIsland_PokemonLab_ExperimentRoom
+CinnabarIsland_PokemonCenter_1F
+CinnabarIsland_PokemonCenter_2F
+CinnabarIsland_Mart
+
+# gMapGroup_IndoorIndigoPlateau
+IndigoPlateau_PokemonCenter_1F
+IndigoPlateau_PokemonCenter_2F
+
+# gMapGroup_IndoorSaffron
+SaffronCity_CopycatsHouse_1F
+SaffronCity_CopycatsHouse_2F
+SaffronCity_Dojo
+SaffronCity_Gym
+SaffronCity_House
+SaffronCity_Mart
+SaffronCity_PokemonCenter_1F
+SaffronCity_PokemonCenter_2F
+SaffronCity_MrPsychicsHouse
+SaffronCity_PokemonTrainerFanClub
+
+# gMapGroup_IndoorRoute2
+Route2_ViridianForest_SouthEntrance
+Route2_House
+Route2_EastBuilding
+Route2_ViridianForest_NorthEntrance
+
+# gMapGroup_IndoorRoute4
+Route4_PokemonCenter_1F
+Route4_PokemonCenter_2F
+
+# gMapGroup_IndoorRoute5
+Route5_PokemonDayCare
+Route5_SouthEntrance
+
+# gMapGroup_IndoorRoute6
+Route6_NorthEntrance
+Route6_UnusedHouse
+
+# gMapGroup_IndoorRoute7
+Route7_EastEntrance
+
+# gMapGroup_IndoorRoute8
+Route8_WestEntrance
+
+# gMapGroup_IndoorRoute10
+Route10_PokemonCenter_1F
+Route10_PokemonCenter_2F
+
+# gMapGroup_IndoorRoute11
+Route11_EastEntrance_1F
+Route11_EastEntrance_2F
+
+# gMapGroup_IndoorRoute12
+Route12_NorthEntrance_1F
+Route12_NorthEntrance_2F
+Route12_FishingHouse
+
+# gMapGroup_IndoorRoute15
+Route15_WestEntrance_1F
+Route15_WestEntrance_2F
+
+# gMapGroup_IndoorRoute16
+Route16_House
+Route16_NorthEntrance_1F
+Route16_NorthEntrance_2F
+
+# gMapGroup_IndoorRoute18
+Route18_EastEntrance_1F
+Route18_EastEntrance_2F
+
+# gMapGroup_IndoorRoute19
+Route19_UnusedHouse
+
+# gMapGroup_IndoorRoute22
+Route22_NorthEntrance
+
+# gMapGroup_IndoorRoute23
+Route23_UnusedHouse
+
+# gMapGroup_IndoorRoute25
+Route25_SeaCottage
+
+# gMapGroup_IndoorSevenIsland
+# SevenIsland_House_Room1	(sevii, MAPSEC_SEVEN_ISLAND)
+# SevenIsland_House_Room2	(sevii, MAPSEC_SEVEN_ISLAND)
+# SevenIsland_Mart	(sevii, MAPSEC_SEVEN_ISLAND)
+# SevenIsland_PokemonCenter_1F	(sevii, MAPSEC_SEVEN_ISLAND)
+# SevenIsland_PokemonCenter_2F	(sevii, MAPSEC_SEVEN_ISLAND)
+# SevenIsland_UnusedHouse	(sevii, MAPSEC_SEVEN_ISLAND)
+# SevenIsland_Harbor	(sevii, MAPSEC_SEVEN_ISLAND)
+
+# gMapGroup_IndoorOneIsland
+# OneIsland_PokemonCenter_1F	(sevii, MAPSEC_ONE_ISLAND)
+# OneIsland_PokemonCenter_2F	(sevii, MAPSEC_ONE_ISLAND)
+# OneIsland_House1	(sevii, MAPSEC_ONE_ISLAND)
+# OneIsland_House2	(sevii, MAPSEC_ONE_ISLAND)
+# OneIsland_Harbor	(sevii, MAPSEC_ONE_ISLAND)
+
+# gMapGroup_IndoorTwoIsland
+# TwoIsland_JoyfulGameCorner	(sevii, MAPSEC_TWO_ISLAND)
+# TwoIsland_House	(sevii, MAPSEC_TWO_ISLAND)
+# TwoIsland_PokemonCenter_1F	(sevii, MAPSEC_TWO_ISLAND)
+# TwoIsland_PokemonCenter_2F	(sevii, MAPSEC_TWO_ISLAND)
+# TwoIsland_Harbor	(sevii, MAPSEC_TWO_ISLAND)
+
+# gMapGroup_IndoorThreeIsland
+# ThreeIsland_House1	(sevii, MAPSEC_THREE_ISLAND)
+# ThreeIsland_PokemonCenter_1F	(sevii, MAPSEC_THREE_ISLAND)
+# ThreeIsland_PokemonCenter_2F	(sevii, MAPSEC_THREE_ISLAND)
+# ThreeIsland_Mart	(sevii, MAPSEC_THREE_ISLAND)
+# ThreeIsland_House2	(sevii, MAPSEC_THREE_ISLAND)
+# ThreeIsland_House3	(sevii, MAPSEC_THREE_ISLAND)
+# ThreeIsland_House4	(sevii, MAPSEC_THREE_ISLAND)
+# ThreeIsland_House5	(sevii, MAPSEC_THREE_ISLAND)
+
+# gMapGroup_IndoorFourIsland
+# FourIsland_PokemonDayCare	(sevii, MAPSEC_FOUR_ISLAND)
+# FourIsland_PokemonCenter_1F	(sevii, MAPSEC_FOUR_ISLAND)
+# FourIsland_PokemonCenter_2F	(sevii, MAPSEC_FOUR_ISLAND)
+# FourIsland_House1	(sevii, MAPSEC_FOUR_ISLAND)
+# FourIsland_LoreleisHouse	(sevii, MAPSEC_FOUR_ISLAND)
+# FourIsland_Harbor	(sevii, MAPSEC_FOUR_ISLAND)
+# FourIsland_House2	(sevii, MAPSEC_FOUR_ISLAND)
+# FourIsland_Mart	(sevii, MAPSEC_FOUR_ISLAND)
+
+# gMapGroup_IndoorFiveIsland
+# FiveIsland_PokemonCenter_1F	(sevii, MAPSEC_FIVE_ISLAND)
+# FiveIsland_PokemonCenter_2F	(sevii, MAPSEC_FIVE_ISLAND)
+# FiveIsland_Harbor	(sevii, MAPSEC_FIVE_ISLAND)
+# FiveIsland_House1	(sevii, MAPSEC_FIVE_ISLAND)
+# FiveIsland_House2	(sevii, MAPSEC_FIVE_ISLAND)
+
+# gMapGroup_IndoorSixIsland
+# SixIsland_PokemonCenter_1F	(sevii, MAPSEC_SIX_ISLAND)
+# SixIsland_PokemonCenter_2F	(sevii, MAPSEC_SIX_ISLAND)
+# SixIsland_Harbor	(sevii, MAPSEC_SIX_ISLAND)
+# SixIsland_House	(sevii, MAPSEC_SIX_ISLAND)
+# SixIsland_Mart	(sevii, MAPSEC_SIX_ISLAND)
+
+# gMapGroup_IndoorThreeIslandRoute
+# ThreeIsland_Harbor	(sevii, MAPSEC_THREE_ISLE_PORT)
+
+# gMapGroup_IndoorFiveIslandRoute
+# FiveIsland_ResortGorgeous_House	(sevii, MAPSEC_RESORT_GORGEOUS)
+
+# gMapGroup_IndoorTwoIslandRoute
+# TwoIsland_CapeBrink_House	(sevii, MAPSEC_CAPE_BRINK)
+
+# gMapGroup_IndoorSixIslandRoute
+# SixIsland_WaterPath_House1	(sevii, MAPSEC_WATER_PATH)
+# SixIsland_WaterPath_House2	(sevii, MAPSEC_WATER_PATH)
+
+# gMapGroup_IndoorSevenIslandRoute
+# SevenIsland_SevaultCanyon_House	(sevii, MAPSEC_SEVAULT_CANYON)

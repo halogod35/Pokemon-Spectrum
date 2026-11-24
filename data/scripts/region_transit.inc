@@ -3,7 +3,9 @@
 @ src/region.c; an entry is offered when its flag is set and it lies in another region than
 @ the player's, or in any region when VAR_0x8004 = 1) and warp there.
 @
-@ Example NPC script (a ferry sailor; the Kanto boat of PS-095 will be the first user):
+@ Example NPC script (a ferry sailor). PS-095's Kanto boat uses it: the sailor in Slateport City's
+@ harbour (data/maps/SlateportCity_Harbor/scripts.inc) and the one on Vermilion City's pier
+@ (tools/kanto_import/extras/VermilionCity.scripts.inc):
 @
 @ MyTown_EventScript_Sailor::
 @ 	lock

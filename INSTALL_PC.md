@@ -182,5 +182,6 @@ Before each build it runs `make checkspecials` (`tools/check_specials.sh`, bash 
 ## Kanto map import (optional, PS-093)
 
 The Kanto maps (`data/maps/Kanto*`, `data/layouts/Kanto*`, `data/tilesets/*/kanto_*`) are generated from a
-pret/pokefirered checkout by `tools/kanto_import/kanto_import.pl` (Perl with core modules only, no Python) and
-committed, so building needs nothing extra. Re-importing does: see `tools/kanto_import/README.md`.
+pret/pokefirered checkout by `tools/kanto_import/kanto_import.pl` (and the Kanto picture by
+`tools/kanto_import/kanto_region_map.pl`; Perl with core modules only, no Python) and committed, so building
+needs nothing extra. Re-importing does: see `tools/kanto_import/README.md`.

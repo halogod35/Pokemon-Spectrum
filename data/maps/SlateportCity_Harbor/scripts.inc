@@ -538,3 +538,46 @@ SlateportCity_Harbor_Text_HandedScannerToStern:
 SlateportCity_Harbor_Text_ThisWillHelpResearch:
 	.string "CAPT. STERN: Thanks, {PLAYER}{KUN}!\n"
 	.string "This will help our research a lot!$"
+
+@ PS-095: the boat to Kanto. A sailor by the quay offers the hubs of the other regions
+@ (sRegionTransitDestinations in src/region.c: Vermilion City's S.S. ANNE pier) through
+@ data/scripts/region_transit.inc. Gated on Hoenn's Hall of Fame; the S.S. TIDAL desk is untouched.
+SlateportCity_Harbor_EventScript_KantoSailor::
+	lock
+	faceplayer
+	goto_if_unset FLAG_SYS_GAME_CLEAR, SlateportCity_Harbor_EventScript_KantoSailorNotYet
+	setvar VAR_0x8004, 0
+	special RegionTransit_CountDestinations
+	goto_if_eq VAR_RESULT, 0, SlateportCity_Harbor_EventScript_KantoSailorNotYet
+	message SlateportCity_Harbor_Text_KantoSailorWhereTo
+	waitmessage
+	call RegionTransit_EventScript_ChooseDestination
+	goto_if_eq VAR_RESULT, REGION_TRANSIT_CANCEL, SlateportCity_Harbor_EventScript_KantoSailorCancel
+	closemessage
+	call RegionTransit_EventScript_Warp
+	release
+	end
+
+SlateportCity_Harbor_EventScript_KantoSailorNotYet::
+	msgbox SlateportCity_Harbor_Text_KantoSailorNotYet, MSGBOX_DEFAULT
+	release
+	end
+
+SlateportCity_Harbor_EventScript_KantoSailorCancel::
+	msgbox SlateportCity_Harbor_Text_KantoSailorCancel, MSGBOX_DEFAULT
+	release
+	end
+
+SlateportCity_Harbor_Text_KantoSailorWhereTo:
+	.string "Ahoy! I skipper the boat to the\n"
+	.string "KANTO region, far to the north.\p"
+	.string "Where would you like to go?$"
+
+SlateportCity_Harbor_Text_KantoSailorNotYet:
+	.string "Ahoy! I skipper the boat to the\n"
+	.string "KANTO region, far to the north.\p"
+	.string "But I only take TRAINERS who've\n"
+	.string "entered the HALL OF FAME. Sorry!$"
+
+SlateportCity_Harbor_Text_KantoSailorCancel:
+	.string "Come back anytime!$"
