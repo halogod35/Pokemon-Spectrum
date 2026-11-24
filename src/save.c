@@ -84,6 +84,7 @@ STATIC_ASSERT(sizeof(struct PokemonStorage) <= SECTOR_DATA_SIZE * (SECTOR_ID_PKM
 // PS-079 (BUG-015): the save layout is the same on every PC build (32/64-bit, Linux/Windows), so
 // a .sav moves between them. These numbers are the layout: a change here is a new save format.
 STATIC_ASSERT(sizeof(struct ObjectEventTemplate) == 0x20, ObjectEventTemplateSize);
+STATIC_ASSERT(sizeof(struct ObjectEvent) == 0x24, ObjectEventSize); // PS-100: u16 graphicsId at 0x22, the same size on every build
 STATIC_ASSERT(offsetof(struct SaveBlock1, objectEventTemplates) == 0xC70, ObjectEventTemplatesOffset);
 STATIC_ASSERT(sizeof(struct Berry) == 0x28, BerrySize);
 STATIC_ASSERT(sizeof(struct Berry2) == 0x28, Berry2Size);

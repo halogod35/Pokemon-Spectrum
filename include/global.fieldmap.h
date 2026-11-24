@@ -243,8 +243,8 @@ struct ObjectEvent
     /*0x0C*/ struct Coords16 initialCoords;
     /*0x10*/ struct Coords16 currentCoords;
     /*0x14*/ struct Coords16 previousCoords;
-    /*0x18*/ u16 facingDirection:4; // current direction?
-             u16 movementDirection:4;
+    /*0x18*/ u8 facingDirection:4; // current direction? (PS-100: u8 bitfields, not u16: with mingw's MS bitfield layout a u16 unit took two bytes and the u16 graphicsId at 0x22 pushed the struct to 0x28; save.c asserts 0x24)
+             u8 movementDirection:4;
              struct __attribute__((packed))
              {
                 u8 rangeX:4;
