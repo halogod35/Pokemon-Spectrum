@@ -37,10 +37,12 @@
 
 static void Task_ExitNonAnimDoor(u8);
 static void Task_ExitNonDoor(u8);
+static void Task_ExitStairs(u8); // PS-098
 static void Task_DoContestHallWarp(u8);
 static void FillPalBufferWhite(void);
 static void Task_ExitDoor(u8);
 static bool32 WaitForWeatherFadeIn(void);
+static bool32 PaletteFadeActive(void); // PS-098: used by Task_StairWarp above its definition
 static void Task_SpinEnterWarp(u8 taskId);
 static void Task_WarpAndLoadMap(u8 taskId);
 static void Task_DoDoorWarp(u8 taskId);
@@ -265,6 +267,8 @@ static void SetUpWarpExitTask(void)
         func = Task_ExitDoor;
     else if (MetatileBehavior_IsNonAnimDoor(behavior) == TRUE)
         func = Task_ExitNonAnimDoor;
+    else if (MetatileBehavior_IsDirectionalStairWarp(behavior) == TRUE)
+        func = Task_ExitStairs; // PS-098: slide down off the stairs onto the warp tile
     else
         func = Task_ExitNonDoor;
     CreateTask(func, 10);
@@ -420,6 +424,214 @@ static void Task_ExitNonDoor(u8 taskId)
         break;
     }
 }
+
+// PS-098: pokefirered's directional stair warps (Kanto). Leaving: the player walks in place and the
+// sprite slides diagonally onto the stairs while the screen fades (Task_StairWarp); arriving: the sprite
+// starts displaced on the stairs and slides down onto the warp tile (Task_ExitStairs). Ported from
+// pokefirered's field_fadetransition.c, Emerald's fade / music / map-load calls used in place of FRLG's.
+#define tStairBehavior data[1]
+#define tStairSpeedX   data[2]
+#define tStairSpeedY   data[3]
+#define tStairOffsetX  data[4]
+#define tStairOffsetY  data[5]
+#define tStairTimer    data[6]
+#define tStairDelay    data[15]
+
+static void GetStairsMovementDirection(u8 metatileBehavior, s16 *x, s16 *y)
+{
+    if (MetatileBehavior_IsDirectionalUpRightStairWarp(metatileBehavior))
+    {
+        *x = 16;
+        *y = -10;
+    }
+    else if (MetatileBehavior_IsDirectionalUpLeftStairWarp(metatileBehavior))
+    {
+        *x = -17;
+        *y = -10;
+    }
+    else if (MetatileBehavior_IsDirectionalDownRightStairWarp(metatileBehavior))
+    {
+        *x = 17;
+        *y = 3;
+    }
+    else if (MetatileBehavior_IsDirectionalDownLeftStairWarp(metatileBehavior))
+    {
+        *x = -17;
+        *y = 3;
+    }
+    else
+    {
+        *x = 0;
+        *y = 0;
+    }
+}
+
+static void UpdateStairsMovement(s16 speedX, s16 speedY, s16 *offsetX, s16 *offsetY, s16 *timer)
+{
+    struct Sprite *playerSprite = &gSprites[gPlayerAvatar.spriteId];
+    struct ObjectEvent *playerObject = &gObjectEvents[gPlayerAvatar.objectEventId];
+
+    if (speedY > 0 || *timer > 6)
+        *offsetY += speedY;
+    *offsetX += speedX;
+    (*timer)++;
+    playerSprite->x2 = *offsetX >> 5;
+    playerSprite->y2 = *offsetY >> 5;
+    if (playerObject->heldMovementFinished)
+        ObjectEventForceSetHeldMovement(playerObject, GetWalkInPlaceNormalMovementAction(GetPlayerFacingDirection()));
+}
+
+static void ForceStairsMovement(u16 metatileBehavior, s16 *x, s16 *y)
+{
+    ObjectEventForceSetHeldMovement(&gObjectEvents[gPlayerAvatar.objectEventId], GetWalkInPlaceNormalMovementAction(GetPlayerFacingDirection()));
+    GetStairsMovementDirection(metatileBehavior, x, y);
+}
+
+static void Task_StairWarp(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+    struct ObjectEvent *playerObject = &gObjectEvents[gPlayerAvatar.objectEventId];
+    struct Sprite *playerSprite = &gSprites[gPlayerAvatar.spriteId];
+
+    switch (data[0])
+    {
+    case 0:
+        LockPlayerFieldControls();
+        FreezeObjectEvents();
+        CameraObjectFreeze(); // Emerald's name for FRLG's CameraObjectReset2
+        data[0]++;
+        break;
+    case 1:
+        if (!ObjectEventIsMovementOverridden(playerObject) || ObjectEventClearHeldMovementIfFinished(playerObject))
+        {
+            if (tStairDelay != 0)
+            {
+                tStairDelay--;
+            }
+            else
+            {
+                TryFadeOutOldMapMusic();
+                PlayRainStoppingSoundEffect();
+                playerSprite->oam.priority = 1;
+                ForceStairsMovement(tStairBehavior, &tStairSpeedX, &tStairSpeedY);
+                PlaySE(SE_EXIT);
+                data[0]++;
+            }
+        }
+        break;
+    case 2:
+        UpdateStairsMovement(tStairSpeedX, tStairSpeedY, &tStairOffsetX, &tStairOffsetY, &tStairTimer);
+        tStairDelay++;
+        if (tStairDelay >= 12)
+        {
+            WarpFadeOutScreen();
+            data[0]++;
+        }
+        break;
+    case 3:
+        UpdateStairsMovement(tStairSpeedX, tStairSpeedY, &tStairOffsetX, &tStairOffsetY, &tStairTimer);
+        if (!PaletteFadeActive() && BGMusicStopped())
+        {
+            ClearMirageTowerPulseBlendEffect();
+            data[0]++;
+        }
+        break;
+    default:
+        gFieldCallback = FieldCB_DefaultWarpExit;
+        WarpIntoMap();
+        SetMainCallback2(CB2_LoadMap);
+        DestroyTask(taskId);
+        break;
+    }
+}
+
+void DoStairWarp(u16 metatileBehavior, u16 delay)
+{
+    u8 taskId = CreateTask(Task_StairWarp, 10);
+
+    gTasks[taskId].tStairBehavior = metatileBehavior;
+    gTasks[taskId].tStairDelay = delay;
+    Task_StairWarp(taskId);
+}
+
+static void ExitStairsMovement(s16 *speedX, s16 *speedY, s16 *offsetX, s16 *offsetY, s16 *timer)
+{
+    s16 x, y;
+    u8 metatileBehavior;
+    u8 direction;
+    struct Sprite *playerSprite;
+
+    PlayerGetDestCoords(&x, &y);
+    metatileBehavior = MapGridGetMetatileBehaviorAt(x, y);
+    if (MetatileBehavior_IsDirectionalDownRightStairWarp(metatileBehavior) || MetatileBehavior_IsDirectionalUpRightStairWarp(metatileBehavior))
+        direction = DIR_WEST;
+    else
+        direction = DIR_EAST;
+    ObjectEventForceSetHeldMovement(&gObjectEvents[gPlayerAvatar.objectEventId], GetWalkInPlaceFastMovementAction(direction));
+    GetStairsMovementDirection(metatileBehavior, speedX, speedY);
+    *offsetX = *speedX * 16;
+    *offsetY = *speedY * 16;
+    *timer = 16;
+    playerSprite = &gSprites[gPlayerAvatar.spriteId];
+    playerSprite->x2 = *offsetX >> 5;
+    playerSprite->y2 = *offsetY >> 5;
+    *speedX *= -1;
+    *speedY *= -1;
+}
+
+static bool8 WaitStairExitMovementFinished(s16 *speedX, s16 *speedY, s16 *offsetX, s16 *offsetY, s16 *timer)
+{
+    struct Sprite *playerSprite = &gSprites[gPlayerAvatar.spriteId];
+
+    if (*timer != 0)
+    {
+        *offsetX += *speedX;
+        *offsetY += *speedY;
+        playerSprite->x2 = *offsetX >> 5;
+        playerSprite->y2 = *offsetY >> 5;
+        (*timer)--;
+        return TRUE;
+    }
+    playerSprite->x2 = 0;
+    playerSprite->y2 = 0;
+    return FALSE;
+}
+
+static void Task_ExitStairs(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+
+    switch (data[0])
+    {
+    case 0:
+        FreezeObjectEvents();
+        LockPlayerFieldControls();
+        ExitStairsMovement(&tStairSpeedX, &tStairSpeedY, &tStairOffsetX, &tStairOffsetY, &tStairTimer);
+        data[0]++;
+        break;
+    case 1:
+        if (!WaitStairExitMovementFinished(&tStairSpeedX, &tStairSpeedY, &tStairOffsetX, &tStairOffsetY, &tStairTimer))
+            data[0]++;
+        break;
+    default:
+        if (WaitForWeatherFadeIn())
+        {
+            CameraObjectReset();
+            UnfreezeObjectEvents();
+            UnlockPlayerFieldControls();
+            DestroyTask(taskId);
+        }
+        break;
+    }
+}
+
+#undef tStairBehavior
+#undef tStairSpeedX
+#undef tStairSpeedY
+#undef tStairOffsetX
+#undef tStairOffsetY
+#undef tStairTimer
+#undef tStairDelay
 
 static void Task_WaitForFadeShowStartMenu(u8 taskId)
 {

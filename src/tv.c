@@ -88,7 +88,7 @@ static EWRAM_DATA u8 sTVSecretBaseSecretsRandomValues[3] = {};
 static void ClearPokeNews(void);
 static u8 GetTVGroupByShowId(u8);
 static u8 FindFirstActiveTVShowThatIsNotAMassOutbreak(void);
-static void SetTVMetatilesOnMap(int, int, u16);
+static void SetTVMetatilesOnMap(int, int, u8);
 static u8 FindAnyPokeNewsOnTheAir(void);
 static void TakeGabbyAndTyOffTheAir(void);
 static bool8 BernoulliTrial(u16 ratio);
@@ -830,7 +830,7 @@ void UpdateTVScreensOnMap(int width, int height)
     switch (CheckForPlayersHouseNews())
     {
     case PLAYERS_HOUSE_TV_LATI:
-        SetTVMetatilesOnMap(width, height, METATILE_Building_TV_On);
+        SetTVMetatilesOnMap(width, height, FURNITURE_TV_ON);
         break;
     case PLAYERS_HOUSE_TV_MOVIE:
         // Don't flash TV for movie text in player's house
@@ -841,22 +841,27 @@ void UpdateTVScreensOnMap(int width, int height)
          && gSaveBlock1Ptr->location.mapNum == MAP_NUM(MAP_LILYCOVE_CITY_COVE_LILY_MOTEL_1F))
         {
             // NPC in Lilycove Hotel is always watching TV
-            SetTVMetatilesOnMap(width, height, METATILE_Building_TV_On);
+            SetTVMetatilesOnMap(width, height, FURNITURE_TV_ON);
         }
         else if (FlagGet(FLAG_SYS_TV_START) && (FindAnyTVShowOnTheAir() != 0xFF || FindAnyPokeNewsOnTheAir() != 0xFF || IsGabbyAndTyShowOnTheAir()))
         {
             FlagClear(FLAG_SYS_TV_WATCH);
-            SetTVMetatilesOnMap(width, height, METATILE_Building_TV_On);
+            SetTVMetatilesOnMap(width, height, FURNITURE_TV_ON);
         }
         break;
     }
 }
 
-static void SetTVMetatilesOnMap(int width, int height, u16 metatileId)
+// PS-098: the TV metatile ids come from the map's primary tileset (GetTilesetFurnitureMetatileId); a tileset
+// without a "TV on" metatile (pokefirered's Building) leaves its TVs as they are. Emerald's Building ids as before.
+static void SetTVMetatilesOnMap(int width, int height, u8 furniture)
 {
     int x;
     int y;
+    u16 metatileId = GetTilesetFurnitureMetatileId(furniture);
 
+    if (metatileId == FURNITURE_METATILE_NONE)
+        return;
     for (y = 0; y < height; y++)
     {
         for (x = 0; x < width; x++)
@@ -869,13 +874,13 @@ static void SetTVMetatilesOnMap(int width, int height, u16 metatileId)
 
 void TurnOffTVScreen(void)
 {
-    SetTVMetatilesOnMap(gBackupMapLayout.width, gBackupMapLayout.height, METATILE_Building_TV_Off);
+    SetTVMetatilesOnMap(gBackupMapLayout.width, gBackupMapLayout.height, FURNITURE_TV_OFF);
     DrawWholeMapView();
 }
 
 void TurnOnTVScreen(void)
 {
-    SetTVMetatilesOnMap(gBackupMapLayout.width, gBackupMapLayout.height, METATILE_Building_TV_On);
+    SetTVMetatilesOnMap(gBackupMapLayout.width, gBackupMapLayout.height, FURNITURE_TV_ON);
     DrawWholeMapView();
 }
 

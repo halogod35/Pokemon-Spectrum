@@ -252,6 +252,9 @@ const u32 gObjectEventPic_CableCar[] = INCGFX_U32("graphics/object_events/pics/m
 const u16 gObjectEventPal_CableCar[] = INCGFX_U16("graphics/object_events/palettes/cable_car.pal", ".gbapal");
 const u32 gObjectEventPic_SSTidal[] = INCGFX_U32("graphics/object_events/pics/misc/ss_tidal.png", ".4bpp");
 const u16 gObjectEventPal_SSTidal[] = INCGFX_U16("graphics/object_events/palettes/ss_tidal.pal", ".gbapal");
+// PS-098: pokefirered's S.S. ANNE (128x64, four 64x32 quadrants: -mwidth 8 -mheight 4 like FRLG's spritesheet rule), copied by tools/kanto_import
+const u32 gObjectEventPic_SSAnne[] = INCGFX_U32("graphics/object_events/pics/misc/kanto_ss_anne.png", ".4bpp", "-mwidth 8 -mheight 4");
+const u16 gObjectEventPal_SSAnne[] = INCGFX_U16("graphics/object_events/palettes/kanto_ss_anne.pal", ".gbapal");
 const u32 gFieldEffectObjectPic_Sparkle[] = INCGFX_U32("graphics/field_effects/pics/sparkle.png", ".4bpp", "-mwidth 2 -mheight 2");
 const u32 gObjectEventPic_BerryTreeDirtPile[] = INCGFX_U32("graphics/object_events/pics/berry_trees/dirt_pile.png", ".4bpp");
 const u32 gObjectEventPic_BerryTreeSprout[] = INCGFX_U32("graphics/object_events/pics/berry_trees/sprout.png", ".4bpp", "-mwidth 2 -mheight 2");

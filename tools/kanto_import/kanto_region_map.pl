@@ -5,7 +5,8 @@
 #   perl tools/kanto_import/kanto_region_map.pl --frlg <pokefirered checkout> [--repo <root>] [--preview <png>]
 #
 # pokefirered draws its Kanto map on a text background: graphics/region_map/kanto.bin is a 30x20
-# tilemap of 16-bit entries (tile id, palette 0..4, flips) over 4bpp tiles (region_map.png) and an
+# tilemap of 16-bit entries (tile id, palette 0..4, flips) over 4bpp tiles (region_map.png, an 8-bit PNG whose
+# pixel values carry the palette number too: gbagfx keeps their low four bits) and an
 # 80-colour palette (region_map.pal); the cursor cell (gx, gy) of its 22x15 layout sits on tile
 # (gx + 4, gy + 4). Emerald's region map is an affine background that zooms: a 64x64 tilemap of
 # 8-bit tile ids (graphics/pokenav/region_map/map.bin), 8bpp tiles whose pixels index the whole
@@ -167,7 +168,11 @@ sub fr_block
         for my $x (0 .. 7)
         {
             my $sx = $hf ? 7 - $x : $x;
-            push @px, [ $pal, $gfx->{rows}[int($tile / 16) * 8 + $sy][($tile % 16) * 8 + $sx] ];
+            # PS-098: region_map.png is an 8-bit PNG whose pixel values already carry the palette number (16..31 on
+            # the palette-1 tiles); gbagfx keeps only the low four bits when it builds the 4bpp tiles, and the
+            # palette comes from the tilemap entry alone. Without the mask, pal * 16 + pixel landed in palette 2
+            # (its 255,0,255 placeholders: the pink dots on every route and town cell of the PS-095 picture).
+            push @px, [ $pal, $gfx->{rows}[int($tile / 16) * 8 + $sy][($tile % 16) * 8 + $sx] & 15 ];
         }
     }
     return \@px;

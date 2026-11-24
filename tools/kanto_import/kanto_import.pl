@@ -181,7 +181,8 @@ sub translate_const
 # ---------------------------------------------------------------------------------------------
 sub png_read
 {
-    my $path = shift;
+    my ($path, $width) = @_; # 4bpp rows; PS-098: an 8-bit indexed PNG whose colours stay below 16 is packed to 4bpp
+    $width //= $PNG_WIDTH;
     my $d = slurp($path);
     die "$path: not a PNG\n" unless substr($d, 0, 8) eq "\x89PNG\r\n\x1a\n";
     my $pos = 8;
@@ -200,11 +201,11 @@ sub png_read
         $pos += 12 + $len;
         last if $type eq 'IEND';
     }
-    die "$path: expected a 4bpp indexed, non-interlaced PNG $PNG_WIDTH px wide (got w=$ihdr{w} bd=$ihdr{bd} ct=$ihdr{ct} il=$ihdr{il})\n"
-        unless $ihdr{w} == $PNG_WIDTH && $ihdr{bd} == 4 && $ihdr{ct} == 3 && $ihdr{il} == 0;
+    die "$path: expected a 4bpp (or 8-bit) indexed, non-interlaced PNG $width px wide (got w=$ihdr{w} bd=$ihdr{bd} ct=$ihdr{ct} il=$ihdr{il})\n"
+        unless $ihdr{w} == $width && ($ihdr{bd} == 4 || $ihdr{bd} == 8) && $ihdr{ct} == 3 && $ihdr{il} == 0;
     my $raw = Compress::Zlib::uncompress($idat);
     die "$path: zlib inflate failed\n" unless defined $raw;
-    my $stride = $ihdr{w} / 2; # 4 bits per pixel
+    my $stride = $ihdr{bd} == 8 ? $ihdr{w} : $ihdr{w} / 2; # bytes per row: one byte per pixel at 8 bits, two pixels per byte at 4
     die "$path: IDAT size mismatch\n" unless length($raw) == $ihdr{h} * ($stride + 1);
     my @rows;
     my @prev = (0) x $stride;
@@ -230,8 +231,16 @@ sub png_read
             }
             else { die "$path: unknown PNG filter $filter\n" }
         }
-        push @rows, pack('C*', @x);
         @prev = @x;
+        if ($ihdr{bd} == 8)
+        {
+            # like gbagfx's ConvertBitDepth: an index above 15 keeps its low four bits (pokefirered's 8-bit
+            # door sheets use indices 16..31 for the metatile drawn with the second palette slot)
+            my @packed;
+            for (my $i = 0; $i < @x; $i += 2) { push @packed, (($x[$i] & 15) << 4) | ($x[$i + 1] & 15) }
+            push @rows, pack('C*', @packed);
+        }
+        else { push @rows, pack('C*', @x) }
     }
     return { w => $ihdr{w}, h => $ihdr{h}, plte => $plte, rows => \@rows };
 }
@@ -593,6 +602,51 @@ for my $out (@tilesetOutputs)
                     "};", "";
 }
 
+# ---------------------------------------------------------------------------------------------
+# Door animations (PS-098): pokefirered's door animation sheets used by the Kanto door table in
+# src/field_door.c (sKantoDoorAnimGraphicsTable), written as 4bpp PNGs. The metatile ids and palette
+# slots that table uses are pokefirered's own (the prefix re-pack keeps both), so the sheets apply as
+# they are: three frames of 16x16 (small doors) or 16x32 (door + the metatile above it) pixels. Every
+# file in graphics/door_anims/kanto/ belongs to the converter (deleted and regenerated on each run).
+# ---------------------------------------------------------------------------------------------
+my @DOOR_ANIMS = qw(general sliding_single sliding_double pallet oaks_lab viridian pewter saffron silph_co cerulean lavender
+                    vermilion pokemon_fan_club dept_store fuchsia safari_zone cinnabar_lab dept_store_elevator cable_club
+                    hideout_elevator ss_anne silph_co_elevator);
+for my $name (@DOOR_ANIMS)
+{
+    my $src = "$frlg/graphics/door_anims/$name.png";
+    unless (-f $src) { err("door animation $name.png is not in pokefirered's graphics/door_anims"); next }
+    my $png = png_read($src, 2 * $TILE_PX);
+    err("door animation $name.png: expected three 16x16 or 16x32 frames (got $png->{w}x$png->{h})") unless $png->{h} == 3 * 2 * $TILE_PX || $png->{h} == 3 * 4 * $TILE_PX;
+    queue_write("$repo/graphics/door_anims/kanto/$name.png", png_build(2 * $TILE_PX, substr($png->{plte}, 0, 16 * 3), $png->{rows})); # 16 PLTE entries: a 4bpp PNG
+}
+
+# ---------------------------------------------------------------------------------------------
+# Object event graphics (PS-098): pokefirered sprites a Kanto map needs and Emerald does not have. The
+# S.S. ANNE is an object event at its Vermilion City dock (extras/SSAnne_Exterior.objects.json); its
+# picture and palette go to graphics/object_events/ as kanto_ss_anne.* for OBJ_EVENT_GFX_SS_ANNE
+# (src/data/object_events). A palette is copied as text, a picture through png_read / png_build.
+# ---------------------------------------------------------------------------------------------
+my @OBJECT_GFX = (['pics/misc/ss_anne.png', 'pics/misc/kanto_ss_anne.png', 128], ['palettes/ss_anne.pal', 'palettes/kanto_ss_anne.pal']);
+for my $g (@OBJECT_GFX)
+{
+    my ($from, $to, $w) = @$g;
+    my $src = "$frlg/graphics/object_events/$from";
+    unless (-f $src) { err("object event graphic $from is not in pokefirered's graphics/object_events"); next }
+    if ($from =~ /\.png$/)
+    {
+        my $png = png_read($src, $w);
+        queue_write("$repo/graphics/object_events/$to", png_build($w, substr($png->{plte}, 0, 16 * 3), $png->{rows}));
+    }
+    else
+    {
+        my $pal = slurp($src);
+        $pal =~ s/\r\n/\n/g;
+        err("object event palette $from is not a JASC palette") unless $pal =~ /^JASC-PAL\n0100\n16\n/;
+        queue_write("$repo/graphics/object_events/$to", $pal);
+    }
+}
+
 for my $k (sort keys %behaviorUnknownRefs)
 {
     err("$k: behaviour $behaviorUnknownRefs{$k} has no Emerald equivalent (behaviors.tsv)");
@@ -766,7 +820,19 @@ $warpCount{$_} = scalar(@{$map{$_}{fr}{warp_events} || []}) for @mapOrder;
 sub jbool { return $_[0] ? 'true' : 'false' }
 sub jstr  { my $s = shift; $s =~ s/(["\\])/\\$1/g; return "\"$s\"" }
 my %opposite = (up => 'down', down => 'up', left => 'right', right => 'left', dive => 'emerge', emerge => 'dive');
-my %auditWarps = (checked => 0, inside => 0, redirected => 0, bad => 0);
+my %auditWarps = (checked => 0, inside => 0, redirected => 0, dynamic => 0, bad => 0);
+# PS-098: the first (map, warp index) in pokefirered's map order that warps into each map: a MAP_DYNAMIC
+# warp (the elevators) leads back there
+my (%firstEntrance, %dynamicWarpTargets);
+for my $src (@mapOrder)
+{
+    my $wi = 0;
+    for my $w (@{$map{$src}{fr}{warp_events} || []})
+    {
+        if (my $destName = $frIdToName{$w->{dest_map}}) { $firstEntrance{$destName} //= [$src, $wi] if $destName ne $src }
+        $wi++;
+    }
+}
 my %auditConns = (checked => 0, kept => 0, dropped => 0, mismatch => 0, oneway => 0, standin => 0);
 sub is_standin_map
 {
@@ -847,6 +913,17 @@ for my $m (@mapOrder)
                 err("map $m: warp $wi goes to $destName warp $destId but that map has only $warpCount{$destName} warps");
             }
             else { $auditWarps{inside}++ }
+        }
+        elsif ($destMap eq 'MAP_DYNAMIC' && $firstEntrance{$m})
+        {
+            # PS-098: pokefirered's elevators (Celadon Dept. Store, Silph Co., Rocket Hideout) leave through
+            # MAP_DYNAMIC warps that a script sets to the chosen floor; without scripts they lead back to the
+            # first map that warps into this one, at that warp (the floor the elevator is entered from first)
+            my ($srcName, $srcWarp) = @{$firstEntrance{$m}};
+            $auditWarps{dynamic}++;
+            $dynamicWarpTargets{"$m -> $srcName warp $srcWarp"}++;
+            note("map $m: warp $wi to MAP_DYNAMIC leads back to $srcName warp $srcWarp (first entrance)");
+            $destMap = our_map_id($map{$srcName}{fr}{id}); $destId = "$srcWarp";
         }
         elsif ($destMap eq 'MAP_DYNAMIC' || $frAllMapIds{$destMap})
         {
@@ -1107,7 +1184,8 @@ if ($dryRun)
 else
 {
     # the converter owns every Kanto* / kanto_* directory: remove them so a smaller map list leaves no stale output
-    for my $d (glob("$repo/data/maps/$PREFIX*"), glob("$repo/data/layouts/$PREFIX*"), glob("$repo/data/tilesets/primary/" . lc($PREFIX) . "_*"), glob("$repo/data/tilesets/secondary/" . lc($PREFIX) . "_*"))
+    for my $d (glob("$repo/data/maps/$PREFIX*"), glob("$repo/data/layouts/$PREFIX*"), glob("$repo/data/tilesets/primary/" . lc($PREFIX) . "_*"), glob("$repo/data/tilesets/secondary/" . lc($PREFIX) . "_*"),
+                 "$repo/graphics/door_anims/" . lc($PREFIX)) # PS-098: the door animation sheets
     {
         remove_tree($d) if -d $d;
     }
@@ -1138,7 +1216,7 @@ for my $m (sort keys %extrasUsed) { info("  extras: $m: " . join(", ", ($extrasU
 info("  note: $_") for @notes;
 # the audits (every one of them fails the run above when something is wrong; this is the summary)
 my $fmtTargets = sub { my $h = shift; return join(", ", map { "$_ x$h->{$_}" } sort keys %$h) };
-info("audit: warps: $auditWarps{checked} checked, $auditWarps{inside} inside the import (target map and warp id exist), $auditWarps{redirected} redirected to their own map (targets outside the import: " . ($fmtTargets->(\%warpRedirectTargets) || 'none') . "), $auditWarps{bad} bad");
+info("audit: warps: $auditWarps{checked} checked, $auditWarps{inside} inside the import (target map and warp id exist), $auditWarps{dynamic} dynamic -> first entrance (" . (join(", ", sort keys %dynamicWarpTargets) || 'none') . "), $auditWarps{redirected} redirected to their own map (targets outside the import: " . ($fmtTargets->(\%warpRedirectTargets) || 'none') . "), $auditWarps{bad} bad");
 info("audit: connections: $auditConns{checked} checked, $auditConns{kept} kept with both sides agreeing on the offset, $auditConns{oneway} one-way (no connection back, as in pokefirered), $auditConns{standin} with pokefirered's own offset disagreement at its display-only stand-in map, $auditConns{dropped} dropped (targets outside the import: " . ($fmtTargets->(\%connDropTargets) || 'none') . "), $auditConns{mismatch} offset mismatches");
 info("audit: layouts: " . scalar(keys %layoutUsed) . " layouts, $cellsChecked cells (borders included): every metatile id inside its primary or secondary tileset");
 info("audit: music: " . scalar(@mapOrder) . " maps, " . scalar(keys %musicUsed) . " tracks, all known (" . join(", ", map { "$_ x$musicUsed{$_}" } sort keys %musicUsed) . ")");

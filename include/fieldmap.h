@@ -34,6 +34,19 @@ bool32 CanCameraMoveInDirection(s32 direction);
 u16 GetMetatileAttributesById(u16 metatile);
 void GetCameraFocusCoords(u16 *x, u16 *y);
 u8 MapGridGetMetatileLayerTypeAt(s32 x, s32 y);
+
+// PS-098: furniture metatiles (TV / PC on and off) looked up by the current map's primary tileset, see
+// GetTilesetFurnitureMetatileId in fieldmap.c. FURNITURE_METATILE_NONE: the tileset has no such metatile.
+enum
+{
+    FURNITURE_TV_OFF,
+    FURNITURE_TV_ON,
+    FURNITURE_PC_OFF,
+    FURNITURE_PC_ON,
+    FURNITURE_COUNT,
+};
+#define FURNITURE_METATILE_NONE 0xFFFF
+u16 GetTilesetFurnitureMetatileId(u8 furniture);
 u8 MapGridGetElevationAt(s32 x, s32 y);
 bool8 CameraMove(s32 x, s32 y);
 void SaveMapView(void);

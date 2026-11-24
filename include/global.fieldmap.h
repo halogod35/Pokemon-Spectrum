@@ -331,6 +331,7 @@ enum
     COLLISION_ISOLATED_HORIZONTAL_RAIL,
     COLLISION_VERTICAL_RAIL,
     COLLISION_HORIZONTAL_RAIL,
+    COLLISION_DIRECTIONAL_STAIR_WARP, // PS-098: standing on a stair-warp tile and pressing toward the stairs (pokefirered)
 };
 
 // player running states

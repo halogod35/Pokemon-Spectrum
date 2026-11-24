@@ -259,6 +259,50 @@ bool8 MetatileBehavior_IsLadder(u8 metatileBehavior)
         return FALSE;
 }
 
+// PS-098: pokefirered's directional stair warps (Kanto). The warp tile is the floor cell beside a drawn
+// staircase: walking into it from the side (west for the *_LEFT ones, east for the *_RIGHT ones) takes a
+// diagonal step onto the stairs and warps (field_control_avatar.c TryArrowWarp, field_screen_effect.c
+// DoStairWarp / Task_ExitStairs). Ported from pokefirered's metatile_behavior.c.
+bool8 MetatileBehavior_IsDirectionalUpRightStairWarp(u8 metatileBehavior)
+{
+    if (metatileBehavior == MB_UP_RIGHT_STAIR_WARP)
+        return TRUE;
+    else
+        return FALSE;
+}
+
+bool8 MetatileBehavior_IsDirectionalUpLeftStairWarp(u8 metatileBehavior)
+{
+    if (metatileBehavior == MB_UP_LEFT_STAIR_WARP)
+        return TRUE;
+    else
+        return FALSE;
+}
+
+bool8 MetatileBehavior_IsDirectionalDownRightStairWarp(u8 metatileBehavior)
+{
+    if (metatileBehavior == MB_DOWN_RIGHT_STAIR_WARP)
+        return TRUE;
+    else
+        return FALSE;
+}
+
+bool8 MetatileBehavior_IsDirectionalDownLeftStairWarp(u8 metatileBehavior)
+{
+    if (metatileBehavior == MB_DOWN_LEFT_STAIR_WARP)
+        return TRUE;
+    else
+        return FALSE;
+}
+
+bool8 MetatileBehavior_IsDirectionalStairWarp(u8 metatileBehavior)
+{
+    if (metatileBehavior >= MB_UP_RIGHT_STAIR_WARP && metatileBehavior <= MB_DOWN_LEFT_STAIR_WARP)
+        return TRUE;
+    else
+        return FALSE;
+}
+
 bool8 MetatileBehavior_IsNonAnimDoor(u8 metatileBehavior)
 {
     if (metatileBehavior == MB_NON_ANIMATED_DOOR

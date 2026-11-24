@@ -787,4 +787,47 @@
 #define METATILE_RSMossdeepGym_Switch_Down     0x239
 #define METATILE_RSMossdeepGym_Switch_Up       0x238
 
+// PS-098: Kanto tilesets imported from pokefirered (tools/kanto_import). The ids are pokefirered's own
+// (its include/constants/metatile_labels.h): the converter's prefix re-pack keeps every metatile id.
+// gTileset_KantoBuilding
+#define METATILE_KantoBuilding_PC_Off  0x062
+#define METATILE_KantoBuilding_PC_On   0x063
+// gTileset_KantoGeneral
+#define METATILE_KantoGeneral_Door               0x03D
+#define METATILE_KantoGeneral_SlidingSingleDoor  0x062
+#define METATILE_KantoGeneral_SlidingDoubleDoor  0x15B
+// gTileset_KantoPalletTown
+#define METATILE_KantoPalletTown_Door         0x2A3
+#define METATILE_KantoPalletTown_OaksLabDoor  0x2AC
+// gTileset_KantoViridianCity
+#define METATILE_KantoViridianCity_Door  0x299
+// gTileset_KantoPewterCity
+#define METATILE_KantoPewterCity_Door  0x2CE
+// gTileset_KantoSaffronCity
+#define METATILE_KantoSaffronCity_Door         0x284
+#define METATILE_KantoSaffronCity_SilphCoDoor  0x2BC
+// gTileset_KantoCeruleanCity
+#define METATILE_KantoCeruleanCity_Door  0x298
+// gTileset_KantoLavenderTown
+#define METATILE_KantoLavenderTown_Door  0x2A2
+// gTileset_KantoVermilionCity
+#define METATILE_KantoVermilionCity_Door        0x29E
+#define METATILE_KantoVermilionCity_SSAnneWarp  0x2E1
+// gTileset_KantoCeladonCity
+#define METATILE_KantoCeladonCity_DeptStoreDoor  0x294
+// gTileset_KantoFuchsiaCity
+#define METATILE_KantoFuchsiaCity_Door            0x2BF
+#define METATILE_KantoFuchsiaCity_SafariZoneDoor  0x2D2
+// gTileset_KantoCinnabarIsland
+#define METATILE_KantoCinnabarIsland_LabDoor  0x2AD
+// gTileset_KantoDepartmentStore
+#define METATILE_KantoDepartmentStore_ElevatorDoor  0x28D
+// gTileset_KantoPokemonCenter
+#define METATILE_KantoPokemonCenter_CableClubDoor  0x2DE
+// gTileset_KantoSilphCo
+#define METATILE_KantoSilphCo_HideoutElevatorDoor  0x2AB
+#define METATILE_KantoSilphCo_ElevatorDoor         0x2E2
+// gTileset_KantoSSAnne
+#define METATILE_KantoSSAnne_Door  0x281
+
 #endif // GUARD_METATILE_LABELS_H

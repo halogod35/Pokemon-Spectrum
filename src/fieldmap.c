@@ -16,6 +16,7 @@
 #include "tv.h"
 #include "constants/rgb.h"
 #include "constants/metatile_behaviors.h"
+#include "constants/metatile_labels.h" // PS-098: furniture metatile ids
 
 struct ConnectionFlags
 {
@@ -894,4 +895,58 @@ void LoadMapTilesetPalettes(struct MapLayout const *mapLayout)
         LoadPrimaryTilesetPalette(mapLayout);
         LoadSecondaryTilesetPalette(mapLayout);
     }
+}
+
+// PS-098: furniture metatiles per primary tileset. tv.c (TV on / off) and field_specials.c (PC on / off)
+// used to write Emerald's Building tileset ids into whatever map the player is in; a Kanto indoor map
+// uses gTileset_KantoBuilding (pokefirered's Building tileset), where those ids are other furniture or
+// floor. A map whose primary tileset is not listed gets Emerald's ids as before (every Hoenn indoor map
+// has gTileset_Building as its primary; its TVs in secondary tilesets are replaced by the primary's TV
+// metatile exactly as in Emerald).
+extern const struct Tileset gTileset_Building;
+extern const struct Tileset gTileset_KantoBuilding;
+
+struct TilesetFurniture
+{
+    const struct Tileset *primaryTileset;
+    u16 metatileIds[FURNITURE_COUNT];
+};
+
+static const struct TilesetFurniture sTilesetFurniture[] =
+{
+    {
+        .primaryTileset = &gTileset_Building, // Emerald: also the fallback for every other Hoenn tileset
+        .metatileIds =
+        {
+            [FURNITURE_TV_OFF] = METATILE_Building_TV_Off,
+            [FURNITURE_TV_ON]  = METATILE_Building_TV_On,
+            [FURNITURE_PC_OFF] = METATILE_Building_PC_Off,
+            [FURNITURE_PC_ON]  = METATILE_Building_PC_On,
+        },
+    },
+    {
+        .primaryTileset = &gTileset_KantoBuilding, // pokefirered's Building: its TVs never switch on (no "TV on" metatile)
+        .metatileIds =
+        {
+            [FURNITURE_TV_OFF] = FURNITURE_METATILE_NONE,
+            [FURNITURE_TV_ON]  = FURNITURE_METATILE_NONE,
+            [FURNITURE_PC_OFF] = METATILE_KantoBuilding_PC_Off,
+            [FURNITURE_PC_ON]  = METATILE_KantoBuilding_PC_On,
+        },
+    },
+};
+
+u16 GetTilesetFurnitureMetatileId(u8 furniture)
+{
+    const struct Tileset *primaryTileset = gMapHeader.mapLayout->primaryTileset;
+    u32 i;
+
+    if (furniture >= FURNITURE_COUNT)
+        return FURNITURE_METATILE_NONE;
+    for (i = 0; i < ARRAY_COUNT(sTilesetFurniture); i++)
+    {
+        if (sTilesetFurniture[i].primaryTileset == primaryTileset)
+            return sTilesetFurniture[i].metatileIds[furniture];
+    }
+    return sTilesetFurniture[0].metatileIds[furniture];
 }

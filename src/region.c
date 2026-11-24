@@ -3,6 +3,7 @@
 #include "global.h"
 #include "region.h"
 #include "event_data.h"
+#include "graphics.h" // PS-098: the PokéNav map headers
 #include "field_screen_effect.h"
 #include "map_name_popup.h"
 #include "overworld.h"
@@ -53,6 +54,7 @@ static const struct RegionInfo sRegions[REGIONS_COUNT] =
         .flySpots = NULL,                      // region_map.c keeps Emerald's Fly tables for Hoenn
         .flySpotCount = 0,
         .hasPokenavMap = TRUE,
+        .pokenavMapHeaderGfx = gPokenavLeftHeaderHoennMap_Gfx, // PS-098
         .popupTheme = MAPPOPUP_THEME_WOOD,     // unused: Hoenn has a theme per map section
         .firstBadgeFlag = FLAG_BADGE01_GET,
     },
@@ -69,6 +71,7 @@ static const struct RegionInfo sRegions[REGIONS_COUNT] =
         .flySpots = sKantoRegionFlySpots,
         .flySpotCount = ARRAY_COUNT(sKantoRegionFlySpots),
         .hasPokenavMap = TRUE,               // PS-095: the PokéNav shows the Kanto picture (city zoom pictures exist for Hoenn only: section names there)
+        .pokenavMapHeaderGfx = gPokenavLeftHeaderKantoMap_Gfx, // PS-098: "KANTO MAP" (graphics/pokenav/left_headers/kanto_map.png)
         .popupTheme = MAPPOPUP_THEME_STONE,
         .firstBadgeFlag = FLAG_BADGE09_GET,
     },
@@ -83,14 +86,14 @@ struct RegionTransitDestination
     u16 map;           // MAP_* to warp to
     u8 x;
     u8 y;
-    u16 flag;          // FLAG_* that unlocks it
+    u16 flag;          // FLAG_* that unlocks it; 0 (no flag has that id, FLAG_TEMP_1 is 0x1): always offered (PS-098)
 };
 
 static const struct RegionTransitDestination sRegionTransitDestinations[] =
 {
     // PS-095: one harbour per region (the user's long-term plan). Hoenn: Slateport City's ferry terminal, the
     // Kanto sailor stands at (14,11) and the player lands in front of him.
-    { MAPSEC_SLATEPORT_CITY, MAP_SLATEPORT_CITY_HARBOR, 14, 12, FLAG_VISITED_SLATEPORT_CITY },
+    { MAPSEC_SLATEPORT_CITY, MAP_SLATEPORT_CITY_HARBOR, 14, 12, 0 }, // PS-098: flag 0 = always offered (the boat to Hoenn is always open; a save that reached Kanto without Slateport has no visited flag)
     // Kanto: the S.S. ANNE pier in Vermilion City, the Hoenn sailor stands at (24,33) (tools/kanto_import/extras).
     // Offered once Hoenn's Hall of Fame is done (a region's boat opens after its Hall of Fame).
     { MAPSEC_KANTO_VERMILION_CITY, MAP_KANTO_VERMILION_CITY, 23, 33, FLAG_SYS_GAME_CLEAR },
@@ -307,7 +310,7 @@ u8 RegionTransit_BuildList(bool8 includeCurrentRegion)
     {
         const struct RegionTransitDestination *dest = &sRegionTransitDestinations[i];
 
-        if (!FlagGet(dest->flag))
+        if (dest->flag != 0 && !FlagGet(dest->flag)) // PS-098: flag 0 = always offered
             continue;
         if (!includeCurrentRegion && GetRegionOfMapSec(dest->mapSecId) == currentRegion)
             continue;

@@ -19,15 +19,15 @@
       "x": 2,
       "y": 5,
       "elevation": 3,
-      "dest_map": "MAP_KANTO_CELADON_CITY_DEPARTMENT_STORE_ELEVATOR",
-      "dest_warp_id": "0"
+      "dest_map": "MAP_KANTO_CELADON_CITY_DEPARTMENT_STORE_1F",
+      "dest_warp_id": "6"
     },
     {
       "x": 2,
       "y": 6,
       "elevation": 0,
-      "dest_map": "MAP_KANTO_CELADON_CITY_DEPARTMENT_STORE_ELEVATOR",
-      "dest_warp_id": "1"
+      "dest_map": "MAP_KANTO_CELADON_CITY_DEPARTMENT_STORE_1F",
+      "dest_warp_id": "6"
     }
   ],
   "coord_events": [],

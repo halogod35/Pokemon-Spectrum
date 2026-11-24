@@ -208,6 +208,8 @@ static u32 HandleRegionMapInput(struct Pokenav_RegionMapMenu *state)
     switch (DoRegionMapInputCallback())
     {
     case MAP_INPUT_REGION_CHANGED: // PS-071: L/R switched the region, refresh the info window
+        LoadLeftHeaderGfxForIndex(POKENAV_GFX_MAP_MENU_ZOOMED_OUT); // PS-098: "<REGION> MAP" header of the new region (L/R only work unzoomed)
+        return POKENAV_MAP_FUNC_CURSOR_MOVED;
     case MAP_INPUT_MOVE_END:
         return POKENAV_MAP_FUNC_CURSOR_MOVED;
     case MAP_INPUT_A_BUTTON:

@@ -62,6 +62,32 @@ static const s16 sEscalatorMetatiles_2F_2[ESCALATOR_STAGES] = {
 #define tDrawingEscalator data[3]
 #define tPlayerX          data[4]
 #define tPlayerY          data[5]
+#define tHasFrames        data[6] // PS-098
+
+// PS-098: the frames above are metatile ids of Emerald's PokemonCenter tileset. They used to be written into
+// whatever map the escalator is on; in pokefirered's Pokémon Centers (gTileset_KantoPokemonCenter) the floor
+// metatile 0x281 is Emerald's Escalator1F_Tile1_Frame0, so the three floor cells beside the escalator
+// cycled through its frames. A map whose secondary tileset is not listed here keeps its metatiles and the
+// escalator warp only moves the player (pokefirered animates no metatiles either).
+extern const struct Tileset gTileset_PokemonCenter;
+
+static const struct Tileset *const sEscalatorFrameTilesets[] =
+{
+    &gTileset_PokemonCenter,
+};
+
+static bool8 TilesetHasEscalatorFrames(void)
+{
+    const struct Tileset *secondaryTileset = gMapHeader.mapLayout->secondaryTileset;
+    u32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sEscalatorFrameTilesets); i++)
+    {
+        if (sEscalatorFrameTilesets[i] == secondaryTileset)
+            return TRUE;
+    }
+    return FALSE;
+}
 
 static void SetEscalatorMetatile(u8 taskId, const s16 *metatileIds, u16 metatileMasks)
 {
@@ -70,6 +96,11 @@ static void SetEscalatorMetatile(u8 taskId, const s16 *metatileIds, u16 metatile
     s16 transitionStage = gTasks[taskId].tTransitionStage;
     s16 i;
     s16 j;
+
+    // PS-098: no frames for this map's tileset: leave the metatiles alone (the stages still advance so
+    // IsEscalatorMoving ends as before)
+    if (!gTasks[taskId].tHasFrames)
+        return;
 
     // Check all the escalator sections and only progress the selected one to the next stage
     if (!gTasks[taskId].tGoingUp)
@@ -162,6 +193,7 @@ static u8 CreateEscalatorTask(bool16 goingUp)
     tState = 0;
     tTransitionStage = 0;
     tGoingUp = goingUp;
+    tHasFrames = TilesetHasEscalatorFrames(); // PS-098
     Task_DrawEscalator(taskId);
     return taskId;
 }
@@ -191,3 +223,4 @@ bool8 IsEscalatorMoving(void)
 #undef tDrawingEscalator
 #undef tPlayerX
 #undef tPlayerY
+#undef tHasFrames
