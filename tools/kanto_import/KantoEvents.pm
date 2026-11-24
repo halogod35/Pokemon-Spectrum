@@ -684,7 +684,7 @@ my @KANTO_PALETTES = qw(npc_blue npc_pink npc_green npc_white npc_blue_reflectio
 my %ANIMS = (sAnimTable_Standard => 1, sAnimTable_Inanimate => 1, sAnimTable_Nurse => 1, sAnimTable_HoOh => 1, sAnimTable_RockSmashRock => 'sAnimTable_BreakableRock', sAnimTable_CutTree => 'sAnimTable_CuttableTree');
 sub finish_sprites
 {
-    my (@gfxLines, @picDecls, @picTables, @infos, @pointers);
+    my (@gfxLines, @picDecls, @picTables, @infos, @infoDecls, @pointers);
     # allocation
     my $next = 0;
     for (values %spriteAlloc) { $next = $_ + 1 if $_ + 1 > $next }
@@ -717,6 +717,7 @@ sub finish_sprites
         (my $ourInfo = $infoSym) =~ s/^gObjectEventGraphicsInfo_/gObjectEventGraphicsInfo_$PFX/;
         push @pointers, sprintf("    [%-44s = &%s,", "$ours]", $ourInfo);
         next if $infoDone{$infoSym}++;
+        push @infoDecls, "extern const struct ObjectEventGraphicsInfo $ourInfo;";
         my $where = "sprite $frg";
         my $picTable = $info->{images} // '';
         my $frames = $frPicTable{$picTable} or do { err("$where: pic table $picTable not found"); next };
@@ -786,6 +787,7 @@ sub finish_sprites
     $C{queue_write}->("$repo/src/data/object_events/kanto/pic_tables.h", $gen . join("\n\n", @picTables) . "\n");
     $C{queue_write}->("$repo/src/data/object_events/kanto/graphics_info.h", $gen . join("\n\n", @infos) . "\n");
     $C{queue_write}->("$repo/src/data/object_events/kanto/graphics_info_pointers.h", $gen . "// Entries of gObjectEventGraphicsInfoPointers[] (src/data/object_events/object_event_graphics_info_pointers.h includes this inside the array)\n" . join("\n", @pointers) . "\n");
+    $C{queue_write}->("$repo/src/data/object_events/kanto/graphics_info_decls.h", $gen . "// Declarations for the pointer table (the infos themselves are defined after it, like Emerald's)\n" . join("\n", @infoDecls) . "\n");
 }
 
 1;
