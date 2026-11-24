@@ -46,7 +46,7 @@ enum {
     MB_LAVARIDGE_GYM_B1F_WARP,
     MB_SEAWEED_NO_SURFACING,
     MB_REFLECTION_UNDER_BRIDGE,
-    MB_UNUSED_2C,
+    MB_ROCK_STAIRS, // PS-096: pokefirered's rock stairs (Kanto, 0x2A there): slow walking and running, bikes at walking-fast speed
     MB_UNUSED_2D,
     MB_UNUSED_2E,
     MB_UNUSED_2F,
@@ -86,11 +86,11 @@ enum {
     MB_WESTWARD_CURRENT,
     MB_NORTHWARD_CURRENT,
     MB_SOUTHWARD_CURRENT,
-    MB_UNUSED_54,
-    MB_UNUSED_55,
-    MB_UNUSED_56,
-    MB_UNUSED_57,
-    MB_UNUSED_58,
+    MB_SPIN_RIGHT,    // PS-096: pokefirered's gym / hideout spinner tiles (Kanto), the same ids 0x54..0x58 as there:
+    MB_SPIN_LEFT,     // the player spins in the tile's direction until a wall or MB_STOP_SPINNING
+    MB_SPIN_UP,       // (field_player_avatar.c). Kept in this order so MetatileBehavior_IsSpinTile can range-check.
+    MB_SPIN_DOWN,
+    MB_STOP_SPINNING,
     MB_UNUSED_59,
     MB_UNUSED_5A,
     MB_UNUSED_5B,
@@ -217,8 +217,8 @@ enum {
     MB_ISOLATED_HORIZONTAL_RAIL,
     MB_VERTICAL_RAIL,
     MB_HORIZONTAL_RAIL,
-    MB_UNUSED_D7,
-    MB_UNUSED_D8,
+    MB_CYCLING_ROAD_PULL_DOWN,       // PS-096: pokefirered's cycling road (Kanto Routes 16-17, 0xD0/0xD1 there): the bike rolls
+    MB_CYCLING_ROAD_PULL_DOWN_GRASS, // south unless B is held (bike.c); the grass one is tall grass too. Kept adjacent for the range check.
     MB_UNUSED_D9,
     MB_UNUSED_DA,
     MB_UNUSED_DB,

@@ -836,7 +836,7 @@ const struct Tileset gTileset_KantoBuilding =
     .palettes = gTilesetPalettes_KantoBuilding,
     .metatiles = gMetatiles_KantoBuilding,
     .metatileAttributes = gMetatileAttributes_KantoBuilding,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoGeneral =
@@ -847,7 +847,7 @@ const struct Tileset gTileset_KantoGeneral =
     .palettes = gTilesetPalettes_KantoGeneral,
     .metatiles = gMetatiles_KantoGeneral,
     .metatileAttributes = gMetatileAttributes_KantoGeneral,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = InitTilesetAnim_KantoGeneral, // PS-096: pokefirered's animation, frames in data/tilesets/primary/kanto_general/anim
 };
 
 const struct Tileset gTileset_KantoBikeShop =
@@ -858,7 +858,7 @@ const struct Tileset gTileset_KantoBikeShop =
     .palettes = gTilesetPalettes_KantoBikeShop,
     .metatiles = gMetatiles_KantoBikeShop,
     .metatileAttributes = gMetatileAttributes_KantoBikeShop,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoBurgledHouse =
@@ -869,7 +869,7 @@ const struct Tileset gTileset_KantoBurgledHouse =
     .palettes = gTilesetPalettes_KantoBurgledHouse,
     .metatiles = gMetatiles_KantoBurgledHouse,
     .metatileAttributes = gMetatileAttributes_KantoBurgledHouse,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoCave =
@@ -880,7 +880,7 @@ const struct Tileset gTileset_KantoCave =
     .palettes = gTilesetPalettes_KantoCave,
     .metatiles = gMetatiles_KantoCave,
     .metatileAttributes = gMetatileAttributes_KantoCave,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoCeladonCity =
@@ -891,7 +891,7 @@ const struct Tileset gTileset_KantoCeladonCity =
     .palettes = gTilesetPalettes_KantoCeladonCity,
     .metatiles = gMetatiles_KantoCeladonCity,
     .metatileAttributes = gMetatileAttributes_KantoCeladonCity,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = InitTilesetAnim_KantoCeladonCity, // PS-096: pokefirered's animation, frames in data/tilesets/secondary/kanto_celadon_city/anim
 };
 
 const struct Tileset gTileset_KantoCeladonGym =
@@ -902,7 +902,7 @@ const struct Tileset gTileset_KantoCeladonGym =
     .palettes = gTilesetPalettes_KantoCeladonGym,
     .metatiles = gMetatiles_KantoCeladonGym,
     .metatileAttributes = gMetatileAttributes_KantoCeladonGym,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = InitTilesetAnim_KantoCeladonGym, // PS-096: pokefirered's animation, frames in data/tilesets/secondary/kanto_celadon_gym/anim
 };
 
 const struct Tileset gTileset_KantoCeruleanCave =
@@ -913,7 +913,7 @@ const struct Tileset gTileset_KantoCeruleanCave =
     .palettes = gTilesetPalettes_KantoCeruleanCave,
     .metatiles = gMetatiles_KantoCeruleanCave,
     .metatileAttributes = gMetatileAttributes_KantoCeruleanCave,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoCeruleanCity =
@@ -924,7 +924,7 @@ const struct Tileset gTileset_KantoCeruleanCity =
     .palettes = gTilesetPalettes_KantoCeruleanCity,
     .metatiles = gMetatiles_KantoCeruleanCity,
     .metatileAttributes = gMetatileAttributes_KantoCeruleanCity,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoCeruleanGym =
@@ -935,7 +935,7 @@ const struct Tileset gTileset_KantoCeruleanGym =
     .palettes = gTilesetPalettes_KantoCeruleanGym,
     .metatiles = gMetatiles_KantoCeruleanGym,
     .metatileAttributes = gMetatileAttributes_KantoCeruleanGym,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoCinnabarGym =
@@ -946,7 +946,7 @@ const struct Tileset gTileset_KantoCinnabarGym =
     .palettes = gTilesetPalettes_KantoCinnabarGym,
     .metatiles = gMetatiles_KantoCinnabarGym,
     .metatileAttributes = gMetatileAttributes_KantoCinnabarGym,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoCinnabarIsland =
@@ -957,7 +957,7 @@ const struct Tileset gTileset_KantoCinnabarIsland =
     .palettes = gTilesetPalettes_KantoCinnabarIsland,
     .metatiles = gMetatiles_KantoCinnabarIsland,
     .metatileAttributes = gMetatileAttributes_KantoCinnabarIsland,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoCondominiums =
@@ -968,7 +968,7 @@ const struct Tileset gTileset_KantoCondominiums =
     .palettes = gTilesetPalettes_KantoCondominiums,
     .metatiles = gMetatiles_KantoCondominiums,
     .metatileAttributes = gMetatileAttributes_KantoCondominiums,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoDepartmentStore =
@@ -979,7 +979,7 @@ const struct Tileset gTileset_KantoDepartmentStore =
     .palettes = gTilesetPalettes_KantoDepartmentStore,
     .metatiles = gMetatiles_KantoDepartmentStore,
     .metatileAttributes = gMetatileAttributes_KantoDepartmentStore,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoDiglettsCave =
@@ -990,7 +990,7 @@ const struct Tileset gTileset_KantoDiglettsCave =
     .palettes = gTilesetPalettes_KantoDiglettsCave,
     .metatiles = gMetatiles_KantoDiglettsCave,
     .metatileAttributes = gMetatileAttributes_KantoDiglettsCave,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoFanClubDaycare =
@@ -1001,7 +1001,7 @@ const struct Tileset gTileset_KantoFanClubDaycare =
     .palettes = gTilesetPalettes_KantoFanClubDaycare,
     .metatiles = gMetatiles_KantoFanClubDaycare,
     .metatileAttributes = gMetatileAttributes_KantoFanClubDaycare,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoFuchsiaCity =
@@ -1012,7 +1012,7 @@ const struct Tileset gTileset_KantoFuchsiaCity =
     .palettes = gTilesetPalettes_KantoFuchsiaCity,
     .metatiles = gMetatiles_KantoFuchsiaCity,
     .metatileAttributes = gMetatileAttributes_KantoFuchsiaCity,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoFuchsiaGym =
@@ -1023,7 +1023,7 @@ const struct Tileset gTileset_KantoFuchsiaGym =
     .palettes = gTilesetPalettes_KantoFuchsiaGym,
     .metatiles = gMetatiles_KantoFuchsiaGym,
     .metatileAttributes = gMetatileAttributes_KantoFuchsiaGym,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoGameCorner =
@@ -1034,7 +1034,7 @@ const struct Tileset gTileset_KantoGameCorner =
     .palettes = gTilesetPalettes_KantoGameCorner,
     .metatiles = gMetatiles_KantoGameCorner,
     .metatileAttributes = gMetatileAttributes_KantoGameCorner,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoGenericBuilding1 =
@@ -1045,7 +1045,7 @@ const struct Tileset gTileset_KantoGenericBuilding1 =
     .palettes = gTilesetPalettes_KantoGenericBuilding1,
     .metatiles = gMetatiles_KantoGenericBuilding1,
     .metatileAttributes = gMetatileAttributes_KantoGenericBuilding1,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoGenericBuilding2 =
@@ -1056,7 +1056,7 @@ const struct Tileset gTileset_KantoGenericBuilding2 =
     .palettes = gTilesetPalettes_KantoGenericBuilding2,
     .metatiles = gMetatiles_KantoGenericBuilding2,
     .metatileAttributes = gMetatileAttributes_KantoGenericBuilding2,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoHallOfFame =
@@ -1067,7 +1067,7 @@ const struct Tileset gTileset_KantoHallOfFame =
     .palettes = gTilesetPalettes_KantoHallOfFame,
     .metatiles = gMetatiles_KantoHallOfFame,
     .metatileAttributes = gMetatileAttributes_KantoHallOfFame,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoIndigoPlateau =
@@ -1078,7 +1078,7 @@ const struct Tileset gTileset_KantoIndigoPlateau =
     .palettes = gTilesetPalettes_KantoIndigoPlateau,
     .metatiles = gMetatiles_KantoIndigoPlateau,
     .metatileAttributes = gMetatileAttributes_KantoIndigoPlateau,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoLab =
@@ -1089,7 +1089,7 @@ const struct Tileset gTileset_KantoLab =
     .palettes = gTilesetPalettes_KantoLab,
     .metatiles = gMetatiles_KantoLab,
     .metatileAttributes = gMetatileAttributes_KantoLab,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoLavenderTown =
@@ -1100,7 +1100,7 @@ const struct Tileset gTileset_KantoLavenderTown =
     .palettes = gTilesetPalettes_KantoLavenderTown,
     .metatiles = gMetatiles_KantoLavenderTown,
     .metatileAttributes = gMetatileAttributes_KantoLavenderTown,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoMart =
@@ -1111,7 +1111,7 @@ const struct Tileset gTileset_KantoMart =
     .palettes = gTilesetPalettes_KantoMart,
     .metatiles = gMetatiles_KantoMart,
     .metatileAttributes = gMetatileAttributes_KantoMart,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoMuseum =
@@ -1122,7 +1122,7 @@ const struct Tileset gTileset_KantoMuseum =
     .palettes = gTilesetPalettes_KantoMuseum,
     .metatiles = gMetatiles_KantoMuseum,
     .metatileAttributes = gMetatileAttributes_KantoMuseum,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoPalletTown =
@@ -1133,7 +1133,7 @@ const struct Tileset gTileset_KantoPalletTown =
     .palettes = gTilesetPalettes_KantoPalletTown,
     .metatiles = gMetatiles_KantoPalletTown,
     .metatileAttributes = gMetatileAttributes_KantoPalletTown,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoPewterCity =
@@ -1144,7 +1144,7 @@ const struct Tileset gTileset_KantoPewterCity =
     .palettes = gTilesetPalettes_KantoPewterCity,
     .metatiles = gMetatiles_KantoPewterCity,
     .metatileAttributes = gMetatileAttributes_KantoPewterCity,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoPewterGym =
@@ -1155,7 +1155,7 @@ const struct Tileset gTileset_KantoPewterGym =
     .palettes = gTilesetPalettes_KantoPewterGym,
     .metatiles = gMetatiles_KantoPewterGym,
     .metatileAttributes = gMetatileAttributes_KantoPewterGym,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoPokemonCenter =
@@ -1166,7 +1166,7 @@ const struct Tileset gTileset_KantoPokemonCenter =
     .palettes = gTilesetPalettes_KantoPokemonCenter,
     .metatiles = gMetatiles_KantoPokemonCenter,
     .metatileAttributes = gMetatileAttributes_KantoPokemonCenter,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoPokemonLeague =
@@ -1177,7 +1177,7 @@ const struct Tileset gTileset_KantoPokemonLeague =
     .palettes = gTilesetPalettes_KantoPokemonLeague,
     .metatiles = gMetatiles_KantoPokemonLeague,
     .metatileAttributes = gMetatileAttributes_KantoPokemonLeague,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoPokemonMansion =
@@ -1188,7 +1188,7 @@ const struct Tileset gTileset_KantoPokemonMansion =
     .palettes = gTilesetPalettes_KantoPokemonMansion,
     .metatiles = gMetatiles_KantoPokemonMansion,
     .metatileAttributes = gMetatileAttributes_KantoPokemonMansion,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoPokemonTower =
@@ -1199,7 +1199,7 @@ const struct Tileset gTileset_KantoPokemonTower =
     .palettes = gTilesetPalettes_KantoPokemonTower,
     .metatiles = gMetatiles_KantoPokemonTower,
     .metatileAttributes = gMetatileAttributes_KantoPokemonTower,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoPowerPlant =
@@ -1210,7 +1210,7 @@ const struct Tileset gTileset_KantoPowerPlant =
     .palettes = gTilesetPalettes_KantoPowerPlant,
     .metatiles = gMetatiles_KantoPowerPlant,
     .metatileAttributes = gMetatileAttributes_KantoPowerPlant,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoRestaurantHotel =
@@ -1221,7 +1221,7 @@ const struct Tileset gTileset_KantoRestaurantHotel =
     .palettes = gTilesetPalettes_KantoRestaurantHotel,
     .metatiles = gMetatiles_KantoRestaurantHotel,
     .metatileAttributes = gMetatileAttributes_KantoRestaurantHotel,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoRockTunnel =
@@ -1232,7 +1232,7 @@ const struct Tileset gTileset_KantoRockTunnel =
     .palettes = gTilesetPalettes_KantoRockTunnel,
     .metatiles = gMetatiles_KantoRockTunnel,
     .metatileAttributes = gMetatileAttributes_KantoRockTunnel,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoSSAnne =
@@ -1243,7 +1243,7 @@ const struct Tileset gTileset_KantoSSAnne =
     .palettes = gTilesetPalettes_KantoSSAnne,
     .metatiles = gMetatiles_KantoSSAnne,
     .metatileAttributes = gMetatileAttributes_KantoSSAnne,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoSafariZoneBuilding =
@@ -1254,7 +1254,7 @@ const struct Tileset gTileset_KantoSafariZoneBuilding =
     .palettes = gTilesetPalettes_KantoSafariZoneBuilding,
     .metatiles = gMetatiles_KantoSafariZoneBuilding,
     .metatileAttributes = gMetatileAttributes_KantoSafariZoneBuilding,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoSaffronCity =
@@ -1265,7 +1265,7 @@ const struct Tileset gTileset_KantoSaffronCity =
     .palettes = gTilesetPalettes_KantoSaffronCity,
     .metatiles = gMetatiles_KantoSaffronCity,
     .metatileAttributes = gMetatileAttributes_KantoSaffronCity,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoSaffronGym =
@@ -1276,7 +1276,7 @@ const struct Tileset gTileset_KantoSaffronGym =
     .palettes = gTilesetPalettes_KantoSaffronGym,
     .metatiles = gMetatiles_KantoSaffronGym,
     .metatileAttributes = gMetatileAttributes_KantoSaffronGym,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoSchool =
@@ -1287,7 +1287,7 @@ const struct Tileset gTileset_KantoSchool =
     .palettes = gTilesetPalettes_KantoSchool,
     .metatiles = gMetatiles_KantoSchool,
     .metatileAttributes = gMetatileAttributes_KantoSchool,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoSeaCottage =
@@ -1298,7 +1298,7 @@ const struct Tileset gTileset_KantoSeaCottage =
     .palettes = gTilesetPalettes_KantoSeaCottage,
     .metatiles = gMetatiles_KantoSeaCottage,
     .metatileAttributes = gMetatileAttributes_KantoSeaCottage,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoSeafoamIslands =
@@ -1309,7 +1309,7 @@ const struct Tileset gTileset_KantoSeafoamIslands =
     .palettes = gTilesetPalettes_KantoSeafoamIslands,
     .metatiles = gMetatiles_KantoSeafoamIslands,
     .metatileAttributes = gMetatileAttributes_KantoSeafoamIslands,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoSilphCo =
@@ -1320,7 +1320,7 @@ const struct Tileset gTileset_KantoSilphCo =
     .palettes = gTilesetPalettes_KantoCondominiums,
     .metatiles = gMetatiles_KantoSilphCo,
     .metatileAttributes = gMetatileAttributes_KantoSilphCo,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = InitTilesetAnim_KantoSilphCo, // PS-096: pokefirered's animation, frames in data/tilesets/secondary/kanto_silph_co/anim
 };
 
 const struct Tileset gTileset_KantoUndergroundPath =
@@ -1331,7 +1331,7 @@ const struct Tileset gTileset_KantoUndergroundPath =
     .palettes = gTilesetPalettes_KantoUndergroundPath,
     .metatiles = gMetatiles_KantoUndergroundPath,
     .metatileAttributes = gMetatileAttributes_KantoUndergroundPath,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoVermilionCity =
@@ -1342,7 +1342,7 @@ const struct Tileset gTileset_KantoVermilionCity =
     .palettes = gTilesetPalettes_KantoVermilionCity,
     .metatiles = gMetatiles_KantoVermilionCity,
     .metatileAttributes = gMetatileAttributes_KantoVermilionCity,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoVermilionGym =
@@ -1353,7 +1353,7 @@ const struct Tileset gTileset_KantoVermilionGym =
     .palettes = gTilesetPalettes_KantoVermilionGym,
     .metatiles = gMetatiles_KantoVermilionGym,
     .metatileAttributes = gMetatileAttributes_KantoVermilionGym,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = InitTilesetAnim_KantoVermilionGym, // PS-096: pokefirered's animation, frames in data/tilesets/secondary/kanto_vermilion_gym/anim
 };
 
 const struct Tileset gTileset_KantoViridianCity =
@@ -1364,7 +1364,7 @@ const struct Tileset gTileset_KantoViridianCity =
     .palettes = gTilesetPalettes_KantoViridianCity,
     .metatiles = gMetatiles_KantoViridianCity,
     .metatileAttributes = gMetatileAttributes_KantoViridianCity,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoViridianForest =
@@ -1375,7 +1375,7 @@ const struct Tileset gTileset_KantoViridianForest =
     .palettes = gTilesetPalettes_KantoViridianForest,
     .metatiles = gMetatiles_KantoViridianForest,
     .metatileAttributes = gMetatileAttributes_KantoViridianForest,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 const struct Tileset gTileset_KantoViridianGym =
@@ -1386,7 +1386,7 @@ const struct Tileset gTileset_KantoViridianGym =
     .palettes = gTilesetPalettes_KantoViridianGym,
     .metatiles = gMetatiles_KantoViridianGym,
     .metatileAttributes = gMetatileAttributes_KantoViridianGym,
-    .callback = NULL, // tileset animations: PS-096
+    .callback = NULL,
 };
 
 // KANTO_IMPORT_END

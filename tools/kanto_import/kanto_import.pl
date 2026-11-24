@@ -182,6 +182,7 @@ sub translate_const
 sub png_read
 {
     my ($path, $width) = @_; # 4bpp rows; PS-098: an 8-bit indexed PNG whose colours stay below 16 is packed to 4bpp
+    # $width: the expected width in pixels (default: a tileset's 128); PS-096: 0 accepts any width in whole tiles
     $width //= $PNG_WIDTH;
     my $d = slurp($path);
     die "$path: not a PNG\n" unless substr($d, 0, 8) eq "\x89PNG\r\n\x1a\n";
@@ -201,8 +202,8 @@ sub png_read
         $pos += 12 + $len;
         last if $type eq 'IEND';
     }
-    die "$path: expected a 4bpp (or 8-bit) indexed, non-interlaced PNG $width px wide (got w=$ihdr{w} bd=$ihdr{bd} ct=$ihdr{ct} il=$ihdr{il})\n"
-        unless $ihdr{w} == $width && ($ihdr{bd} == 4 || $ihdr{bd} == 8) && $ihdr{ct} == 3 && $ihdr{il} == 0;
+    die "$path: expected a 4bpp (or 8-bit) indexed, non-interlaced PNG " . ($width ? "$width px wide" : "with a width in whole tiles") . " (got w=$ihdr{w} bd=$ihdr{bd} ct=$ihdr{ct} il=$ihdr{il})\n"
+        unless ($width ? $ihdr{w} == $width : ($ihdr{w} > 0 && $ihdr{w} % $TILE_PX == 0)) && ($ihdr{bd} == 4 || $ihdr{bd} == 8) && $ihdr{ct} == 3 && $ihdr{il} == 0;
     my $raw = Compress::Zlib::uncompress($idat);
     die "$path: zlib inflate failed\n" unless defined $raw;
     my $stride = $ihdr{bd} == 8 ? $ihdr{w} : $ihdr{w} / 2; # bytes per row: one byte per pixel at 8 bits, two pixels per byte at 4
@@ -522,6 +523,21 @@ sub convert_attributes
     return @out;
 }
 
+# PS-096: tileset animations. pokefirered animates these tilesets (its src/tileset_anims.c, frames in the
+# tileset's anim/ directory); the Kanto callbacks with the same VRAM tile offsets live in our
+# src/tileset_anims.c (the prefix re-pack keeps every tile id: a primary's animated tiles are below 512, a
+# secondary's own tiles start at 640 in both engines). The frames are copied into the re-packed tileset's
+# anim/ directory and the generated header gets the callback. A tileset with frames but no row here
+# (mt_ember: Sevii) is reported and stays still.
+my %TILESET_ANIM_CALLBACKS = (
+    gTileset_General      => 'InitTilesetAnim_KantoGeneral',
+    gTileset_CeladonCity  => 'InitTilesetAnim_KantoCeladonCity',
+    gTileset_CeladonGym   => 'InitTilesetAnim_KantoCeladonGym',
+    gTileset_SilphCo      => 'InitTilesetAnim_KantoSilphCo',
+    gTileset_VermilionGym => 'InitTilesetAnim_KantoVermilionGym',
+);
+my %animFramesCopied; # our tileset sym => frame count
+
 # tilesets -> files. Primaries first, then every (secondary, primary) pair.
 my (@gfxLines, @metaLines, @hdrLines);
 my %writtenTilesets;
@@ -588,7 +604,35 @@ for my $out (@tilesetOutputs)
     }
     queue_write("$repo/$relDir/metatiles.bin", pack('v*', @metatiles));
     queue_write("$repo/$relDir/metatile_attributes.bin", pack('v*', @attrs));
-    $writtenTilesets{$oursym} = { dir => $relDir, nTiles => $nTiles, nMetatiles => scalar(@attrs), shared => $shareWith };
+    # PS-096: animation frames (the tileset's own anim/ directory, also for silph_co whose tiles are condominiums')
+    my $callback = 'NULL';
+    my $animDir = "$t->{dir}/anim";
+    if (my $cb = $TILESET_ANIM_CALLBACKS{$sym})
+    {
+        unless (-d $animDir) { err("tileset $sym: the converter expects animation frames in $animDir for $cb, there are none") }
+        else
+        {
+            my $n = 0;
+            for my $sub (sort glob("$animDir/*"))
+            {
+                next unless -d $sub;
+                my $anim = basename($sub);
+                for my $f (sort { ($a =~ /(\d+)\.png$/)[0] <=> ($b =~ /(\d+)\.png$/)[0] } glob("$sub/*.png"))
+                {
+                    my $png = png_read($f, 0);
+                    queue_write("$repo/$relDir/anim/$anim/" . basename($f), png_build($png->{w}, substr($png->{plte}, 0, 16 * 3), $png->{rows}));
+                    $n++;
+                }
+            }
+            if ($n) { $callback = $cb; $animFramesCopied{$oursym} = $n }
+            else { err("tileset $sym: $animDir holds no <anim>/<n>.png frames") }
+        }
+    }
+    elsif (-d $animDir)
+    {
+        note("tileset $sym: pokefirered animates it ($animDir) but the converter has no callback for it (TILESET_ANIM_CALLBACKS): it stays still");
+    }
+    $writtenTilesets{$oursym} = { dir => $relDir, nTiles => $nTiles, nMetatiles => scalar(@attrs), shared => $shareWith, callback => $callback };
     push @metaLines, "const u16 ${metaVar}[] = INCBIN_U16(\"$relDir/metatiles.bin\");",
                      "const u16 ${attrVar}[] = INCBIN_U16(\"$relDir/metatile_attributes.bin\");", "";
     push @hdrLines, "const struct Tileset $oursym =", "{",
@@ -598,7 +642,7 @@ for my $out (@tilesetOutputs)
                     "    .palettes = $palVar,",
                     "    .metatiles = $metaVar,",
                     "    .metatileAttributes = $attrVar,",
-                    "    .callback = NULL, // tileset animations: PS-096",
+                    ($callback eq 'NULL' ? "    .callback = NULL," : "    .callback = $callback, // PS-096: pokefirered's animation, frames in $relDir/anim"),
                     "};", "";
 }
 
@@ -643,7 +687,8 @@ for my $g (@OBJECT_GFX)
         my $pal = slurp($src);
         $pal =~ s/\r\n/\n/g;
         err("object event palette $from is not a JASC palette") unless $pal =~ /^JASC-PAL\n0100\n16\n/;
-        queue_write("$repo/graphics/object_events/$to", $pal);
+        (my $crlf = $pal) =~ s/\n/\r\n/g; # PS-096: .gitattributes has *.pal eol=crlf; written that way, a run leaves git clean
+        queue_write("$repo/graphics/object_events/$to", $crlf);
     }
 }
 
@@ -817,6 +862,28 @@ for my $h (@{$frHeal->{heal_locations}})
 # maps
 my (@scriptIncludes, %warpCount);
 $warpCount{$_} = scalar(@{$map{$_}{fr}{warp_events} || []}) for @mapOrder;
+# PS-096: the only object events kept: pokefirered's Rock Smash rocks and cut trees (field-move obstacles with
+# pokefirered's generic scripts, which exist here under the same names in data/scripts/field_move_scripts.inc),
+# as Emerald's own rock / tree objects. Their FLAG_TEMP_* flags (cleared on every map load, so a smashed rock is
+# back next time) exist here with the same names and values; a flag we do not have becomes 0 (never hidden).
+# pokefirered's "clone" objects (a neighbouring map's tree shown across the map border) have no Emerald
+# counterpart and are dropped. Everything else (NPCs, items, boulders, story objects) stays dropped.
+my %KEPT_OBJECTS = (
+    OBJ_EVENT_GFX_ROCK_SMASH_ROCK => { gfx => 'OBJ_EVENT_GFX_BREAKABLE_ROCK', script => 'EventScript_RockSmash', what => 'rocks' },
+    OBJ_EVENT_GFX_CUT_TREE        => { gfx => 'OBJ_EVENT_GFX_CUTTABLE_TREE',  script => 'EventScript_CutTree',   what => 'trees' },
+);
+my $ourFlags = slurp("$repo/include/constants/flags.h");
+my $ourMovementTypes = slurp("$repo/include/constants/event_object_movement.h");
+my $ourTrainerTypes = slurp("$repo/include/constants/trainer_types.h");
+my $ourObjectGfx = slurp("$repo/include/constants/event_objects.h");
+my $ourFieldMoveScripts = slurp("$repo/data/scripts/field_move_scripts.inc");
+for my $k (sort keys %KEPT_OBJECTS)
+{
+    err("KEPT_OBJECTS: $KEPT_OBJECTS{$k}{gfx} is not an Emerald object graphic") unless our_has_define($ourObjectGfx, $KEPT_OBJECTS{$k}{gfx});
+    err("KEPT_OBJECTS: $KEPT_OBJECTS{$k}{script} is not defined in data/scripts/field_move_scripts.inc") unless $ourFieldMoveScripts =~ /^\Q$KEPT_OBJECTS{$k}{script}\E::/m;
+}
+my (%fieldObjectsPerMap, %fieldObjectTotals, %fieldObjectClones); # map => { rocks => n, trees => n }
+my $otherObjectsDropped = 0;
 sub jbool { return $_[0] ? 'true' : 'false' }
 sub jstr  { my $s = shift; $s =~ s/(["\\])/\\$1/g; return "\"$s\"" }
 my %opposite = (up => 'down', down => 'up', left => 'right', right => 'left', dive => 'emerge', emerge => 'dive');
@@ -852,7 +919,49 @@ for my $m (@mapOrder)
     my $mapType = translate_const($fr->{map_type}, $ourMapTypes, "map $m: map type");
     my $scene = translate_const($fr->{battle_scene}, $ourMapTypes, "map $m: battle scene");
     note("map $m: floor_number $fr->{floor_number} dropped (Emerald headers have none)") if ($fr->{floor_number} // 0) != 0;
-    for my $cat (qw(object_events coord_events bg_events))
+    # PS-096: Rock Smash rocks and cut trees are kept (see %KEPT_OBJECTS), every other object event is dropped
+    my @keptObjects;
+    {
+        my $dropped = 0;
+        for my $o (@{$fr->{object_events} || []})
+        {
+            my $k = $KEPT_OBJECTS{$o->{graphics_id} // ''};
+            if ($k && ($o->{type} // 'object') eq 'clone')
+            {
+                $fieldObjectClones{$m}++;
+                note("map $m: a $o->{graphics_id} clone of $o->{target_map} at ($o->{x},$o->{y}) dropped (no clone object events here)");
+                next;
+            }
+            if (!$k || ($o->{script} // '') ne $k->{script}) { $dropped++; next }
+            my $flag = $o->{flag} // '0';
+            if ($flag ne '0' && !our_has_define($ourFlags, $flag))
+            {
+                note("map $m: $o->{graphics_id} at ($o->{x},$o->{y}): flag $flag is not an Emerald flag, 0 is used (the object is never hidden)");
+                $flag = '0';
+            }
+            err("map $m: $o->{graphics_id} at ($o->{x},$o->{y}): movement type $o->{movement_type} does not exist here") unless our_has_define($ourMovementTypes, $o->{movement_type} // '');
+            err("map $m: $o->{graphics_id} at ($o->{x},$o->{y}): trainer type $o->{trainer_type} does not exist here") unless our_has_define($ourTrainerTypes, $o->{trainer_type} // '');
+            push @keptObjects, join("\n",
+                "    {",
+                "      \"graphics_id\": \"$k->{gfx}\",",
+                "      \"x\": $o->{x},",
+                "      \"y\": $o->{y},",
+                "      \"elevation\": " . ($o->{elevation} // 0) . ",",
+                "      \"movement_type\": \"$o->{movement_type}\",",
+                "      \"movement_range_x\": " . ($o->{movement_range_x} // 0) . ",",
+                "      \"movement_range_y\": " . ($o->{movement_range_y} // 0) . ",",
+                "      \"trainer_type\": \"$o->{trainer_type}\",",
+                "      \"trainer_sight_or_berry_tree_id\": " . jstr($o->{trainer_sight_or_berry_tree_id} // '0') . ",",
+                "      \"script\": \"$k->{script}\",",
+                "      \"flag\": \"$flag\"",
+                "    }");
+            $fieldObjectsPerMap{$m}{$k->{what}}++;
+            $fieldObjectTotals{$k->{what}}++;
+        }
+        $otherObjectsDropped += $dropped;
+        note("map $m: $dropped object_events dropped (scripts, NPCs, signs and items are not imported)" . (@keptObjects ? ", " . scalar(@keptObjects) . " kept (Rock Smash rocks / cut trees)" : "")) if $dropped;
+    }
+    for my $cat (qw(coord_events bg_events))
     {
         my $n = scalar(@{$fr->{$cat} || []});
         note("map $m: $n $cat dropped (scripts, NPCs, signs and items are not imported)") if $n;
@@ -940,7 +1049,7 @@ for my $m (@mapOrder)
         push @warps, "    {\n      \"x\": $w->{x},\n      \"y\": $w->{y},\n      \"elevation\": $w->{elevation},\n      \"dest_map\": \"$destMap\",\n      \"dest_warp_id\": " . jstr($destId) . "\n    }";
         $wi++;
     }
-    my $objects = "[]";
+    my @objectEntries = @keptObjects; # PS-096: the kept rocks / trees first, then the hand-written extras
     if (my $text = $extras{$m}{'objects.json'})
     {
         my $parsed = eval { decode_json($text) };
@@ -953,10 +1062,11 @@ for my $m (@mapOrder)
                 err("extras: $m.objects.json: script $o->{script} is not defined in $m.scripts.inc") if defined $o->{script} && $o->{script} ne '0x0' && ($extras{$m}{'scripts.inc'} // '') !~ /^\Q$o->{script}\E::/m;
             }
             $text =~ s/^\s+|\s+$//g;
-            $objects = $text;
+            push @objectEntries, map { "    $_" } json_array_elements(substr($text, 1, length($text) - 2)); # the elements of the extras array, as written there
             $extrasUsed{$m}{objects} = scalar @$parsed;
         }
     }
+    my $objects = @objectEntries ? "[\n" . join(",\n", @objectEntries) . "\n  ]" : "[]";
     my $json = join("\n",
         "{",
         "  \"id\": \"$id\",",
@@ -1210,7 +1320,8 @@ my $nPrimary = scalar(grep { $_->[0] && !defined $_->[1] } @tilesetOutputs);
 info(sprintf("kanto_import: %d maps in %d groups, %d layouts, %d tilesets (%d primary, %d sharing graphics), %d map sections (%d on the cursor grid), %d Fly spots, %d visited flags, %d heal locations",
      scalar(@mapOrder), scalar(@groupOrder), scalar(keys %layoutUsed), scalar(keys %writtenTilesets), $nPrimary, scalar(grep { $writtenTilesets{$_}{shared} } keys %writtenTilesets),
      scalar(@sectionIds), scalar(grep { $sectionOf{$_}{onGrid} } @sectionIds), scalar(grep { $healOf{$_} && $healOf{$_}{ourId} && $flagOf{$_} } @sectionIds), scalar(grep { $townSections{$_} } @sectionIds), scalar(@healEntries)));
-for my $sym (sort keys %writtenTilesets) { my $w = $writtenTilesets{$sym}; info("  tileset $sym: $w->{dir} ($w->{nTiles} tiles, $w->{nMetatiles} metatiles" . ($w->{shared} ? ", graphics of " . our_tileset_sym($w->{shared}, undef) : "") . ")") }
+for my $sym (sort keys %writtenTilesets) { my $w = $writtenTilesets{$sym}; info("  tileset $sym: $w->{dir} ($w->{nTiles} tiles, $w->{nMetatiles} metatiles" . ($w->{shared} ? ", graphics of " . our_tileset_sym($w->{shared}, undef) : "") . ($w->{callback} ne 'NULL' ? ", animated: $w->{callback}, $animFramesCopied{$sym} frames" : "") . ")") }
+info("  tileset animations: " . scalar(keys %animFramesCopied) . " tilesets with a callback, " . eval { my $s = 0; $s += $_ for values %animFramesCopied; $s } . " frames copied (" . join(", ", sort keys %animFramesCopied) . ")");
 info("  behaviours on the imported maps: " . join(", ", map { "$_" } sort keys %behaviorUsed));
 for my $m (sort keys %extrasUsed) { info("  extras: $m: " . join(", ", ($extrasUsed{$m}{objects} ? "$extrasUsed{$m}{objects} object event(s)" : ()), ($extrasUsed{$m}{scripts} ? "scripts appended" : ()))) }
 info("  note: $_") for @notes;
@@ -1220,6 +1331,11 @@ info("audit: warps: $auditWarps{checked} checked, $auditWarps{inside} inside the
 info("audit: connections: $auditConns{checked} checked, $auditConns{kept} kept with both sides agreeing on the offset, $auditConns{oneway} one-way (no connection back, as in pokefirered), $auditConns{standin} with pokefirered's own offset disagreement at its display-only stand-in map, $auditConns{dropped} dropped (targets outside the import: " . ($fmtTargets->(\%connDropTargets) || 'none') . "), $auditConns{mismatch} offset mismatches");
 info("audit: layouts: " . scalar(keys %layoutUsed) . " layouts, $cellsChecked cells (borders included): every metatile id inside its primary or secondary tileset");
 info("audit: music: " . scalar(@mapOrder) . " maps, " . scalar(keys %musicUsed) . " tracks, all known (" . join(", ", map { "$_ x$musicUsed{$_}" } sort keys %musicUsed) . ")");
+{
+    my $fmt = sub { my $what = shift; my @maps = grep { $fieldObjectsPerMap{$_}{$what} } @mapOrder; return ($fieldObjectTotals{$what} // 0) . " $what on " . scalar(@maps) . " maps (" . join(", ", map { "$_ x$fieldObjectsPerMap{$_}{$what}" } @maps) . ")" };
+    my $clones = 0; $clones += $_ for values %fieldObjectClones;
+    info("audit: field objects: " . $fmt->('rocks') . "; " . $fmt->('trees') . "; kept as Emerald's breakable rock / cuttable tree with EventScript_RockSmash / EventScript_CutTree and pokefirered's FLAG_TEMP_* flags; $clones clone objects and $otherObjectsDropped other object events dropped");
+}
 info("audit: behaviours: " . scalar(keys %behaviorUsed) . " distinct on the imported maps, every one translated (" . scalar(grep { exists $behaviorTable->{$_} } keys %behaviorUsed) . " through behaviors.tsv, the rest by name)");
 exit 0;
 

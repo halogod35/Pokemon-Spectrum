@@ -31,7 +31,7 @@
 #include "constants/songs.h"
 #include "constants/trainer_types.h"
 
-#define NUM_FORCED_MOVEMENTS 18
+#define NUM_FORCED_MOVEMENTS 22 // PS-096: + the four spinner directions
 #define NUM_ACRO_BIKE_COLLISIONS 5
 
 static EWRAM_DATA u8 sSpinStartFacingDir = 0;
@@ -64,6 +64,13 @@ static bool8 ForcedMovement_SlideEast(void);
 static bool8 ForcedMovement_MatJump(void);
 static bool8 ForcedMovement_MatSpin(void);
 static bool8 ForcedMovement_MuddySlope(void);
+static bool8 ForcedMovement_SpinRight(void); // PS-096: pokefirered's spinner tiles
+static bool8 ForcedMovement_SpinLeft(void);
+static bool8 ForcedMovement_SpinUp(void);
+static bool8 ForcedMovement_SpinDown(void);
+static bool8 TryUpdatePlayerSpinDirection(void);
+static void PlayerApplyTileForcedMovement(u8 metatileBehavior);
+static void PlayerGoSpin(u8 direction);
 
 static void MovePlayerNotOnBike(u8, u16);
 static u8 CheckMovementInputNotOnBike(u8);
@@ -93,6 +100,8 @@ static bool8 PlayerIsAnimActive(void);
 static bool8 PlayerCheckIfAnimFinishedOrInactive(void);
 
 static void PlayerRun(u8);
+static void PlayerWalkSlow(u8); // PS-096: rock stairs
+static void PlayerRunSlow(u8);
 static void PlayerNotOnBikeCollide(u8);
 static void PlayerNotOnBikeCollideWithFarawayIslandMew(u8);
 
@@ -162,6 +171,10 @@ static bool8 (*const sForcedMovementTestFuncs[NUM_FORCED_MOVEMENTS])(u8) =
     MetatileBehavior_IsSecretBaseJumpMat,
     MetatileBehavior_IsSecretBaseSpinMat,
     MetatileBehavior_IsMuddySlope,
+    MetatileBehavior_IsSpinRight, // PS-096: pokefirered's spinner tiles
+    MetatileBehavior_IsSpinLeft,
+    MetatileBehavior_IsSpinUp,
+    MetatileBehavior_IsSpinDown,
 };
 
 // + 1 for ForcedMovement_None, which is excluded above
@@ -186,6 +199,10 @@ static bool8 (*const sForcedMovementFuncs[NUM_FORCED_MOVEMENTS + 1])(void) =
     ForcedMovement_MatJump,
     ForcedMovement_MatSpin,
     ForcedMovement_MuddySlope,
+    ForcedMovement_SpinRight, // PS-096
+    ForcedMovement_SpinLeft,
+    ForcedMovement_SpinUp,
+    ForcedMovement_SpinDown,
 };
 
 static void (*const sPlayerNotOnBikeFuncs[])(u8, u16) =
@@ -335,7 +352,7 @@ void PlayerStep(u8 direction, u16 newKeys, u16 heldKeys)
     struct ObjectEvent *playerObjEvent = &gObjectEvents[gPlayerAvatar.objectEventId];
 
     HideShowWarpArrow(playerObjEvent);
-    if (gPlayerAvatar.preventStep == FALSE)
+    if (gPlayerAvatar.preventStep == FALSE && !TryUpdatePlayerSpinDirection()) // PS-096: a spin in progress keeps the player
     {
         Bike_TryAcroBikeHistoryUpdate(newKeys, heldKeys);
         if (TryInterruptObjectEventSpecialAnim(playerObjEvent, direction) == 0)
@@ -405,6 +422,31 @@ static void PlayerAllowForcedMovementIfMovingSameDirection(void)
         gPlayerAvatar.flags &= ~PLAYER_AVATAR_FLAG_CONTROLLABLE;
 }
 
+// PS-096: pokefirered's spinners (its field_player_avatar.c TryUpdatePlayerSpinDirection). While the player is
+// being spun, each finished step is followed by another one in the last spin tile's direction, across plain
+// floor too, until a stop tile (the normal movement code then ends the forced movement) or a wall (the spin
+// step's collision clears PLAYER_AVATAR_FLAG_FORCED_MOVE). Only spin tiles set lastSpinTile to a spin
+// behaviour, so Hoenn never enters this path.
+static bool8 TryUpdatePlayerSpinDirection(void)
+{
+    struct ObjectEvent *playerObjEvent;
+
+    if (!(gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_FORCED_MOVE) || !MetatileBehavior_IsSpinTile(gPlayerAvatar.lastSpinTile))
+        return FALSE;
+
+    playerObjEvent = &gObjectEvents[gPlayerAvatar.objectEventId];
+    if (playerObjEvent->heldMovementFinished)
+    {
+        if (MetatileBehavior_IsStopSpinning(playerObjEvent->currentMetatileBehavior))
+            return FALSE;
+        if (MetatileBehavior_IsSpinTile(playerObjEvent->currentMetatileBehavior))
+            gPlayerAvatar.lastSpinTile = playerObjEvent->currentMetatileBehavior;
+        ObjectEventClearHeldMovement(playerObjEvent);
+        PlayerApplyTileForcedMovement(gPlayerAvatar.lastSpinTile);
+    }
+    return TRUE;
+}
+
 static bool8 TryDoMetatileBehaviorForcedMovement(void)
 {
     return sForcedMovementFuncs[GetForcedMovementByMetatileBehavior()]();
@@ -421,10 +463,26 @@ static u8 GetForcedMovementByMetatileBehavior(void)
         for (i = 0; i < NUM_FORCED_MOVEMENTS; i++)
         {
             if (sForcedMovementTestFuncs[i](metatileBehavior))
+            {
+                gPlayerAvatar.lastSpinTile = metatileBehavior; // PS-096: remembered for the spinners (as pokefirered)
                 return i + 1;
+            }
         }
     }
     return 0;
+}
+
+// PS-096: pokefirered's PlayerApplyTileForcedMovement: run the forced movement of a behaviour the player is
+// not standing on (the last spin tile)
+static void PlayerApplyTileForcedMovement(u8 metatileBehavior)
+{
+    u8 i;
+
+    for (i = 0; i < NUM_FORCED_MOVEMENTS; i++)
+    {
+        if (sForcedMovementTestFuncs[i](metatileBehavior))
+            sForcedMovementFuncs[i + 1]();
+    }
 }
 
 static bool8 ForcedMovement_None(void)
@@ -581,6 +639,32 @@ static bool8 ForcedMovement_MuddySlope(void)
     }
 }
 
+// PS-096: pokefirered's spinner tiles (its field_player_avatar.c ForcedMovement_Spin*): one spin step per
+// call in the tile's direction with the spinner sound; TryUpdatePlayerSpinDirection chains the steps
+static bool8 ForcedMovement_SpinRight(void)
+{
+    PlaySE(SE_M_RAZOR_WIND2);
+    return DoForcedMovement(DIR_EAST, PlayerGoSpin);
+}
+
+static bool8 ForcedMovement_SpinLeft(void)
+{
+    PlaySE(SE_M_RAZOR_WIND2);
+    return DoForcedMovement(DIR_WEST, PlayerGoSpin);
+}
+
+static bool8 ForcedMovement_SpinUp(void)
+{
+    PlaySE(SE_M_RAZOR_WIND2);
+    return DoForcedMovement(DIR_NORTH, PlayerGoSpin);
+}
+
+static bool8 ForcedMovement_SpinDown(void)
+{
+    PlaySE(SE_M_RAZOR_WIND2);
+    return DoForcedMovement(DIR_SOUTH, PlayerGoSpin);
+}
+
 static void MovePlayerNotOnBike(u8 direction, u16 heldKeys)
 {
     sPlayerNotOnBikeFuncs[CheckMovementInputNotOnBike(direction)](direction, heldKeys);
@@ -665,13 +749,40 @@ static void PlayerNotOnBikeMoving(u8 direction, u16 heldKeys)
     if (!(gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_UNDERWATER) && (heldKeys & B_BUTTON) && FlagGet(FLAG_SYS_B_DASH)
      && IsRunningDisallowed(gObjectEvents[gPlayerAvatar.objectEventId].currentMetatileBehavior) == 0)
     {
-        PlayerRun(direction);
+        if (PlayerIsMovingOnRockStairs(direction)) // PS-096: pokefirered's rock stairs slow the run down
+            PlayerRunSlow(direction);
+        else
+            PlayerRun(direction);
         gPlayerAvatar.flags |= PLAYER_AVATAR_FLAG_DASH;
         return;
     }
     else
     {
-        PlayerWalkNormal(direction);
+        if (PlayerIsMovingOnRockStairs(direction)) // PS-096
+            PlayerWalkSlow(direction);
+        else
+            PlayerWalkNormal(direction);
+    }
+}
+
+// PS-096: pokefirered's PlayerIsMovingOnRockStairs (its field_player_avatar.c): going up the stairs the
+// player stands on (north) or down onto the stairs below (south) is slow; sideways is not. Only
+// MB_ROCK_STAIRS (Kanto) answers TRUE, so Hoenn movement is unchanged.
+bool32 PlayerIsMovingOnRockStairs(u8 direction)
+{
+    struct ObjectEvent *objectEvent = &gObjectEvents[gPlayerAvatar.objectEventId];
+    s16 x = objectEvent->currentCoords.x;
+    s16 y = objectEvent->currentCoords.y;
+
+    switch (direction)
+    {
+    case DIR_NORTH:
+        return MetatileBehavior_IsRockStairs(MapGridGetMetatileBehaviorAt(x, y));
+    case DIR_SOUTH:
+        MoveCoords(DIR_SOUTH, &x, &y);
+        return MetatileBehavior_IsRockStairs(MapGridGetMetatileBehaviorAt(x, y));
+    default:
+        return FALSE;
     }
 }
 
@@ -1004,6 +1115,23 @@ void PlayerWalkFaster(u8 direction)
 static void PlayerRun(u8 direction)
 {
     PlayerSetAnimId(GetPlayerRunMovementAction(direction), COPY_MOVE_WALK);
+}
+
+// PS-096: a spin step (Kanto spinner tiles), pokefirered's PlayerGoSpin
+static void PlayerGoSpin(u8 direction)
+{
+    PlayerSetAnimId(GetSpinMovementAction(direction), COPY_MOVE_WALK_FAST);
+}
+
+// PS-096: pokefirered's PlayerWalkSlow / PlayerRunSlow, the rock stairs' speeds
+static void PlayerWalkSlow(u8 direction)
+{
+    PlayerSetAnimId(GetWalkSlowMovementAction(direction), COPY_MOVE_WALK);
+}
+
+static void PlayerRunSlow(u8 direction)
+{
+    PlayerSetAnimId(GetPlayerRunSlowMovementAction(direction), COPY_MOVE_WALK);
 }
 
 void PlayerOnBikeCollide(u8 direction)

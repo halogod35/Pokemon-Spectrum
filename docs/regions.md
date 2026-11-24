@@ -81,10 +81,16 @@ hold a section id above 0xFF. Rule (`GetMetLocationForMapSec`, `region.c`):
 180 layouts, 51 tilesets, 53 map sections, 11 Fly spots, 13 heal locations; the Sevii Islands,
 FRLG's link rooms, Navel Rock / Birth Island and the Trainer Tower are left out, see
 `tools/kanto_import/maps_ps095.txt`). It is **map data only**: no NPCs, trainers, items, signs,
-scripts or dialogue (epic PS-093), no tileset animations, door animations, spinners or current water
-(PS-096). The two sailors of the boat are the only NPCs. Wild Pokémon are FireRed's (PS-097:
+scripts or dialogue (epic PS-093). The two sailors of the boat are the only NPCs; the only other object
+events kept are pokefirered's Rock Smash rocks and cut trees (as Emerald's rock / tree objects with
+Emerald's field-move scripts, PS-096). Wild Pokémon are FireRed's (PS-097:
 `tools/kanto_import/kanto_encounters.pl` writes FireRed's 66 Kanto tables, grass, caves, water,
-fishing and rock smash, into `src/data/wild_encounters.json`; LeafGreen's tables are not used).
+fishing and rock smash, into `src/data/wild_encounters.json`; LeafGreen's tables are not used). The
+FRLG tilesets animate (PS-096: pokefirered's frames and callbacks), its doors animate (PS-098) and
+its FRLG-only metatile mechanics are in the engine under their FRLG behaviour names: directional
+stair warps (PS-098), spinner tiles, the cycling road's pull and the rock stairs (PS-096). Seafoam's
+current and the Strength switches are scripts in pokefirered and are not imported (the water is
+plain, the switch plain floor; `tools/kanto_import/behaviors.tsv` says why).
 
 **Generated** by `tools/kanto_import/kanto_import.pl` from a pokefirered checkout (README in that
 directory): maps `data/maps/Kanto*`, layouts `data/layouts/Kanto*`, tilesets

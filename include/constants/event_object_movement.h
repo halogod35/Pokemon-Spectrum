@@ -242,6 +242,16 @@
 #define MOVEMENT_ACTION_FIGURE_8                        0x9B
 #define MOVEMENT_ACTION_FLY_UP                          0x9C
 #define MOVEMENT_ACTION_FLY_DOWN                        0x9D
+// PS-096: pokefirered's Kanto movements: the spinner tiles (a step at walking-fast speed with the spin
+// animation) and the slowed-down run on rock stairs
+#define MOVEMENT_ACTION_SPIN_DOWN                       0x9E
+#define MOVEMENT_ACTION_SPIN_UP                         0x9F
+#define MOVEMENT_ACTION_SPIN_LEFT                       0xA0
+#define MOVEMENT_ACTION_SPIN_RIGHT                      0xA1
+#define MOVEMENT_ACTION_PLAYER_RUN_DOWN_SLOW            0xA2
+#define MOVEMENT_ACTION_PLAYER_RUN_UP_SLOW              0xA3
+#define MOVEMENT_ACTION_PLAYER_RUN_LEFT_SLOW            0xA4
+#define MOVEMENT_ACTION_PLAYER_RUN_RIGHT_SLOW           0xA5
 
 #define MOVEMENT_ACTION_STEP_END 0xFE
 #define MOVEMENT_ACTION_NONE     0xFF
@@ -272,6 +282,11 @@
 #define ANIM_RUN_NORTH (ANIM_STD_COUNT + 1)
 #define ANIM_RUN_WEST  (ANIM_STD_COUNT + 2)
 #define ANIM_RUN_EAST  (ANIM_STD_COUNT + 3)
+// PS-096: pokefirered's spin (the four facing frames in turn) for the Kanto spinner tiles, in sAnimTable_Standard
+#define ANIM_SPIN_SOUTH (ANIM_STD_COUNT + 4)
+#define ANIM_SPIN_NORTH (ANIM_STD_COUNT + 5)
+#define ANIM_SPIN_WEST  (ANIM_STD_COUNT + 6)
+#define ANIM_SPIN_EAST  (ANIM_STD_COUNT + 7)
 
 #define ANIM_BUNNY_HOP_BACK_WHEEL_SOUTH         (ANIM_STD_COUNT + 0)
 #define ANIM_BUNNY_HOP_BACK_WHEEL_NORTH         (ANIM_STD_COUNT + 1)

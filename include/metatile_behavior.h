@@ -152,5 +152,14 @@ bool8 MetatileBehavior_IsQuestionnaire(u8 metatileBehavior);
 bool8 MetatileBehavior_IsLongGrass_Duplicate(u8 metatileBehavior);
 bool8 MetatileBehavior_IsLongGrassSouthEdge(u8 metatileBehavior);
 bool8 MetatileBehavior_IsTrainerHillTimer(u8 metatileBehavior);
+// PS-096: pokefirered's Kanto behaviours
+bool8 MetatileBehavior_IsSpinRight(u8 metatileBehavior);
+bool8 MetatileBehavior_IsSpinLeft(u8 metatileBehavior);
+bool8 MetatileBehavior_IsSpinUp(u8 metatileBehavior);
+bool8 MetatileBehavior_IsSpinDown(u8 metatileBehavior);
+bool8 MetatileBehavior_IsStopSpinning(u8 metatileBehavior);
+bool8 MetatileBehavior_IsSpinTile(u8 metatileBehavior);
+bool8 MetatileBehavior_IsCyclingRoadPullDownTile(u8 metatileBehavior);
+bool8 MetatileBehavior_IsRockStairs(u8 metatileBehavior);
 
 #endif // GUARD_METATILE_BEHAVIOR_H

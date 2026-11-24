@@ -68,10 +68,11 @@ Every run checks and reports (the last lines of the output, `audit: ...`); any m
 
 | Output | From |
 |---|---|
-| `data/maps/Kanto<Map>/map.json`, `scripts.inc` | `map.json`: header fields, connections and warps to other imported maps (others are dropped / redirected to the map itself with a note); events are dropped, except the `extras/` below. `scripts.inc`: towns and cities get an `ON_TRANSITION` that sets their visited flag, nothing else (plus the `extras/`). |
+| `data/maps/Kanto<Map>/map.json`, `scripts.inc` | `map.json`: header fields, connections and warps to other imported maps (others are dropped / redirected to the map itself with a note); events are dropped, except pokefirered's Rock Smash rocks and cut trees (PS-096: `OBJ_EVENT_GFX_ROCK_SMASH_ROCK` / `OBJ_EVENT_GFX_CUT_TREE` objects with its generic `EventScript_RockSmash` / `EventScript_CutTree`, written as Emerald's `OBJ_EVENT_GFX_BREAKABLE_ROCK` / `OBJ_EVENT_GFX_CUTTABLE_TREE` with Emerald's scripts of the same names and pokefirered's `FLAG_TEMP_*` flags, which exist here unchanged; the table is `%KEPT_OBJECTS` in the script, pokefirered's "clone" objects are dropped) and the `extras/` below. `scripts.inc`: towns and cities get an `ON_TRANSITION` that sets their visited flag, nothing else (plus the `extras/`). |
 | `data/layouts/Kanto<Layout>/map.bin`, `border.bin` + entries in `data/layouts/layouts.json` | copied byte for byte (same cell format). pokefirered borders can be bigger than 2x2 (Viridian Forest, Safari Zone: 3x2); Emerald tiles a 2x2 border, so the top-left 2x2 is kept. |
 | `data/tilesets/primary/kanto_<name>/`, `data/tilesets/secondary/kanto_<name>[_<primary>]/` | the re-pack described below; `metatile_attributes.bin` converted from FRLG's 32-bit to Emerald's 16-bit attributes with `behaviors.tsv`. A secondary used with several primaries gets one copy per primary, suffixed with the primary's name. A tileset that draws with another tileset's graphics in pokefirered (`silph_co` uses `condominiums`') shares the `gTilesetTiles_` / `gTilesetPalettes_` symbols and only writes its own metatiles. |
-| `src/data/tilesets/graphics.h`, `metatiles.h`, `headers.h` (between `// KANTO_IMPORT_BEGIN` / `END`) | `gTileset_Kanto<Name>` and its arrays (callback `NULL`: animations are PS-096). In the same files as Hoenn's so Porymap lists them (PS-094 used separate `kanto_*.h` files; they are gone). |
+| `data/tilesets/*/kanto_<name>/anim/<animation>/<n>.png` | PS-096: pokefirered's tileset animation frames, copied for the tilesets in the script's `%TILESET_ANIM_CALLBACKS` table (`general`: flowers, water / current / land edges, sand edge; `celadon_city` and `silph_co` fountains; `celadon_gym` flowers; `vermilion_gym` motorized door). The callbacks `InitTilesetAnim_Kanto*` in `src/tileset_anims.c` are ported from pokefirered's `src/tileset_anims.c` with its VRAM tile offsets, which the re-pack keeps (a primary's animated tiles are below 512, a secondary's own tiles start at VRAM tile 640 in both engines). A pokefirered tileset with an `anim/` directory and no table row (`mt_ember`, Sevii) is reported and stays still. |
+| `src/data/tilesets/graphics.h`, `metatiles.h`, `headers.h` (between `// KANTO_IMPORT_BEGIN` / `END`) | `gTileset_Kanto<Name>` and its arrays; `.callback` is the animation callback from the table above or `NULL`. In the same files as Hoenn's so Porymap lists them (PS-094 used separate `kanto_*.h` files; they are gone). |
 | `data/maps/map_groups.json` | `gMapGroup_Kanto<FRLG group>` groups, FRLG order |
 | `src/data/region_map/region_map_sections.json` | `MAPSEC_KANTO_<X>` with FRLG's name, in FRLG's order; the first one carries `"value": "0x100"` (`MAPSEC_REGIONS_START`); entries are marked `"comment": "kanto_import: ..."` so the converter finds its own entries again. A name Emerald already uses (`MAPSEC_KANTO_VICTORY_ROAD`, `MAPSEC_KANTO_SAFARI_ZONE`: met-location names for traded Pokémon) gets `_MAP`. Coordinates: sections on pokefirered's cursor grid (`region_map_layout_kanto.h`, `LAYER_MAP`) keep FRLG's x/y/width/height; the others (dungeons, indoor-only sections, x=0,y=0 in FRLG) get the cell of FRLG's dungeon icon (`LAYER_DUNGEON`) or, failing that, the cell of the first already placed map that warps into them (an outdoor map's warp position scaled to its section), 1x1, off the cursor grid. |
 | `src/data/heal_locations.json` | `HEAL_LOCATION_KANTO_<X>` for every imported map that has one in pokefirered (the towns' spots, Route 4 and Route 10) |
@@ -113,10 +114,15 @@ nothing else.
 
 - `behaviors.tsv`: FRLG metatile behaviour -> Emerald behaviour. A behaviour whose name exists in
   Emerald needs no row. `-` means "no equivalent" (reported; `MB_NORMAL` with `--allow-unknown`).
-  `?` in the note marks a stand-in for PS-096 (spinners as slides, cycling-road pull, strength
-  buttons, rock stairs, current water as plain water). FRLG's four directional stair warps
-  (`MB_UP_LEFT_STAIR_WARP` etc.) exist here under the same names since PS-098 (the warp tile beside
-  a drawn staircase: a sideways step onto the stairs and the warp).
+  Every row's note says what pokefirered does with the behaviour and what happens here. FRLG-only
+  mechanics ported into the engine keep their FRLG names here: the directional stair warps
+  (`MB_UP_LEFT_STAIR_WARP` etc., PS-098: a sideways step onto the drawn stairs and the warp), the
+  spinners (`MB_SPIN_*`, `MB_STOP_SPINNING`, PS-096: `field_player_avatar.c`), the cycling road
+  (`MB_CYCLING_ROAD_PULL_DOWN(_GRASS)`, PS-096: `bike.c`) and the rock stairs (`MB_ROCK_STAIRS`,
+  PS-096). Decided without an engine change (PS-096): Seafoam's `MB_FAST_WATER` is plain surfable
+  water (pokefirered's current is map scripts, the behaviour only refuses Surf onto it),
+  `MB_STRENGTH_BUTTON` is plain floor (its effect is a coord-event script fired by a boulder object;
+  neither is imported), `MB_SAND_CAVE` is Emerald's `MB_FOOTPRINTS`.
   FRLG's terrain and encounter-type attribute bits have no Emerald counterpart and are dropped (Emerald
   derives encounters from behaviours); the layer type is kept.
 - `constants.tsv`: map header constants. Music is mapped `MUS_X` -> `MUS_RG_X` automatically (Emerald
