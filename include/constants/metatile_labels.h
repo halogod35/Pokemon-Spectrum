@@ -822,7 +822,28 @@
 #define METATILE_KantoCinnabarIsland_LabDoor  0x2AD
 // gTileset_KantoDepartmentStore
 #define METATILE_KantoDepartmentStore_ElevatorDoor  0x28D
-// gTileset_KantoPokemonCenter
+// gTileset_KantoPokemonCenter (PS-096: the escalator frames of pokefirered's special_field_anim.c, src/fldeff_escalator.c)
+#define METATILE_KantoPokemonCenter_Escalator_BottomNextRail_Normal       0x2D0
+#define METATILE_KantoPokemonCenter_Escalator_BottomNextRail_Transition1  0x30A
+#define METATILE_KantoPokemonCenter_Escalator_BottomNextRail_Transition2  0x308
+#define METATILE_KantoPokemonCenter_Escalator_BottomNext_Normal           0x2D8
+#define METATILE_KantoPokemonCenter_Escalator_BottomNext_Transition1      0x312
+#define METATILE_KantoPokemonCenter_Escalator_BottomNext_Transition2      0x310
+#define METATILE_KantoPokemonCenter_Escalator_BottomRail_Normal           0x2D1
+#define METATILE_KantoPokemonCenter_Escalator_BottomRail_Transition1      0x30B
+#define METATILE_KantoPokemonCenter_Escalator_BottomRail_Transition2      0x309
+#define METATILE_KantoPokemonCenter_Escalator_Bottom_Normal               0x2D9
+#define METATILE_KantoPokemonCenter_Escalator_Bottom_Transition1          0x313
+#define METATILE_KantoPokemonCenter_Escalator_Bottom_Transition2          0x311
+#define METATILE_KantoPokemonCenter_Escalator_TopNextRail_Normal          0x2EB
+#define METATILE_KantoPokemonCenter_Escalator_TopNextRail_Transition1     0x31E
+#define METATILE_KantoPokemonCenter_Escalator_TopNextRail_Transition2     0x31C
+#define METATILE_KantoPokemonCenter_Escalator_TopNext_Normal              0x2E3
+#define METATILE_KantoPokemonCenter_Escalator_TopNext_Transition1         0x316
+#define METATILE_KantoPokemonCenter_Escalator_TopNext_Transition2         0x314
+#define METATILE_KantoPokemonCenter_Escalator_Top_Normal                  0x2E4
+#define METATILE_KantoPokemonCenter_Escalator_Top_Transition1             0x317
+#define METATILE_KantoPokemonCenter_Escalator_Top_Transition2             0x315
 #define METATILE_KantoPokemonCenter_CableClubDoor  0x2DE
 // gTileset_KantoSilphCo
 #define METATILE_KantoSilphCo_HideoutElevatorDoor  0x2AB

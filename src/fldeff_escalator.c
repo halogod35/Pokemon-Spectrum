@@ -13,47 +13,103 @@ static void Task_DrawEscalator(u8 taskId);
 
 #define ESCALATOR_STAGES     3
 #define LAST_ESCALATOR_STAGE (ESCALATOR_STAGES - 1)
+#define ESCALATOR_SECTIONS   7
 
-static const s16 sEscalatorMetatiles_1F_0[ESCALATOR_STAGES] = {
-    METATILE_PokemonCenter_Escalator1F_Tile0_Frame2,
-    METATILE_PokemonCenter_Escalator1F_Tile0_Frame1,
-    METATILE_PokemonCenter_Escalator1F_Tile0_Frame0
+// The seven escalator sections, in the order Task_DrawEscalator steps through them: the 1F sections run
+// from their last frame back to the first, the 2F sections the other way round.
+enum
+{
+    SECTION_1F_0, // 1F: the step next to the rail
+    SECTION_1F_1, // 1F: the rail
+    SECTION_1F_2, // 1F: the step next to the escalator (impassable)
+    SECTION_1F_3, // 1F: the escalator itself
+    SECTION_2F_0, // 2F: the step next to the escalator (impassable)
+    SECTION_2F_1, // 2F: the escalator itself
+    SECTION_2F_2, // 2F: the step next to the rail
 };
 
-static const s16 sEscalatorMetatiles_1F_1[ESCALATOR_STAGES] = {
-    METATILE_PokemonCenter_Escalator1F_Tile1_Frame2,
-    METATILE_PokemonCenter_Escalator1F_Tile1_Frame1,
-    METATILE_PokemonCenter_Escalator1F_Tile1_Frame0
+static const s16 sEscalatorMetatiles_PokemonCenter[ESCALATOR_SECTIONS][ESCALATOR_STAGES] = {
+    [SECTION_1F_0] = {
+        METATILE_PokemonCenter_Escalator1F_Tile0_Frame2,
+        METATILE_PokemonCenter_Escalator1F_Tile0_Frame1,
+        METATILE_PokemonCenter_Escalator1F_Tile0_Frame0
+    },
+    [SECTION_1F_1] = {
+        METATILE_PokemonCenter_Escalator1F_Tile1_Frame2,
+        METATILE_PokemonCenter_Escalator1F_Tile1_Frame1,
+        METATILE_PokemonCenter_Escalator1F_Tile1_Frame0
+    },
+    [SECTION_1F_2] = {
+        METATILE_PokemonCenter_Escalator1F_Tile2_Frame2,
+        METATILE_PokemonCenter_Escalator1F_Tile2_Frame1,
+        METATILE_PokemonCenter_Escalator1F_Tile2_Frame0
+    },
+    [SECTION_1F_3] = {
+        METATILE_PokemonCenter_Escalator1F_Tile3_Frame2,
+        METATILE_PokemonCenter_Escalator1F_Tile3_Frame1,
+        METATILE_PokemonCenter_Escalator1F_Tile3_Frame0
+    },
+    [SECTION_2F_0] = {
+        METATILE_PokemonCenter_Escalator2F_Tile0_Frame0,
+        METATILE_PokemonCenter_Escalator2F_Tile0_Frame1,
+        METATILE_PokemonCenter_Escalator2F_Tile0_Frame2
+    },
+    [SECTION_2F_1] = {
+        METATILE_PokemonCenter_Escalator2F_Tile1_Frame0,
+        METATILE_PokemonCenter_Escalator2F_Tile1_Frame1,
+        METATILE_PokemonCenter_Escalator2F_Tile1_Frame2
+    },
+    [SECTION_2F_2] = {
+        METATILE_PokemonCenter_Escalator2F_Tile2_Frame0,
+        METATILE_PokemonCenter_Escalator2F_Tile2_Frame1,
+        METATILE_PokemonCenter_Escalator2F_Tile2_Frame2
+    },
 };
 
-static const s16 sEscalatorMetatiles_1F_2[ESCALATOR_STAGES] = {
-    METATILE_PokemonCenter_Escalator1F_Tile2_Frame2,
-    METATILE_PokemonCenter_Escalator1F_Tile2_Frame1,
-    METATILE_PokemonCenter_Escalator1F_Tile2_Frame0
+// PS-096: pokefirered's Pokémon Center escalator (its src/special_field_anim.c: BottomNextRail, BottomRail,
+// BottomNext, Bottom, TopNext, Top, TopNextRail, in the same section order and stage direction as Emerald's)
+static const s16 sEscalatorMetatiles_KantoPokemonCenter[ESCALATOR_SECTIONS][ESCALATOR_STAGES] = {
+    [SECTION_1F_0] = {
+        METATILE_KantoPokemonCenter_Escalator_BottomNextRail_Transition2,
+        METATILE_KantoPokemonCenter_Escalator_BottomNextRail_Transition1,
+        METATILE_KantoPokemonCenter_Escalator_BottomNextRail_Normal
+    },
+    [SECTION_1F_1] = {
+        METATILE_KantoPokemonCenter_Escalator_BottomRail_Transition2,
+        METATILE_KantoPokemonCenter_Escalator_BottomRail_Transition1,
+        METATILE_KantoPokemonCenter_Escalator_BottomRail_Normal
+    },
+    [SECTION_1F_2] = {
+        METATILE_KantoPokemonCenter_Escalator_BottomNext_Transition2,
+        METATILE_KantoPokemonCenter_Escalator_BottomNext_Transition1,
+        METATILE_KantoPokemonCenter_Escalator_BottomNext_Normal
+    },
+    [SECTION_1F_3] = {
+        METATILE_KantoPokemonCenter_Escalator_Bottom_Transition2,
+        METATILE_KantoPokemonCenter_Escalator_Bottom_Transition1,
+        METATILE_KantoPokemonCenter_Escalator_Bottom_Normal
+    },
+    [SECTION_2F_0] = {
+        METATILE_KantoPokemonCenter_Escalator_TopNext_Normal,
+        METATILE_KantoPokemonCenter_Escalator_TopNext_Transition1,
+        METATILE_KantoPokemonCenter_Escalator_TopNext_Transition2
+    },
+    [SECTION_2F_1] = {
+        METATILE_KantoPokemonCenter_Escalator_Top_Normal,
+        METATILE_KantoPokemonCenter_Escalator_Top_Transition1,
+        METATILE_KantoPokemonCenter_Escalator_Top_Transition2
+    },
+    [SECTION_2F_2] = {
+        METATILE_KantoPokemonCenter_Escalator_TopNextRail_Normal,
+        METATILE_KantoPokemonCenter_Escalator_TopNextRail_Transition1,
+        METATILE_KantoPokemonCenter_Escalator_TopNextRail_Transition2
+    },
 };
 
-static const s16 sEscalatorMetatiles_1F_3[ESCALATOR_STAGES] = {
-    METATILE_PokemonCenter_Escalator1F_Tile3_Frame2,
-    METATILE_PokemonCenter_Escalator1F_Tile3_Frame1,
-    METATILE_PokemonCenter_Escalator1F_Tile3_Frame0
-};
-
-static const s16 sEscalatorMetatiles_2F_0[ESCALATOR_STAGES] = {
-    METATILE_PokemonCenter_Escalator2F_Tile0_Frame0,
-    METATILE_PokemonCenter_Escalator2F_Tile0_Frame1,
-    METATILE_PokemonCenter_Escalator2F_Tile0_Frame2
-};
-
-static const s16 sEscalatorMetatiles_2F_1[ESCALATOR_STAGES] = {
-    METATILE_PokemonCenter_Escalator2F_Tile1_Frame0,
-    METATILE_PokemonCenter_Escalator2F_Tile1_Frame1,
-    METATILE_PokemonCenter_Escalator2F_Tile1_Frame2
-};
-
-static const s16 sEscalatorMetatiles_2F_2[ESCALATOR_STAGES] = {
-    METATILE_PokemonCenter_Escalator2F_Tile2_Frame0,
-    METATILE_PokemonCenter_Escalator2F_Tile2_Frame1,
-    METATILE_PokemonCenter_Escalator2F_Tile2_Frame2
+// The two sections the player cannot stand on keep their collision bit when redrawn
+static const u16 sEscalatorSectionMasks[ESCALATOR_SECTIONS] = {
+    [SECTION_1F_2] = MAPGRID_IMPASSABLE,
+    [SECTION_2F_0] = MAPGRID_IMPASSABLE,
 };
 
 #define tState            data[0]
@@ -62,31 +118,39 @@ static const s16 sEscalatorMetatiles_2F_2[ESCALATOR_STAGES] = {
 #define tDrawingEscalator data[3]
 #define tPlayerX          data[4]
 #define tPlayerY          data[5]
-#define tHasFrames        data[6] // PS-098
+#define tFrameTable       data[6] // PS-098 / PS-096: 1 + index into sEscalatorFrameTables, 0 = no frames for this tileset
 
-// PS-098: the frames above are metatile ids of Emerald's PokemonCenter tileset. They used to be written into
-// whatever map the escalator is on; in pokefirered's Pokémon Centers (gTileset_KantoPokemonCenter) the floor
-// metatile 0x281 is Emerald's Escalator1F_Tile1_Frame0, so the three floor cells beside the escalator
-// cycled through its frames. A map whose secondary tileset is not listed here keeps its metatiles and the
-// escalator warp only moves the player (pokefirered animates no metatiles either).
+// PS-098 / PS-096: the frames are metatile ids of one secondary tileset. They used to be Emerald's PokemonCenter
+// ids written into whatever map the escalator is on; in pokefirered's Pokémon Centers the floor metatile 0x281
+// is Emerald's Escalator1F_Tile1_Frame0, so the floor beside the escalator cycled through its frames. The table
+// is chosen by the map's secondary tileset; a tileset not listed here keeps its metatiles and the escalator
+// warp only moves the player.
 extern const struct Tileset gTileset_PokemonCenter;
+extern const struct Tileset gTileset_KantoPokemonCenter;
 
-static const struct Tileset *const sEscalatorFrameTilesets[] =
+struct EscalatorFrameTable
 {
-    &gTileset_PokemonCenter,
+    const struct Tileset *tileset;
+    const s16 (*metatiles)[ESCALATOR_STAGES]; // ESCALATOR_SECTIONS rows
 };
 
-static bool8 TilesetHasEscalatorFrames(void)
+static const struct EscalatorFrameTable sEscalatorFrameTables[] =
+{
+    { &gTileset_PokemonCenter,      sEscalatorMetatiles_PokemonCenter },
+    { &gTileset_KantoPokemonCenter, sEscalatorMetatiles_KantoPokemonCenter }, // PS-096
+};
+
+static u8 GetEscalatorFrameTable(void)
 {
     const struct Tileset *secondaryTileset = gMapHeader.mapLayout->secondaryTileset;
     u32 i;
 
-    for (i = 0; i < ARRAY_COUNT(sEscalatorFrameTilesets); i++)
+    for (i = 0; i < ARRAY_COUNT(sEscalatorFrameTables); i++)
     {
-        if (sEscalatorFrameTilesets[i] == secondaryTileset)
-            return TRUE;
+        if (sEscalatorFrameTables[i].tileset == secondaryTileset)
+            return i + 1;
     }
-    return FALSE;
+    return 0;
 }
 
 static void SetEscalatorMetatile(u8 taskId, const s16 *metatileIds, u16 metatileMasks)
@@ -96,11 +160,6 @@ static void SetEscalatorMetatile(u8 taskId, const s16 *metatileIds, u16 metatile
     s16 transitionStage = gTasks[taskId].tTransitionStage;
     s16 i;
     s16 j;
-
-    // PS-098: no frames for this map's tileset: leave the metatiles alone (the stages still advance so
-    // IsEscalatorMoving ends as before)
-    if (!gTasks[taskId].tHasFrames)
-        return;
 
     // Check all the escalator sections and only progress the selected one to the next stage
     if (!gTasks[taskId].tGoingUp)
@@ -147,31 +206,11 @@ static void Task_DrawEscalator(u8 taskId)
 
     tDrawingEscalator = TRUE;
 
-    // Set tile for each section of the escalator in sequence for current transition stage
-    switch (tState)
-    {
-        case 0:
-            SetEscalatorMetatile(taskId, sEscalatorMetatiles_1F_0, 0);
-            break;
-        case 1:
-            SetEscalatorMetatile(taskId, sEscalatorMetatiles_1F_1, 0);
-            break;
-        case 2:
-            SetEscalatorMetatile(taskId, sEscalatorMetatiles_1F_2, MAPGRID_IMPASSABLE);
-            break;
-        case 3:
-            SetEscalatorMetatile(taskId, sEscalatorMetatiles_1F_3, 0);
-            break;
-        case 4:
-            SetEscalatorMetatile(taskId, sEscalatorMetatiles_2F_0, MAPGRID_IMPASSABLE);
-            break;
-        case 5:
-            SetEscalatorMetatile(taskId, sEscalatorMetatiles_2F_1, 0);
-            break;
-        case 6:
-            SetEscalatorMetatile(taskId, sEscalatorMetatiles_2F_2, 0);
-            break;
-    }
+    // Set tile for each section of the escalator in sequence for current transition stage. PS-098 / PS-096: no
+    // frames for this map's tileset: leave the metatiles alone (the stages still advance so IsEscalatorMoving
+    // ends as before)
+    if (tState < ESCALATOR_SECTIONS && tFrameTable != 0)
+        SetEscalatorMetatile(taskId, sEscalatorFrameTables[tFrameTable - 1].metatiles[tState], sEscalatorSectionMasks[tState]);
 
     tState = (tState + 1) & 7;
 
@@ -193,7 +232,7 @@ static u8 CreateEscalatorTask(bool16 goingUp)
     tState = 0;
     tTransitionStage = 0;
     tGoingUp = goingUp;
-    tHasFrames = TilesetHasEscalatorFrames(); // PS-098
+    tFrameTable = GetEscalatorFrameTable(); // PS-098 / PS-096
     Task_DrawEscalator(taskId);
     return taskId;
 }
@@ -223,4 +262,4 @@ bool8 IsEscalatorMoving(void)
 #undef tDrawingEscalator
 #undef tPlayerX
 #undef tPlayerY
-#undef tHasFrames
+#undef tFrameTable
