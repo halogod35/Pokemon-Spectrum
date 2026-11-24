@@ -59,8 +59,8 @@ MB_IMPRESSIVE_MACHINE	MB_NORMAL	flavour text in FRLG only
 MB_VIDEO_GAME	MB_NORMAL	flavour text in FRLG only
 MB_BURGLARY	MB_NORMAL	flavour text in FRLG only
 MB_TRAINER_TOWER_MONITOR	MB_NORMAL	Sevii, no Trainer Tower here
-MB_CYCLING_ROAD_PULL_DOWN	MB_NORMAL	? Routes 16-17 downhill pull (2041 cells): no Emerald mechanic, flat until PS-096
-MB_CYCLING_ROAD_PULL_DOWN_GRASS	MB_TALL_GRASS	? downhill grass: grass kept, pull lost
+MB_CYCLING_ROAD_PULL_DOWN	MB_CYCLING_ROAD_PULL_DOWN	PS-096: same name here (ids 0xD7/0xD8, pokefirered's 0xD0/0xD1 are Emerald's slopes): Routes 16-17, the bike rolls south unless B is held, other directions are uphill at walking speed (bike.c TryMoveOnCyclingRoadSlope)
+MB_CYCLING_ROAD_PULL_DOWN_GRASS	MB_CYCLING_ROAD_PULL_DOWN_GRASS	PS-096: same name here: the pull plus tall grass (rustle, land encounters; MetatileBehavior_IsTallGrass / IsPokeGrass)
 MB_UNUSED_01	MB_NORMAL	unused
 MB_INDOOR_ENCOUNTER	MB_INDOOR_ENCOUNTER	same id
 MB_LAVARIDGE_1F_WARP	MB_LAVARIDGE_GYM_1F_WARP	unused in FRLG layouts

@@ -51,6 +51,7 @@ static void Bike_TryAdvanceCyclingRoadCollisions();
 static u8 CanBikeFaceDirOnMetatile(u8, u8);
 static bool8 WillPlayerCollideWithCollision(u8, u8);
 static void Bike_SetBikeStill(void);
+static bool8 TryMoveOnCyclingRoadSlope(u8, u16); // PS-096
 
 // const rom data
 
@@ -126,10 +127,47 @@ static const struct BikeHistoryInputInfo sAcroBikeTricksList[] =
 // code
 void MovePlayerOnBike(u8 direction, u16 newKeys, u16 heldKeys)
 {
+    // PS-096: pokefirered's cycling road pulls either bike south (Kanto Routes 16-17; no Hoenn tile has the behaviour)
+    if (MetatileBehavior_IsCyclingRoadPullDownTile(gObjectEvents[gPlayerAvatar.objectEventId].currentMetatileBehavior)
+     && TryMoveOnCyclingRoadSlope(direction, heldKeys))
+        return;
+
     if (gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_MACH_BIKE)
         MovePlayerOnMachBike(direction, newKeys, heldKeys);
     else
         MovePlayerOnAcroBike(direction, newKeys, heldKeys);
+}
+
+// PS-096: pokefirered's cycling road (its bike.c BikeInputHandler_Normal / BikeInputHandler_Slope,
+// BikeTransition_Downhill / BikeTransition_Uphill). On a pull-down tile the bike rolls south at full speed
+// (a ledge is jumped) unless B is held; pedalling in any other direction is uphill at walking speed, as is
+// pedalling with B held; a blocked uphill step only turns the bike (no bump, as there). With B held and no
+// direction the normal bike handling runs (the bike stands still). Both bikes' own state is reset so they
+// start again from standing when the slope ends.
+static bool8 TryMoveOnCyclingRoadSlope(u8 direction, u16 heldKeys)
+{
+    u8 collision;
+
+    if ((heldKeys & B_BUTTON) && direction == DIR_NONE)
+        return FALSE;
+
+    Bike_SetBikeStill();
+    gPlayerAvatar.acroBikeState = ACRO_STATE_NORMAL;
+    gPlayerAvatar.runningState = MOVING;
+    if (!(heldKeys & B_BUTTON) && (direction == DIR_NONE || direction == DIR_SOUTH))
+    {
+        collision = GetBikeCollision(DIR_SOUTH);
+        if (collision == COLLISION_NONE)
+            PlayerWalkFaster(DIR_SOUTH);
+        else if (collision == COLLISION_LEDGE_JUMP)
+            PlayerJumpLedge(DIR_SOUTH);
+        return TRUE;
+    }
+    if (GetBikeCollision(direction) == COLLISION_NONE)
+        PlayerWalkNormal(direction);
+    else
+        PlayerFaceDirection(direction);
+    return TRUE;
 }
 
 static void MovePlayerOnMachBike(u8 direction, u16 newKeys, u16 heldKeys)

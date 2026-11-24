@@ -217,8 +217,8 @@ enum {
     MB_ISOLATED_HORIZONTAL_RAIL,
     MB_VERTICAL_RAIL,
     MB_HORIZONTAL_RAIL,
-    MB_UNUSED_D7,
-    MB_UNUSED_D8,
+    MB_CYCLING_ROAD_PULL_DOWN,       // PS-096: pokefirered's cycling road (Kanto Routes 16-17, 0xD0/0xD1 there): the bike rolls
+    MB_CYCLING_ROAD_PULL_DOWN_GRASS, // south unless B is held (bike.c); the grass one is tall grass too. Kept adjacent for the range check.
     MB_UNUSED_D9,
     MB_UNUSED_DA,
     MB_UNUSED_DB,
