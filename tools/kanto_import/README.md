@@ -4,7 +4,8 @@
 checkout into ordinary Pokémon Spectrum (Emerald) data for `REGION_KANTO`: maps, layouts, tilesets,
 map sections, heal locations, visited flags, map groups, the region map layout and Fly spots, and
 the multiplayer group table. `kanto_region_map.pl` converts pokefirered's Kanto picture for the
-Fly / PokéNav / wall map. They import **map data only**: no NPCs, trainers, signs, items, scripts
+Fly / PokéNav / wall map; `kanto_encounters.pl` writes FireRed's wild Pokémon tables (PS-097, see
+below). They import **map data only**: no NPCs, trainers, signs, items, scripts
 or dialogue (epic PS-093); the only hand-written additions are the `extras/` below (the sailor of
 the boat back to Hoenn). Perl with core modules (`JSON::PP`, `Compress::Zlib`) is all they need;
 nothing from the pokefirered checkout is executed, its files are read as data.
@@ -145,6 +146,58 @@ Everything imported is prefixed so it never collides with Hoenn: maps `Kanto<Map
 `MAPSEC_KANTO_<X>`, heal locations `HEAL_LOCATION_KANTO_<X>`, flags `FLAG_VISITED_KANTO_<X>`.
 Section ids and visited flags follow pokefirered's section order; the converter regenerates both
 blocks as a whole on every run.
+
+## Wild encounters (`kanto_encounters.pl`, PS-097)
+
+```
+perl tools/kanto_import/kanto_encounters.pl --frlg /tmp/pokefirered [--maps tools/kanto_import/maps_ps095.txt] [--dry-run] [--quiet]
+```
+
+Writes **FireRed's** wild Pokémon tables (not LeafGreen's; LeafGreen is a later option) for the
+imported Kanto maps into `src/data/wild_encounters.json`, from pokefirered's
+`src/data/wild_encounters.json`. The entries go into the one `gWildMonHeaders` group, after
+Hoenn's: the engine (`GetCurrentMapWildMonHeaderId` in `src/wild_encounter.c`) walks only that
+array, so a second group would never be read. jsonproc (`src/data/wild_encounters.json.txt`)
+then generates `gKanto<Map>_LandMons` / `_WaterMons` / `_RockSmashMons` / `_FishingMons` and
+the header entries like Hoenn's, with `MAP_KANTO_*` ids.
+
+- **Kept:** entries whose `base_label` ends in `_FireRed` and whose map is in `--maps` (66 of
+  pokefirered's 264: 56 land, 30 water, 4 rock smash, 30 fishing tables, 80 species). Dropped: the
+  132 LeafGreen tables and the 66 FireRed tables of maps outside the import (Sevii Islands, the
+  nine Altering Cave sets, Trainer Tower); there are no Navel Rock / Birth Island tables.
+- **Renamed:** `MAP_X` -> the `id` of `data/maps/KantoX/map.json` (`MAP_KANTO_X`), `sX_FireRed` ->
+  `gKantoX`. Tables and slot order are copied as they are: pokefirered's slot rates (12 land, 5
+  water, 5 rock smash, 2 + 3 + 5 fishing slots) are checked to equal ours, since the probabilities
+  are compiled from our json's `fields`.
+- **Checked before writing** (any miss: printed, exit 1, nothing written): every map imported,
+  every species in `include/constants/species.h` (all 386 exist), levels 1..100 with min <= max,
+  table sizes, encounter rates 0..255, generated labels unique.
+- **Idempotent:** a Kanto entry is one whose `"map"` starts with `MAP_KANTO_`; the run removes
+  those and appends the new ones, so re-running changes nothing. The Hoenn text is untouched byte
+  for byte (the written file is decoded again and every non-Kanto entry, the other groups and
+  the field definitions are compared with the original), so the Hoenn tables of the generated
+  `wild_encounters.h` are byte-identical.
+- **Audit (encounter tiles):** pokefirered triggers encounters from a per-metatile attribute
+  (encounter type land / water) that Emerald's attribute format does not have; `kanto_import.pl`
+  drops it and Emerald decides from the metatile behaviour (`TILE_FLAG_HAS_ENCOUNTERS` in
+  `src/metatile_behavior.c`). The script walks every imported layout with a table and reports,
+  for the passable cells, how many of pokefirered's land / water encounter cells are encounter
+  tiles here and which behaviours carry or lose them. Kanto (PS-097 run): 16795 of 17129 land
+  cells (`MB_TALL_GRASS`, `MB_CAVE`, `MB_SAND_CAVE -> MB_CAVE`, `MB_CYCLING_ROAD_PULL_DOWN_GRASS ->
+  MB_TALL_GRASS`), 11568 of 11821 water cells (`MB_OCEAN_WATER`, `MB_POND_WATER`,
+  `MB_CYCLING_ROAD_WATER` / `MB_FAST_WATER -> MB_OCEAN_WATER`). Lost: Seafoam Islands B3F / B4F's
+  current water (`MB_*WARD_CURRENT`, 229 cells + 20 waterfall cells: no encounters on Emerald's
+  currents), cave ledge edges (`MB_IMPASSABLE_NORTH`), stair / arrow warps, holes, rock stairs and
+  strength buttons (PS-096 stand-ins), 113 plain `MB_NORMAL` cave cells; no map loses more than a
+  few percent. pokefirered's Kanto indoor encounter maps (Pokémon Mansion, Pokémon Tower, Power
+  Plant) use `MB_CAVE` on their floors; `MB_INDOOR_ENCOUNTER` is on no passable Kanto cell (it
+  exists here with the same meaning anyway). Route 21 South's land table is unreachable in
+  pokefirered too (no passable land cell).
+
+Rock Smash: the four tables (Cerulean Cave 1F / 2F / B1F, Rock Tunnel B1F) are imported, but the
+breakable rocks are object events (`OBJ_EVENT_GFX_ROCK_SMASH_ROCK`, 40 in those maps) and
+`kanto_import.pl` imports no events, so until the rocks are added (an `extras/` list) the tables
+are not reachable in play.
 
 ## Measuring (`measure.pl`)
 
