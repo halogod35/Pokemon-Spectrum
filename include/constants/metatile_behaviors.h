@@ -86,11 +86,11 @@ enum {
     MB_WESTWARD_CURRENT,
     MB_NORTHWARD_CURRENT,
     MB_SOUTHWARD_CURRENT,
-    MB_UNUSED_54,
-    MB_UNUSED_55,
-    MB_UNUSED_56,
-    MB_UNUSED_57,
-    MB_UNUSED_58,
+    MB_SPIN_RIGHT,    // PS-096: pokefirered's gym / hideout spinner tiles (Kanto), the same ids 0x54..0x58 as there:
+    MB_SPIN_LEFT,     // the player spins in the tile's direction until a wall or MB_STOP_SPINNING
+    MB_SPIN_UP,       // (field_player_avatar.c). Kept in this order so MetatileBehavior_IsSpinTile can range-check.
+    MB_SPIN_DOWN,
+    MB_STOP_SPINNING,
     MB_UNUSED_59,
     MB_UNUSED_5A,
     MB_UNUSED_5B,

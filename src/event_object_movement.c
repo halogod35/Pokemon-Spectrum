@@ -4598,6 +4598,24 @@ u8 GetRunningDirectionAnimNum(u8 direction)
     return sRunningDirectionAnimNums[direction];
 }
 
+// PS-096: pokefirered's spin animation per direction (Kanto spinner tiles)
+static const u8 sSpinDirectionAnimNums[] = {
+    [DIR_NONE] = ANIM_SPIN_SOUTH,
+    [DIR_SOUTH] = ANIM_SPIN_SOUTH,
+    [DIR_NORTH] = ANIM_SPIN_NORTH,
+    [DIR_WEST] = ANIM_SPIN_WEST,
+    [DIR_EAST] = ANIM_SPIN_EAST,
+    [DIR_SOUTHWEST] = ANIM_SPIN_SOUTH,
+    [DIR_SOUTHEAST] = ANIM_SPIN_SOUTH,
+    [DIR_NORTHWEST] = ANIM_SPIN_NORTH,
+    [DIR_NORTHEAST] = ANIM_SPIN_NORTH,
+};
+
+u8 GetSpinDirectionAnimNum(u8 direction)
+{
+    return sSpinDirectionAnimNums[direction];
+}
+
 static const struct StepAnimTable *GetStepAnimTable(const union AnimCmd *const *anims)
 {
     const struct StepAnimTable *stepTable;
@@ -5003,6 +5021,16 @@ dirn_to_anim(GetWalkInPlaceSlowMovementAction, gWalkInPlaceSlowMovementActions);
 dirn_to_anim(GetWalkInPlaceNormalMovementAction, gWalkInPlaceNormalMovementActions);
 dirn_to_anim(GetWalkInPlaceFastMovementAction, gWalkInPlaceFastMovementActions);
 dirn_to_anim(GetWalkInPlaceFasterMovementAction, gWalkInPlaceFasterMovementActions);
+
+// PS-096: pokefirered's Kanto movements
+static const u8 sSpinMovementActions[] = {
+    MOVEMENT_ACTION_SPIN_DOWN,
+    MOVEMENT_ACTION_SPIN_DOWN,
+    MOVEMENT_ACTION_SPIN_UP,
+    MOVEMENT_ACTION_SPIN_LEFT,
+    MOVEMENT_ACTION_SPIN_RIGHT,
+};
+dirn_to_anim(GetSpinMovementAction, sSpinMovementActions);
 
 bool8 ObjectEventFaceOppositeDirection(struct ObjectEvent *objectEvent, u8 direction)
 {
@@ -6104,6 +6132,79 @@ bool8 MovementAction_PlayerRunRight_Step0(struct ObjectEvent *objectEvent, struc
 }
 
 bool8 MovementAction_PlayerRunRight_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateMovementNormal(objectEvent, sprite))
+    {
+        sprite->sActionFuncId = 2;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// PS-096: pokefirered's spin step (its event_object_movement.c InitSpin / MovementAction_Spin*): a walking-fast
+// step with the spin animation restarted from its first frame, used by the Kanto spinner tiles
+static void InitSpin(struct ObjectEvent *objectEvent, struct Sprite *sprite, u8 direction, u8 speed)
+{
+    InitNpcForMovement(objectEvent, sprite, direction, speed);
+    SetStepAnimHandleAlternation(objectEvent, sprite, GetSpinDirectionAnimNum(objectEvent->facingDirection));
+    SeekSpriteAnim(sprite, 0);
+}
+
+bool8 MovementAction_SpinDown_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    InitSpin(objectEvent, sprite, DIR_SOUTH, MOVE_SPEED_FAST_1);
+    return MovementAction_SpinDown_Step1(objectEvent, sprite);
+}
+
+bool8 MovementAction_SpinDown_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateMovementNormal(objectEvent, sprite))
+    {
+        sprite->sActionFuncId = 2;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+bool8 MovementAction_SpinUp_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    InitSpin(objectEvent, sprite, DIR_NORTH, MOVE_SPEED_FAST_1);
+    return MovementAction_SpinUp_Step1(objectEvent, sprite);
+}
+
+bool8 MovementAction_SpinUp_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateMovementNormal(objectEvent, sprite))
+    {
+        sprite->sActionFuncId = 2;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+bool8 MovementAction_SpinLeft_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    InitSpin(objectEvent, sprite, DIR_WEST, MOVE_SPEED_FAST_1);
+    return MovementAction_SpinLeft_Step1(objectEvent, sprite);
+}
+
+bool8 MovementAction_SpinLeft_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateMovementNormal(objectEvent, sprite))
+    {
+        sprite->sActionFuncId = 2;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+bool8 MovementAction_SpinRight_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    InitSpin(objectEvent, sprite, DIR_EAST, MOVE_SPEED_FAST_1);
+    return MovementAction_SpinRight_Step1(objectEvent, sprite);
+}
+
+bool8 MovementAction_SpinRight_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
 {
     if (UpdateMovementNormal(objectEvent, sprite))
     {
