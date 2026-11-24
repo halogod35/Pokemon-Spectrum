@@ -1,0 +1,25 @@
+# PS-100: pokefirered script labels that are NOT imported because Emerald's own script of the same meaning is used
+# instead (the imported scripts call our label). Columns: FRLG label, our label, reason. Everything else the
+# imported maps reference is copied from pokefirered with the Kanto prefix (data/scripts/kanto_shared.inc).
+# The link rooms of the Pokémon Center 2F: Emerald's attendants run this engine's own (stubbed on PC) link code;
+# pokefirered's versions would need its link-room maps (MAP_TRADE_CENTER, MAP_UNION_ROOM, ...) and menus.
+Common_EventScript_UnionRoomAttendant	Common_EventScript_UnionRoomAttendant	Emerald's union room attendant
+Common_EventScript_WirelessClubAttendant	Common_EventScript_WirelessClubAttendant	Emerald's wireless club attendant
+Common_EventScript_DirectCornerAttendant	Common_EventScript_DirectCornerAttendant	Emerald's direct corner attendant
+CableClub_EventScript_MysteryGiftMan	CableClub_EventScript_MysteryGiftMan	Emerald's Mystery Gift deliveryman
+CableClub_OnResume	CableClub_OnResume	Emerald's Pokémon Center ON_RESUME (link room state)
+# Movement scripts with the same name and the same steps in both games
+Common_Movement_FaceDown	Common_Movement_FaceDown	identical
+Common_Movement_FaceRight	Common_Movement_FaceRight	identical
+Common_Movement_FacePlayer	Common_Movement_FacePlayer	identical
+Common_Movement_FaceOriginalDirection	Common_Movement_FaceOriginalDirection	identical
+Common_Movement_WalkInPlaceFasterUp	Common_Movement_WalkInPlaceFasterUp	identical
+Common_Movement_WalkInPlaceFasterDown	Common_Movement_WalkInPlaceFasterDown	identical
+Common_Movement_WalkInPlaceFasterLeft	Common_Movement_WalkInPlaceFasterLeft	identical
+Common_Movement_WalkInPlaceFasterRight	Common_Movement_WalkInPlaceFasterRight	identical
+Common_Movement_ExclamationMark	Common_Movement_ExclamationMark	identical
+Common_Movement_Delay48	Common_Movement_Delay48	identical
+CableClub_OnTransition	CableClub_OnTransition	Emerald's Pokémon Center 2F map scripts (link room state)
+CableClub_OnWarp	CableClub_OnWarp	see above
+CableClub_OnLoad	CableClub_OnLoad	see above
+CableClub_OnFrame	CableClub_OnFrame	see above

@@ -80,10 +80,17 @@ hold a section id above 0xFF. Rule (`GetMetLocationForMapSec`, `region.c`):
 `REGION_KANTO` is region 1: every Kanto map of FireRed/LeafGreen (PS-095: 256 maps in 29 groups,
 180 layouts, 51 tilesets, 53 map sections, 11 Fly spots, 13 heal locations; the Sevii Islands,
 FRLG's link rooms, Navel Rock / Birth Island and the Trainer Tower are left out, see
-`tools/kanto_import/maps_ps095.txt`). It is **map data only**: no NPCs, trainers, items, signs,
-scripts or dialogue (epic PS-093). The two sailors of the boat are the only NPCs; the only other object
-events kept are pokefirered's Rock Smash rocks and cut trees (as Emerald's rock / tree objects with
-Emerald's field-move scripts, PS-096). Wild Pokémon are FireRed's (PS-097:
+`tools/kanto_import/maps_ps095.txt`). The maps are **map data** (epic PS-093); the story (epic PS-099:
+pokefirered's NPCs, signs, items, triggers, map scripts and text, translated mechanically by
+`kanto_import.pl --events`) is imported map by map: PS-100 did Pallet Town, Route 1, Viridian City and
+their interiors (`tools/kanto_import/maps_ps094.txt`), PS-101 does the rest. On the other maps the two
+sailors of the boat are the only NPCs and the only other object events are pokefirered's Rock Smash
+rocks and cut trees (as Emerald's rock / tree objects with Emerald's field-move scripts, PS-096).
+The imported story lives in its own namespace (`FLAG_KANTO_*`, `VAR_KANTO_*`, `TRAINER_KANTO_*`,
+`OBJ_EVENT_GFX_KANTO_*`, `Kanto*` labels and specials; the Kanto badges are `FLAG_BADGE09..16_GET`),
+with pokefirered's sprites and NPC palettes (u16 graphics ids, `RegionInfo.objectPaletteSet`), its
+rival name `{RIVAL}` = GREEN (`RegionInfo.rivalName`) and FRLG-only systems stubbed
+(`tools/kanto_import/specials.tsv`, `src/kanto_specials.c`). Wild Pokémon are FireRed's (PS-097:
 `tools/kanto_import/kanto_encounters.pl` writes FireRed's 66 Kanto tables, grass, caves, water,
 fishing and rock smash, into `src/data/wild_encounters.json`; LeafGreen's tables are not used). The
 FRLG tilesets animate (PS-096: pokefirered's frames and callbacks), its doors animate (PS-098) and

@@ -1,0 +1,15 @@
+# PS-100: pokefirered script constants that have another name here (or no equivalent). A constant that exists here
+# under the same name needs no row; FLAG_/VAR_/TRAINER_/LOCALID_/OBJ_EVENT_GFX_/MAP_/HEAL_LOCATION_/LAYOUT_/METATILE_/
+# MUS_/SE_/ITEM_TMxx_*/MOVETUTOR_* follow fixed rules in KantoEvents.pm; HELPCONTEXT_*, FAMECHECKER_*, FCPICKSTATE_*
+# and QL_* become 0 (their shims ignore them). Columns: FRLG name, our name, note.
+MULTICHOICE_YES_NO	MULTI_KANTO_YES_NO	src/data/script_menu.h (PS-100): YES / NO, Emerald has no plain yes-no multichoice
+MULTICHOICE_TRAINER_SCHOOL_WHITEBOARD	MULTI_KANTO_TRAINER_SCHOOL_WHITEBOARD	src/data/script_menu.h (PS-100): SLP / PSN / PAR / BRN / FRZ / EXIT, the Viridian school blackboard
+MULTICHOICE_SINGLE_DOUBLE_MULTI_INFO_EXIT	MULTI_BATTLE_MODE	the same five entries (SINGLE / DOUBLE / MULTI BATTLE, INFO, EXIT)
+SCR_MENU_CANCEL	MULTI_B_PRESSED	127 in both
+POCKET_TM_CASE	POCKET_TM_HM	pokefirered's TM Case is Emerald's TM/HM pocket
+POCKET_BERRY_POUCH	POCKET_BERRIES	pokefirered's Berry Pouch is Emerald's Berries pocket
+STDSTRING_ITEMS_POCKET	STDSTRING_ITEMS	pocket names for "put the item away in the ..."
+STDSTRING_KEY_ITEMS_POCKET	STDSTRING_KEYITEMS	
+STDSTRING_POKEBALLS_POCKET	STDSTRING_POKEBALLS	
+STDSTRING_TM_CASE	STDSTRING_TMHMS	
+STDSTRING_BERRY_POUCH	STDSTRING_BERRIES	

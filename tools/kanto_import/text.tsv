@@ -1,0 +1,5 @@
+# PS-100: text replacements applied to every imported .string before the charmap check. Columns: from, to, note.
+# Placeholders {MUS_X} are not here: they become {MUS_RG_X} when our charmap has it, else {MUS_X}.
+‥	⋯	pokefirered's two-dot leader is glyph B0; our charmap names the same glyph ⋯
+{FONT_MALE}		pokefirered colours an NPC's text by gender (FC 06 04 / 05); Emerald's text engine has no such fonts (textcolor is a no-op here too)
+{FONT_FEMALE}		see {FONT_MALE}

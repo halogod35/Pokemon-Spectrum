@@ -1,0 +1,30 @@
+# PS-100: pokefirered special -> what the imported scripts call here. Columns: FRLG name, action, note.
+# Actions: same (the same name exists here with the same meaning; a special with the same name and no row is
+# treated as 'same' too), =Name (an Emerald twin under another name), stub:KantoName (a no-op / constant from
+# src/kanto_specials.c), port:KantoName (rewritten from pokefirered in src/kanto_specials.c, `// PS-100:` names
+# the FRLG function). Every stub and port must be registered in data/specials.inc. PS-101 completes the table.
+#
+# --- the PS-100 slice (Pallet Town / Route 1 / Viridian City) ---
+AnimatePcTurnOn	port:KantoAnimatePcTurnOn	pokefirered flickers its own PC metatiles (METATILE_Building_PCOn / GenericBuilding1_PlayersPCOn); Emerald's DoPCTurnOnEffect writes Hoenn metatile ids
+AnimatePcTurnOff	port:KantoAnimatePcTurnOff	same, the PC-off metatiles
+BackupHelpContext	stub:KantoStub_Nop	help system (L/R help), FRLG-only
+BedroomPC	same	Emerald's player PC; the shutdown script is Hoenn's (Littleroot) and is replaced by the Kanto one through the region table (src/player_pc.c)
+DaisyMassageServices	port:KantoDaisyMassageServices	friendship massage + VAR_KANTO_MASSAGE_COOLDOWN_STEP_COUNTER reset; the step counter is kept by field_control_avatar.c
+DisableMsgBoxWalkaway	stub:KantoStub_Nop	FRLG closes a sign's message when the player walks away; Emerald has no walk-away message boxes
+Field_AskSaveTheGame	=SaveGame	the save prompt (cable club scripts); Emerald's special is the same prompt (waitstate)
+GetLeadMonFriendship	=GetLeadMonFriendshipScore	the same 0..6 scale (FRIENDSHIP_NONE .. FRIENDSHIP_MAX)
+GetPartyMonSpecies	=ScriptGetPartyMonSpecies	same body (VAR_0x8004 -> species or egg)
+GetPokedexCount	port:KantoGetPokedexCount	VAR_0x8004 0: Kanto (first 151) seen / owned, else national; returns IsNationalPokedexEnabled
+GetProfOaksRatingMessage	=ShowPokedexRatingMessage	the Pokedex rating by count; the lines are Birch's (pokefirered's Oak lines: PS-103)
+HasAllMons	stub:KantoStub_False	the diploma check (pokedex_rating.inc); no Emerald twin, never granted in the slice
+HelpSystem_Disable	stub:KantoStub_Nop	help system
+HelpSystem_Enable	stub:KantoStub_Nop	help system
+IsPlayerNotInTrainerTowerLobby	stub:KantoStub_True	Trainer Tower (Sevii) is not imported: the player is never in its lobby
+QuestLog_CutRecording	stub:KantoStub_Nop	quest log, FRLG-only
+QuestLog_StartRecordingInputsAfterDeferredEvent	stub:KantoStub_Nop	quest log
+RestoreHelpContext	stub:KantoStub_Nop	help system
+Script_SetHelpContext	stub:KantoStub_Nop	help system
+SetHelpContextForMap	stub:KantoStub_Nop	help system
+SetUsedPkmnCenterQuestLogEvent	stub:KantoStub_Nop	quest log
+SetWalkingIntoSignVars	stub:KantoStub_Nop	walk-away message boxes (the Pallet Town sign lady), see DisableMsgBoxWalkaway
+StartOldManTutorialBattle	stub:KantoStub_Nop	the old man's Weedle catch demo needs pokefirered's battle controller (BATTLE_TYPE_OLD_MAN_TUTORIAL): no battle, the script continues with "That was educational" (PS-103)

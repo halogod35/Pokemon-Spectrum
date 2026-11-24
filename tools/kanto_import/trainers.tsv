@@ -1,0 +1,24 @@
+# PS-100: pokefirered trainer classes and pics that have no TRAINER_CLASS_ / TRAINER_PIC_ of the same name here ->
+# the closest Emerald one (the slice only; PS-102 adds the real Kanto classes, pics and encounter music).
+# A class / pic whose name exists here needs no row. `rival_name` is the name written into the rival's trainer
+# entries (pokefirered keeps the placeholder "TERRY" there and shows the saved rival name; this engine has no
+# rival name field yet, so the entries carry FireRed's default, see string_util.c / region.c).
+# Columns: FRLG name, our name, note.
+TRAINER_CLASS_RIVAL_EARLY	TRAINER_CLASS_RIVAL	Emerald's rival class ("{PKMN} TRAINER")
+TRAINER_CLASS_TAMER	TRAINER_CLASS_DRAGON_TAMER	no Tamer here; the only "TAMER" class name
+TRAINER_PIC_RIVAL_EARLY	TRAINER_PIC_BRENDAN	a male rival; pokefirered's Blue pic needs PS-102
+TRAINER_PIC_TAMER	TRAINER_PIC_DRAGON_TAMER	see the class
+TRAINER_PIC_LEADER_GIOVANNI	TRAINER_PIC_LEADER_NORMAN	a male gym leader; Giovanni's pic needs PS-102
+rival_name	GREEN	FireRed's default rival name (gExpandedPlaceholder_Green, used when no name was chosen)
+# The gym trainer table (set_gym_trainers, data/scripts/set_gym_trainers.inc) names trainers of every Kanto gym;
+# their classes without a twin here get the closest look until PS-102 adds the real ones:
+TRAINER_CLASS_SUPER_NERD	TRAINER_CLASS_SCHOOL_KID	
+TRAINER_PIC_SUPER_NERD	TRAINER_PIC_SCHOOL_KID_M	
+TRAINER_CLASS_BURGLAR	TRAINER_CLASS_KINDLER	fire types
+TRAINER_PIC_BURGLAR	TRAINER_PIC_KINDLER	
+TRAINER_CLASS_ENGINEER	TRAINER_CLASS_HIKER	
+TRAINER_PIC_ENGINEER	TRAINER_PIC_HIKER	
+TRAINER_CLASS_JUGGLER	TRAINER_CLASS_PSYCHIC	psychic types
+TRAINER_PIC_JUGGLER	TRAINER_PIC_PSYCHIC_M	
+TRAINER_CLASS_CHANNELER	TRAINER_CLASS_HEX_MANIAC	ghost types
+TRAINER_PIC_CHANNELER	TRAINER_PIC_HEX_MANIAC	

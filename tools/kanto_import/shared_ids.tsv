@@ -1,0 +1,32 @@
+# PS-100: pokefirered flags / vars whose Emerald counterpart is used instead of a FLAG_KANTO_* / VAR_KANTO_* copy
+# (player capabilities and engine state are one thing across regions), and FRLG names that exist here with another
+# meaning and must NOT be shared (they get an explicit KANTO row so the decision is visible). Everything not listed
+# here and not engine-shared by pattern (FLAG_TEMP_*, VAR_TEMP_*, VAR_0x800x, VAR_RESULT, VAR_FACING, VAR_LAST_TALKED,
+# VAR_OBJ_GFX_ID_*) becomes FLAG_KANTO_<rest> / VAR_KANTO_<rest>, allocated in kanto_ids.tsv.
+# Columns: FRLG name, our name, reason.
+FLAG_SYS_POKEMON_GET	FLAG_SYS_POKEMON_GET	the player owns a Pokémon: one fact for every region
+FLAG_SYS_POKEDEX_GET	FLAG_SYS_POKEDEX_GET	the player has the Pokédex
+FLAG_SYS_NATIONAL_DEX	FLAG_SYS_NATIONAL_DEX	the National Dex
+FLAG_SYS_B_DASH	FLAG_SYS_B_DASH	Running Shoes
+FLAG_SYS_USE_FLASH	FLAG_SYS_USE_FLASH	Flash in use (engine)
+FLAG_SYS_USE_STRENGTH	FLAG_SYS_USE_STRENGTH	Strength in use (engine)
+FLAG_SYS_SAFARI_MODE	FLAG_SYS_SAFARI_MODE	Safari Game in progress (engine)
+FLAG_SYS_RIBBON_GET	FLAG_SYS_RIBBON_GET	a ribbon was obtained
+FLAG_DONT_TRANSITION_MUSIC	FLAG_DONT_TRANSITION_MUSIC	engine special flag, the same meaning
+FLAG_HIDE_MAP_NAME_POPUP	FLAG_HIDE_MAP_NAME_POPUP	engine special flag
+FLAG_ENABLE_SHIP_BIRTH_ISLAND	FLAG_ENABLE_SHIP_BIRTH_ISLAND	the Aurora Ticket event, one per save
+FLAG_ENABLE_SHIP_NAVEL_ROCK	FLAG_ENABLE_SHIP_NAVEL_ROCK	the Mystic Ticket event
+FLAG_SHOWN_AURORA_TICKET	FLAG_SHOWN_AURORA_TICKET	ticket shown to the sailor
+FLAG_SHOWN_MYSTIC_TICKET	FLAG_SHOWN_MYSTIC_TICKET	ticket shown to the sailor
+FLAG_BADGE01_GET	FLAG_BADGE09_GET	Kanto badges are the region's badge block (docs/regions.md): Boulder Badge
+FLAG_BADGE02_GET	FLAG_BADGE10_GET	Cascade Badge
+FLAG_BADGE03_GET	FLAG_BADGE11_GET	Thunder Badge
+FLAG_BADGE04_GET	FLAG_BADGE12_GET	Rainbow Badge
+FLAG_BADGE05_GET	FLAG_BADGE13_GET	Soul Badge
+FLAG_BADGE06_GET	FLAG_BADGE14_GET	Marsh Badge
+FLAG_BADGE07_GET	FLAG_BADGE15_GET	Volcano Badge
+FLAG_BADGE08_GET	FLAG_BADGE16_GET	Earth Badge
+FLAG_SYS_GAME_CLEAR	FLAG_KANTO_SYS_GAME_CLEAR	the Kanto league is a separate story from Hoenn's Hall of Fame (a Hoenn champion has not beaten Kanto); set by Kanto's Hall of Fame (PS-103)
+VAR_CABLE_CLUB_STATE	VAR_CABLE_CLUB_STATE	engine var (link rooms), the same meaning
+VAR_PC_BOX_TO_SEND_MON	VAR_PC_BOX_TO_SEND_MON	engine var (gift Pokémon to a box), the same meaning
+VAR_STARTER_MON	VAR_KANTO_STARTER_MON	Emerald's VAR_STARTER_MON is the Hoenn starter (0 Treecko ..); Kanto's choice is its own var

@@ -1,0 +1,3 @@
+# PS-100: pokefirered script labels that nothing in the map data references because pokefirered's C code starts
+# them; the converter imports them with their map (closure roots). Columns: FRLG map, FRLG label, who runs it here.
+PalletTown_PlayersHouse_2F	EventScript_PalletTown_PlayersHouse_2F_ShutDownPC	src/player_pc.c through the region table (RegionInfo.bedroomPcOffScript, src/region.c)

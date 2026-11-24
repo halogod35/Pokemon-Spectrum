@@ -57,10 +57,11 @@ my $CARDS = 'PS-094/PS-095';
 # ---------------------------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------------------------
-my ($frlg, $mapsFile, $repo, $allowUnknown, $dryRun, $quiet);
-GetOptions('frlg=s' => \$frlg, 'maps=s' => \$mapsFile, 'repo=s' => \$repo,
+my ($frlg, $mapsFile, $repo, $allowUnknown, $dryRun, $quiet, $eventsFile);
+GetOptions('frlg=s' => \$frlg, 'maps=s' => \$mapsFile, 'repo=s' => \$repo, 'events=s' => \$eventsFile,
            'allow-unknown' => \$allowUnknown, 'dry-run' => \$dryRun, 'quiet' => \$quiet)
-    or die "usage: $0 --frlg <pokefirered> --maps <list> [--repo <root>] [--allow-unknown] [--dry-run]\n";
+    or die "usage: $0 --frlg <pokefirered> --maps <list> [--events <list>] [--repo <root>] [--allow-unknown] [--dry-run]\n";
+die "--events <list file> does not exist\n" if defined $eventsFile && !-f $eventsFile;
 die "--frlg <pokefirered checkout> is required\n" unless defined $frlg && -d "$frlg/data/maps";
 die "--maps <list file> is required\n" unless defined $mapsFile && -f $mapsFile;
 $repo //= File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..', '..'));
@@ -908,6 +909,35 @@ sub is_standin_map
     return $m =~ /_Connection$/ && !@{$fr->{warp_events} || []} && !@{$fr->{object_events} || []} && !@{$fr->{coord_events} || []} && !@{$fr->{bg_events} || []};
 }
 my (%warpRedirectTargets, %connDropTargets, %extrasUsed);
+# PS-100: --events <list>: for the maps in that list (a subset of --maps) pokefirered's object / bg / coord events,
+# map scripts and text are imported too (tools/kanto_import/KantoEvents.pm). Without --events the output is
+# PS-095/096's (rocks and trees only). The event outputs outside the maps (data/scripts/kanto_shared.inc, the
+# KANTO_EVENTS blocks, sprites, trainers) are only touched when --events is given.
+my (@eventMaps, %isEventMap);
+if (defined $eventsFile)
+{
+    for (split /\n/, slurp($eventsFile)) { s/#.*//; s/^\s+|\s+$//g; next unless length; if ($map{$_}) { push @eventMaps, $_; $isEventMap{$_} = 1 } else { err("--events: map $_ is not in the --maps list") } }
+    exit_if_errors('reading the event map list');
+    require File::Spec->rel2abs("$toolDir/KantoEvents.pm"); # an absolute path is loaded as given, not searched in @INC
+    my $ourOpponents = slurp("$repo/include/constants/trainers.h") . slurp("$repo/include/constants/opponents.h");
+    my %specialTrainerIds = map { /^#define (TRAINER_(?:FRONTIER_BRAIN|PLAYER|SECRET_BASE|LINK_OPPONENT))\s+(\d+)/ ? ($1 => $2) : () } split /\n/, $ourOpponents;
+    my ($kantoBase) = $ourOpponents =~ /^#define TRAINER_KANTO_BASE\s+(\d+)/m or die "include/constants/opponents.h: TRAINER_KANTO_BASE is missing (one-time hook, see tools/kanto_import/README.md)\n";
+    my ($maxTotal) = $ourFlags =~ /^#define MAX_TRAINERS_TOTAL\s+(\d+)/m or die "constants/flags.h: MAX_TRAINERS_TOTAL not found\n";
+    my ($flagsExtCount) = $ourFlags =~ /^#define EVENT_FLAGS_EXT_COUNT\s+(0x[0-9A-Fa-f]+|\d+)/m or die "constants/flags.h: EVENT_FLAGS_EXT_COUNT not found\n";
+    my $ourVars = slurp("$repo/include/constants/vars.h");
+    my ($varsExtStart) = $ourVars =~ /^#define VARS_EXT_START\s+(0x[0-9A-Fa-f]+)/m or die "constants/vars.h: VARS_EXT_START not found\n";
+    my ($varsEnd) = $ourVars =~ /^#define VARS_END\s+(0x[0-9A-Fa-f]+)/m or die "constants/vars.h: VARS_END not found\n";
+    KantoEvents::init({
+        frlg => $frlg, repo => $repo, toolDir => $toolDir, maps => \%map, frIdToName => \%frIdToName,
+        our_map_id => \&our_map_id, visitedFlags => { map { $_ => 1 } grep { /^FLAG_/ } values %flagOf },
+        healIds => { map { $healOf{$_}{ourId} => 1 } grep { $healOf{$_} && $healOf{$_}{ourId} } keys %healOf },
+        layoutIds => { map { $_->{ourId} => 1 } values %layoutUsed },
+        eventFlagsExtCount => $flagsExtCount =~ /^0x/ ? hex($flagsExtCount) : $flagsExtCount, varsExtCount => hex($varsEnd) - hex($varsExtStart) + 1,
+        trainerKantoBase => $kantoBase, specialTrainerIds => \%specialTrainerIds, maxTrainersTotal => $maxTotal,
+        err => \&err, note => \&note, info => \&info, queue_write => \&queue_write, replace_marked_block => \&replace_marked_block,
+    });
+    exit_if_errors('loading the event tables');
+}
 for my $m (@mapOrder)
 {
     my $fr = $map{$m}{fr};
@@ -1050,6 +1080,15 @@ for my $m (@mapOrder)
         $wi++;
     }
     my @objectEntries = @keptObjects; # PS-096: the kept rocks / trees first, then the hand-written extras
+    my ($coordJson, $bgJson, $eventScripts) = ("[]", "[]", undef);
+    if ($isEventMap{$m}) # PS-100: every pokefirered event of this map (rocks / trees included, so @keptObjects is replaced)
+    {
+        my $ev = KantoEvents::map_events($m);
+        @objectEntries = @{$ev->{objects}};
+        $coordJson = @{$ev->{coords}} ? "[\n" . join(",\n", @{$ev->{coords}}) . "\n  ]" : "[]";
+        $bgJson = @{$ev->{bgs}} ? "[\n" . join(",\n", @{$ev->{bgs}}) . "\n  ]" : "[]";
+        $eventScripts = KantoEvents::map_scripts($m);
+    }
     if (my $text = $extras{$m}{'objects.json'})
     {
         my $parsed = eval { decode_json($text) };
@@ -1085,14 +1124,19 @@ for my $m (@mapOrder)
         "  \"connections\": " . (@conns ? "[\n" . join(",\n", @conns) . "\n  ]" : "null") . ",",
         "  \"object_events\": $objects,",
         "  \"warp_events\": " . (@warps ? "[\n" . join(",\n", @warps) . "\n  ]" : "[]") . ",",
-        "  \"coord_events\": [],",
-        "  \"bg_events\": []",
+        "  \"coord_events\": $coordJson,",
+        "  \"bg_events\": $bgJson",
         "}") . "\n";
     queue_write("$repo/data/maps/$name/map.json", $json);
 
     my $scripts = "@ Generated by tools/kanto_import/kanto_import.pl ($CARDS) from pokefirered data/maps/$m.\n"
                 . "@ No NPCs, signs, items or story (epic PS-093): only what a walkable map needs.\n";
-    if ($isTownType{$fr->{map_type}} && $flagOf{$sec})
+    if (defined $eventScripts) # PS-100: pokefirered's map scripts and text, translated
+    {
+        $scripts = $eventScripts;
+        err("map $m: pokefirered's scripts do not set the visited flag $flagOf{$sec} (PS-095's ON_TRANSITION would have)") if $isTownType{$fr->{map_type}} && $flagOf{$sec} && $scripts !~ /^\s*setflag \Q$flagOf{$sec}\E\s*$/m;
+    }
+    elsif ($isTownType{$fr->{map_type}} && $flagOf{$sec})
     {
         $scripts .= "${name}_MapScripts::\n\tmap_script MAP_SCRIPT_ON_TRANSITION, ${name}_OnTransition\n\t.byte 0\n\n"
                   . "${name}_OnTransition:\n\tsetflag $flagOf{$sec}\n\tend\n";
@@ -1111,6 +1155,13 @@ for my $m (@mapOrder)
     push @scriptIncludes, "\t.include \"data/maps/$name/scripts.inc\"";
 }
 exit_if_errors('translating maps');
+my @eventSummary;
+if (@eventMaps) # PS-100: the shared scripts, ids, sprites and trainers the imported events need
+{
+    @eventSummary = KantoEvents::finish(\@eventMaps);
+    unshift @scriptIncludes, "\t.include \"data/scripts/kanto_shared.inc\" @ PS-100: shared pokefirered scripts / text (first: it defines FIRERED for the maps' .ifdef)";
+    exit_if_errors('translating events');
+}
 
 # ---------------------------------------------------------------------------------------------
 # Repository files edited in place (text surgery keeps every other line byte for byte)
@@ -1227,7 +1278,7 @@ my %edits; # path => new content
 sub replace_marked_block
 {
     my ($path, $begin, $end, $body) = @_;
-    my $text = slurp($path);
+    my $text = $edits{$path} // slurp($path); # PS-100: a file can hold several marked blocks (flags.h): build on the pending edit
     my $b = index($text, $begin); my $e = index($text, $end);
     die "$path: markers '$begin' / '$end' not found (one-time hook, see tools/kanto_import/README.md)\n" if $b < 0 || $e < 0 || $e < $b;
     my $lineEnd = index($text, "\n", $b);
@@ -1295,7 +1346,8 @@ else
 {
     # the converter owns every Kanto* / kanto_* directory: remove them so a smaller map list leaves no stale output
     for my $d (glob("$repo/data/maps/$PREFIX*"), glob("$repo/data/layouts/$PREFIX*"), glob("$repo/data/tilesets/primary/" . lc($PREFIX) . "_*"), glob("$repo/data/tilesets/secondary/" . lc($PREFIX) . "_*"),
-                 "$repo/graphics/door_anims/" . lc($PREFIX)) # PS-098: the door animation sheets
+                 "$repo/graphics/door_anims/" . lc($PREFIX), # PS-098: the door animation sheets
+                 (@eventMaps ? ("$repo/graphics/object_events/pics/" . lc($PREFIX), "$repo/src/data/object_events/" . lc($PREFIX)) : ())) # PS-100: the imported sprites
     {
         remove_tree($d) if -d $d;
     }
@@ -1324,6 +1376,7 @@ for my $sym (sort keys %writtenTilesets) { my $w = $writtenTilesets{$sym}; info(
 info("  tileset animations: " . scalar(keys %animFramesCopied) . " tilesets with a callback, " . eval { my $s = 0; $s += $_ for values %animFramesCopied; $s } . " frames copied (" . join(", ", sort keys %animFramesCopied) . ")");
 info("  behaviours on the imported maps: " . join(", ", map { "$_" } sort keys %behaviorUsed));
 for my $m (sort keys %extrasUsed) { info("  extras: $m: " . join(", ", ($extrasUsed{$m}{objects} ? "$extrasUsed{$m}{objects} object event(s)" : ()), ($extrasUsed{$m}{scripts} ? "scripts appended" : ()))) }
+info("  $_") for @eventSummary; # PS-100
 info("  note: $_") for @notes;
 # the audits (every one of them fails the run above when something is wrong; this is the summary)
 my $fmtTargets = sub { my $h = shift; return join(", ", map { "$_ x$h->{$_}" } sort keys %$h) };
