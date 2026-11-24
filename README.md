@@ -122,7 +122,7 @@ The Options menu scrolls: seven rows at a time, with arrows on the frame when th
 
 ### Kanto
 
-- **Kanto by boat.** After the Hall of Fame, a sailor in Slateport's harbour sails to Vermilion City: all of Kanto's maps from FireRed/LeafGreen are walkable, with their own Fly map, but there are no people, trainers, items or story there yet.
+- **Kanto by boat.** After the Hall of Fame, a sailor in Slateport's harbour sails to Vermilion City: all of Kanto's maps from FireRed/LeafGreen are walkable, with their own Fly map and FireRed's wild Pokémon in the grass, caves and water (fishing too), but there are no people, trainers, items or story there yet.
 
 ### Save file
 
