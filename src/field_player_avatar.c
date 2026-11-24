@@ -100,6 +100,8 @@ static bool8 PlayerIsAnimActive(void);
 static bool8 PlayerCheckIfAnimFinishedOrInactive(void);
 
 static void PlayerRun(u8);
+static void PlayerWalkSlow(u8); // PS-096: rock stairs
+static void PlayerRunSlow(u8);
 static void PlayerNotOnBikeCollide(u8);
 static void PlayerNotOnBikeCollideWithFarawayIslandMew(u8);
 
@@ -747,13 +749,40 @@ static void PlayerNotOnBikeMoving(u8 direction, u16 heldKeys)
     if (!(gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_UNDERWATER) && (heldKeys & B_BUTTON) && FlagGet(FLAG_SYS_B_DASH)
      && IsRunningDisallowed(gObjectEvents[gPlayerAvatar.objectEventId].currentMetatileBehavior) == 0)
     {
-        PlayerRun(direction);
+        if (PlayerIsMovingOnRockStairs(direction)) // PS-096: pokefirered's rock stairs slow the run down
+            PlayerRunSlow(direction);
+        else
+            PlayerRun(direction);
         gPlayerAvatar.flags |= PLAYER_AVATAR_FLAG_DASH;
         return;
     }
     else
     {
-        PlayerWalkNormal(direction);
+        if (PlayerIsMovingOnRockStairs(direction)) // PS-096
+            PlayerWalkSlow(direction);
+        else
+            PlayerWalkNormal(direction);
+    }
+}
+
+// PS-096: pokefirered's PlayerIsMovingOnRockStairs (its field_player_avatar.c): going up the stairs the
+// player stands on (north) or down onto the stairs below (south) is slow; sideways is not. Only
+// MB_ROCK_STAIRS (Kanto) answers TRUE, so Hoenn movement is unchanged.
+bool32 PlayerIsMovingOnRockStairs(u8 direction)
+{
+    struct ObjectEvent *objectEvent = &gObjectEvents[gPlayerAvatar.objectEventId];
+    s16 x = objectEvent->currentCoords.x;
+    s16 y = objectEvent->currentCoords.y;
+
+    switch (direction)
+    {
+    case DIR_NORTH:
+        return MetatileBehavior_IsRockStairs(MapGridGetMetatileBehaviorAt(x, y));
+    case DIR_SOUTH:
+        MoveCoords(DIR_SOUTH, &x, &y);
+        return MetatileBehavior_IsRockStairs(MapGridGetMetatileBehaviorAt(x, y));
+    default:
+        return FALSE;
     }
 }
 
@@ -1092,6 +1121,17 @@ static void PlayerRun(u8 direction)
 static void PlayerGoSpin(u8 direction)
 {
     PlayerSetAnimId(GetSpinMovementAction(direction), COPY_MOVE_WALK_FAST);
+}
+
+// PS-096: pokefirered's PlayerWalkSlow / PlayerRunSlow, the rock stairs' speeds
+static void PlayerWalkSlow(u8 direction)
+{
+    PlayerSetAnimId(GetWalkSlowMovementAction(direction), COPY_MOVE_WALK);
+}
+
+static void PlayerRunSlow(u8 direction)
+{
+    PlayerSetAnimId(GetPlayerRunSlowMovementAction(direction), COPY_MOVE_WALK);
 }
 
 void PlayerOnBikeCollide(u8 direction)

@@ -46,7 +46,7 @@ enum {
     MB_LAVARIDGE_GYM_B1F_WARP,
     MB_SEAWEED_NO_SURFACING,
     MB_REFLECTION_UNDER_BRIDGE,
-    MB_UNUSED_2C,
+    MB_ROCK_STAIRS, // PS-096: pokefirered's rock stairs (Kanto, 0x2A there): slow walking and running, bikes at walking-fast speed
     MB_UNUSED_2D,
     MB_UNUSED_2E,
     MB_UNUSED_2F,

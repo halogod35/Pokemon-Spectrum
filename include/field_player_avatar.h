@@ -15,6 +15,7 @@ void PlayerWalkNormal(u8 direction);
 void PlayerWalkFast(u8 direction);
 void PlayerRideWaterCurrent(u8 direction);
 void PlayerWalkFaster(u8 direction);
+bool32 PlayerIsMovingOnRockStairs(u8 direction); // PS-096: pokefirered's rock stairs (Kanto)
 void PlayerOnBikeCollide(u8 direction);
 void PlayerFaceDirection(u8 direction);
 void PlayerTurnInPlace(u8 direction);

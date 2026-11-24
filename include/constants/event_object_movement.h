@@ -248,6 +248,10 @@
 #define MOVEMENT_ACTION_SPIN_UP                         0x9F
 #define MOVEMENT_ACTION_SPIN_LEFT                       0xA0
 #define MOVEMENT_ACTION_SPIN_RIGHT                      0xA1
+#define MOVEMENT_ACTION_PLAYER_RUN_DOWN_SLOW            0xA2
+#define MOVEMENT_ACTION_PLAYER_RUN_UP_SLOW              0xA3
+#define MOVEMENT_ACTION_PLAYER_RUN_LEFT_SLOW            0xA4
+#define MOVEMENT_ACTION_PLAYER_RUN_RIGHT_SLOW           0xA5
 
 #define MOVEMENT_ACTION_STEP_END 0xFE
 #define MOVEMENT_ACTION_NONE     0xFF

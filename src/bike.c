@@ -272,7 +272,10 @@ static void MachBikeTransition_TrySpeedUp(u8 direction)
         else
         {
             // we did not hit anything that can slow us down, so perform the advancement callback depending on the bikeFrameCounter and try to increase the mach bike's speed.
-            sMachBikeSpeedCallbacks[gPlayerAvatar.bikeFrameCounter](direction);
+            if (PlayerIsMovingOnRockStairs(direction)) // PS-096: pokefirered's rock stairs hold a bike at walking-fast speed
+                PlayerWalkFast(direction);
+            else
+                sMachBikeSpeedCallbacks[gPlayerAvatar.bikeFrameCounter](direction);
             gPlayerAvatar.bikeSpeed = gPlayerAvatar.bikeFrameCounter + (gPlayerAvatar.bikeFrameCounter >> 1); // same as dividing by 2, but compiler is insistent on >> 1
             if (gPlayerAvatar.bikeFrameCounter < 2) // do not go faster than the last element in the mach bike array
                 gPlayerAvatar.bikeFrameCounter++;
@@ -306,7 +309,10 @@ static void MachBikeTransition_TrySlowDown(u8 direction)
     }
     else
     {
-        sMachBikeSpeedCallbacks[gPlayerAvatar.bikeFrameCounter](direction);
+        if (PlayerIsMovingOnRockStairs(direction)) // PS-096
+            PlayerWalkFast(direction);
+        else
+            sMachBikeSpeedCallbacks[gPlayerAvatar.bikeFrameCounter](direction);
     }
 }
 
@@ -603,7 +609,10 @@ static void AcroBikeTransition_Moving(u8 direction)
     }
     else
     {
-        PlayerRideWaterCurrent(direction);
+        if (PlayerIsMovingOnRockStairs(direction)) // PS-096: pokefirered's rock stairs hold a bike at walking-fast speed
+            PlayerWalkFast(direction);
+        else
+            PlayerRideWaterCurrent(direction);
     }
 }
 

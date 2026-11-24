@@ -170,6 +170,8 @@ static void DoShadowFieldEffect(struct ObjectEvent *);
 static void SetJumpSpriteData(struct Sprite *, u8, u8, u8);
 static void SetWalkSlowSpriteData(struct Sprite *, u8);
 static bool8 UpdateWalkSlowAnim(struct Sprite *);
+static void SetRunSlowSpriteData(struct Sprite *, u8); // PS-096: Kanto rock stairs
+static bool8 UpdateRunSlowAnim(struct Sprite *);
 static u8 DoJumpSpriteMovement(struct Sprite *);
 static u8 DoJumpSpecialSpriteMovement(struct Sprite *);
 static void CreateLevitateMovementTask(struct ObjectEvent *);
@@ -5031,6 +5033,14 @@ static const u8 sSpinMovementActions[] = {
     MOVEMENT_ACTION_SPIN_RIGHT,
 };
 dirn_to_anim(GetSpinMovementAction, sSpinMovementActions);
+static const u8 sPlayerRunSlowMovementActions[] = {
+    MOVEMENT_ACTION_PLAYER_RUN_DOWN_SLOW,
+    MOVEMENT_ACTION_PLAYER_RUN_DOWN_SLOW,
+    MOVEMENT_ACTION_PLAYER_RUN_UP_SLOW,
+    MOVEMENT_ACTION_PLAYER_RUN_LEFT_SLOW,
+    MOVEMENT_ACTION_PLAYER_RUN_RIGHT_SLOW,
+};
+dirn_to_anim(GetPlayerRunSlowMovementAction, sPlayerRunSlowMovementActions);
 
 bool8 ObjectEventFaceOppositeDirection(struct ObjectEvent *objectEvent, u8 direction)
 {
@@ -5214,6 +5224,99 @@ static bool8 UpdateWalkSlow(struct ObjectEvent *objectEvent, struct Sprite *spri
         ShiftStillObjectEventCoords(objectEvent);
         objectEvent->triggerGroundEffectsOnStop = TRUE;
         sprite->animPaused = TRUE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// PS-096: pokefirered's InitRunSlow / UpdateRunSlow (its event_object_movement.c): the running animation at
+// the rock stairs' speed, for the player on Kanto's rock stairs
+static void InitRunSlow(struct ObjectEvent *objectEvent, struct Sprite *sprite, u8 direction)
+{
+    s16 x = objectEvent->currentCoords.x;
+    s16 y = objectEvent->currentCoords.y;
+
+    SetObjectEventDirection(objectEvent, direction);
+    MoveCoords(direction, &x, &y);
+    ShiftObjectEventCoords(objectEvent, x, y);
+    SetRunSlowSpriteData(sprite, direction);
+    sprite->animPaused = FALSE;
+    objectEvent->triggerGroundEffectsOnMove = TRUE;
+    sprite->sActionFuncId = 1;
+    SetStepAnimHandleAlternation(objectEvent, sprite, GetRunningDirectionAnimNum(objectEvent->facingDirection));
+}
+
+static bool8 UpdateRunSlow(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateRunSlowAnim(sprite))
+    {
+        ShiftStillObjectEventCoords(objectEvent);
+        objectEvent->triggerGroundEffectsOnStop = TRUE;
+        sprite->animPaused = TRUE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+bool8 MovementAction_PlayerRunDownSlow_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    InitRunSlow(objectEvent, sprite, DIR_SOUTH);
+    return MovementAction_PlayerRunDownSlow_Step1(objectEvent, sprite);
+}
+
+bool8 MovementAction_PlayerRunDownSlow_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateRunSlow(objectEvent, sprite))
+    {
+        sprite->sActionFuncId = 2;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+bool8 MovementAction_PlayerRunUpSlow_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    InitRunSlow(objectEvent, sprite, DIR_NORTH);
+    return MovementAction_PlayerRunUpSlow_Step1(objectEvent, sprite);
+}
+
+bool8 MovementAction_PlayerRunUpSlow_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateRunSlow(objectEvent, sprite))
+    {
+        sprite->sActionFuncId = 2;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+bool8 MovementAction_PlayerRunLeftSlow_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    InitRunSlow(objectEvent, sprite, DIR_WEST);
+    return MovementAction_PlayerRunLeftSlow_Step1(objectEvent, sprite);
+}
+
+bool8 MovementAction_PlayerRunLeftSlow_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateRunSlow(objectEvent, sprite))
+    {
+        sprite->sActionFuncId = 2;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+bool8 MovementAction_PlayerRunRightSlow_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    InitRunSlow(objectEvent, sprite, DIR_EAST);
+    return MovementAction_PlayerRunRightSlow_Step1(objectEvent, sprite);
+}
+
+bool8 MovementAction_PlayerRunRightSlow_Step1(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    if (UpdateRunSlow(objectEvent, sprite))
+    {
+        sprite->sActionFuncId = 2;
         return TRUE;
     }
     return FALSE;
@@ -8481,6 +8584,34 @@ static bool8 UpdateWalkSlowAnim(struct Sprite *sprite)
     }
 
     sprite->sTimer++;
+
+    if (sprite->sNumSteps > 15)
+        return TRUE;
+    else
+        return FALSE;
+}
+
+// PS-096: pokefirered's run on rock stairs (its SetRunSlowSpriteData / UpdateRunSlowAnim): 1 px and 2 px on
+// alternate frames, so a tile takes 11 frames (between walking and running)
+static void SetRunSlowSpriteData(struct Sprite *sprite, u8 direction)
+{
+    sprite->sDirection = direction;
+    sprite->sTimer = 0;
+    sprite->sNumSteps = 0;
+}
+
+static bool8 UpdateRunSlowAnim(struct Sprite *sprite)
+{
+    if ((++sprite->sTimer) & 1)
+    {
+        Step1(sprite, sprite->sDirection);
+        sprite->sNumSteps++;
+    }
+    else
+    {
+        Step2(sprite, sprite->sDirection);
+        sprite->sNumSteps += 2;
+    }
 
     if (sprite->sNumSteps > 15)
         return TRUE;

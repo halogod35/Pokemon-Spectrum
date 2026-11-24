@@ -3,18 +3,18 @@
 # note. A FRLG behaviour whose name exists unchanged in Emerald needs no row (the converter maps it
 # by name; the id may differ, e.g. MB_BOOKSHELF 0x81 -> 0xE1, MB_ICE 0x23 -> 0x20). "-" in the
 # Emerald column means "no equivalent, needs a handler": the converter reports every referenced
-# metatile with it and fails unless --allow-unknown (then MB_NORMAL). "?" in the note marks a
-# best guess for PS-096's behaviour audit.
+# metatile with it and fails unless --allow-unknown (then MB_NORMAL). PS-096 resolved every "?" of the
+# first import: a row's note says what pokefirered does with the behaviour and what happens here.
 #
 # frlg	emerald	note
 MB_RUNNING_DISALLOWED	MB_NO_RUNNING	same id 0x0A, renamed
-MB_FAST_WATER	MB_OCEAN_WATER	? current water: Seafoam Islands B3F/B4F (3 metatiles) and Sevii (3025 cells); the current that carries the player is not implemented (PS-096), plain surfable water until then
+MB_FAST_WATER	MB_OCEAN_WATER	PS-096: Seafoam Islands B3F/B4F current water (3 metatiles; Sevii has 3025 cells). In pokefirered's engine the behaviour only refuses Surf onto it ("The current is too fast", field_control_avatar.c GetInteractedWaterScript); the ride itself is the maps' scripts (applymovement paths chosen by the player's x, VAR_TEMP_1 set by the fall warp, the *_CURRENT_STOPPED layouts switched by setmaplayoutindex when both boulders sit on the switches) and no scripts are imported, so it is plain surfable water here
 MB_UNUSED_WATER	MB_POND_WATER	unused in layouts
 MB_UNDERWATER_BLOCKED_ABOVE	MB_NO_SURFACING	unused in layouts
-MB_CYCLING_ROAD_WATER	MB_OCEAN_WATER	? Route 17 water next to the cycling road (751 cells); FRLG only uses it for reflections
-MB_STRENGTH_BUTTON	MB_NORMAL	? boulder switch (Seafoam/Victory Road, 4 cells): puzzle not functional until PS-096
-MB_ROCK_STAIRS	MB_NORMAL	? FRLG: no running/biking on rock stairs (72 Kanto cells)
-MB_SAND_CAVE	MB_CAVE	? cave floor with sand: land encounters kept, footprints lost
+MB_CYCLING_ROAD_WATER	MB_OCEAN_WATER	PS-096: Route 17 water beside the cycling road (751 cells); pokefirered's engine treats it as surfable water that reflects (MetatileBehavior_IsReflective), nothing else: Emerald's ocean water does both
+MB_STRENGTH_BUTTON	MB_NORMAL	PS-096: boulder switch (Seafoam Islands / Victory Road, 4 cells). pokefirered runs the coord event's script at the switch when a Strength boulder lands on it (field_control_avatar.c HandleBoulderActivateVictoryRoadSwitch); the boulders are object events and the effect a script, neither is imported, so it is plain floor here (the puzzle is story content)
+MB_ROCK_STAIRS	MB_ROCK_STAIRS	PS-096: same name here (0x2C): walking and running are slowed down going up or down the stairs, a bike moves at walking-fast speed (field_player_avatar.c PlayerIsMovingOnRockStairs, bike.c), as pokefirered
+MB_SAND_CAVE	MB_FOOTPRINTS	PS-096: cave floor with sand (pokefirered: MetatileBehavior_IsSand, footprints + land encounters). Emerald's MB_FOOTPRINTS does exactly that (GetGroundEffectFlags_Tracks, HAS_ENCOUNTERS) and no Hoenn metatile uses it
 MB_SPIN_RIGHT	MB_SPIN_RIGHT	PS-096: same name and id here: spinner tile (Rocket Hideout, Viridian Gym, Team Rocket warehouse), the player spins in that direction across the floor until a stop tile or a wall (field_player_avatar.c TryUpdatePlayerSpinDirection, pokefirered's semantics)
 MB_SPIN_LEFT	MB_SPIN_LEFT	PS-096: spinner tile
 MB_SPIN_UP	MB_SPIN_UP	PS-096: spinner tile
@@ -23,7 +23,7 @@ MB_STOP_SPINNING	MB_STOP_SPINNING	PS-096: same name and id here: ends the spin (
 MB_CAVE_DOOR	MB_NON_ANIMATED_DOOR	cave entrance warp
 MB_FALL_WARP	MB_CRACKED_FLOOR_HOLE	fall through a hole
 MB_REGULAR_WARP	MB_AQUA_HIDEOUT_WARP	teleport pad (Sabrina's gym, Silph Co, Rocket Hideout)
-MB_WARP_DOOR	MB_ANIMATED_DOOR	building door; FRLG door animations are PS-096 (no entry in sDoorAnimGraphicsTable: the door just does not animate)
+MB_WARP_DOOR	MB_ANIMATED_DOOR	building door; PS-098: pokefirered's door animations are in sKantoDoorAnimGraphicsTable (src/field_door.c), chosen by the map's primary tileset
 MB_UP_RIGHT_STAIR_WARP	MB_UP_RIGHT_STAIR_WARP	PS-098: directional stair warp (same name here): diagonal step onto the stairs + warp, field_control_avatar.c / field_screen_effect.c
 MB_UP_LEFT_STAIR_WARP	MB_UP_LEFT_STAIR_WARP	PS-098: directional stair warp
 MB_DOWN_RIGHT_STAIR_WARP	MB_DOWN_RIGHT_STAIR_WARP	PS-098: directional stair warp

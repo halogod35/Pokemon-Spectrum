@@ -170,6 +170,7 @@ u8 GetWalkFasterMovementAction(u32);
 u8 GetPlayerRunMovementAction(u32);
 u8 GetSpinMovementAction(u32); // PS-096: Kanto spinner tiles
 u8 GetSpinDirectionAnimNum(u8 direction);
+u8 GetPlayerRunSlowMovementAction(u32); // PS-096: Kanto rock stairs
 u8 GetJumpInPlaceMovementAction(u32);
 u8 GetAcroWheelieFaceDirectionMovementAction(u32);
 u8 GetAcroPopWheelieFaceDirectionMovementAction(u32);

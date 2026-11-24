@@ -133,6 +133,7 @@ static const u8 sTileBitAttributes[NUM_METATILE_BEHAVIORS] =
     [MB_STOP_SPINNING]                   = TILE_FLAG_UNUSED,
     [MB_CYCLING_ROAD_PULL_DOWN]          = TILE_FLAG_UNUSED,
     [MB_CYCLING_ROAD_PULL_DOWN_GRASS]    = TILE_FLAG_UNUSED | TILE_FLAG_HAS_ENCOUNTERS,
+    [MB_ROCK_STAIRS]                     = TILE_FLAG_UNUSED,
 };
 
 bool8 MetatileBehavior_IsATile(u8 metatileBehavior)
@@ -458,6 +459,15 @@ bool8 MetatileBehavior_IsSpinTile(u8 metatileBehavior)
 bool8 MetatileBehavior_IsCyclingRoadPullDownTile(u8 metatileBehavior)
 {
     if (metatileBehavior >= MB_CYCLING_ROAD_PULL_DOWN && metatileBehavior <= MB_CYCLING_ROAD_PULL_DOWN_GRASS)
+        return TRUE;
+    else
+        return FALSE;
+}
+
+// PS-096: pokefirered's rock stairs (Kanto): the player moves slowly on them (field_player_avatar.c, bike.c)
+bool8 MetatileBehavior_IsRockStairs(u8 metatileBehavior)
+{
+    if (metatileBehavior == MB_ROCK_STAIRS)
         return TRUE;
     else
         return FALSE;
