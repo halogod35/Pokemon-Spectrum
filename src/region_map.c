@@ -28,6 +28,8 @@
 #include "constants/map_types.h"
 #include "constants/rgb.h"
 #include "constants/weather.h"
+#include "decompress.h" // PS-101: GetDecompressedDataSize
+#include "dma3.h"       // PS-101: RequestDma3Copy, CheckForSpaceForDma3Request
 
 /*
  *  This file handles region maps generally, and the map used when selecting a fly destination.
@@ -81,6 +83,57 @@ static EWRAM_DATA struct {
 } *sFlyMap = NULL;
 
 static bool32 sDrawFlyDestTextWindow;
+
+// PS-101 (BUG-019): the L/R region switch (SwitchRegionMapRegion) decompresses the new picture into these
+// buffers and copies it to VRAM through the DMA3 manager instead of LZ77UnCompVram. On the PC the frame
+// order is game tick -> draw -> VBlank (sdl2.c), so a direct VRAM write is drawn one frame before everything
+// that goes through the VBlank: the palette (gPlttBuffer -> PLTT in TransferPlttBuffer), the cursor and
+// player icon (gMain.oamBuffer -> OAM in LoadOam) and the DMA3 queue (ProcessDma3Requests). The new tiles
+// and tilemap were shown in the old palette, with the old cursor, for one frame. Queued through DMA3 they
+// land in the same VBlank as the palette and the sprites. The buffers are static so nothing has to be freed
+// later (the PokéNav's header switch does the same with gDecompressionBuffer, which is in use in that tick).
+// Sizes: one charBaseIdx block holds at most 256 8bpp tiles; the 64x64 affine tilemap is 4 KiB.
+static EWRAM_DATA ALIGNED(4) u8 sSwitchTilesBuffer[0x4000] = {0};
+static EWRAM_DATA ALIGNED(4) u8 sSwitchTilemapBuffer[0x1000] = {0};
+static EWRAM_DATA s16 sSwitchDmaRequests[2] = {-1, -1}; // DMA3 request slots of the last switch, -1 when done
+
+// PS-101: returns TRUE while a copy queued by the last L/R switch is still in the DMA3 queue, and forgets
+// the slots of finished copies (so a slot reused by a later request is not mistaken for ours).
+static bool8 PollRegionMapSwitchCopies(void)
+{
+    u32 i;
+    bool8 pending = FALSE;
+
+    for (i = 0; i < ARRAY_COUNT(sSwitchDmaRequests); i++)
+    {
+        if (sSwitchDmaRequests[i] == -1)
+            continue;
+        if (CheckForSpaceForDma3Request(sSwitchDmaRequests[i]) != 0)
+            pending = TRUE;
+        else
+            sSwitchDmaRequests[i] = -1;
+    }
+    return pending;
+}
+
+// PS-101: decompress an LZ asset into buf and queue its copy to dest through the DMA3 manager; returns the
+// request slot. Falls back to the direct VRAM write (the pre-PS-101 behaviour, one early frame) and returns
+// -1 when the asset does not fit the buffer or the request queue is full. Neither happens with the shipped
+// assets; the fallback only guarantees the picture is never skipped.
+static s16 QueueRegionMapGfxCopy(const u32 *src, void *buf, u32 bufSize, void *dest)
+{
+    u32 size = GetDecompressedDataSize(src);
+    s16 request = -1;
+
+    if (size != 0 && size <= bufSize)
+    {
+        LZ77UnCompWram(src, buf);
+        request = RequestDma3Copy(buf, dest, size, 0);
+    }
+    if (request == -1)
+        LZ77UnCompVram(src, dest);
+    return request;
+}
 
 static u8 ProcessRegionMapInput_Full(void);
 static u8 MoveRegionMapCursor_Full(void);
@@ -524,6 +577,8 @@ void InitRegionMapData(struct RegionMap *regionMap, const struct BgTemplate *tem
     sRegionMap->playerRegion = GetCurrentRegion(); // PS-071: show the region the player is in
     sRegionMap->region = sRegionMap->playerRegion;
     sRegionMap->needsPokenavMap = FALSE;
+    sSwitchDmaRequests[0] = -1; // PS-101: the screen init cleared the DMA3 queue, so slots from an earlier map are stale
+    sSwitchDmaRequests[1] = -1;
     if (template != NULL)
     {
         sRegionMap->bgNum = template->bg;
@@ -658,6 +713,7 @@ void FreeRegionMapIconResources(void)
 
 u8 DoRegionMapInputCallback(void)
 {
+    PollRegionMapSwitchCopies(); // PS-101: forget the request slots of the last L/R switch once its copies are done
     return sRegionMap->inputCallback();
 }
 
@@ -1726,11 +1782,18 @@ static u8 SwitchRegionMapRegion(s8 direction)
 
     if (region == sRegionMap->region || sRegionMap->zoomed)
         return MAP_INPUT_NONE;
+    if (PollRegionMapSwitchCopies()) // PS-101: the last switch has not reached VRAM yet (its buffers are still being read)
+        return MAP_INPUT_NONE;
     sRegionMap->region = region;
     info = GetRegionInfo(region);
+    // PS-101: tiles and tilemap go through the DMA3 queue so they land in the same VBlank as the palette
+    // and the cursor / player icon, see sSwitchTilesBuffer. The palette stays in gPlttBuffer (LoadPalette)
+    // so later fades and BlendRegionMap keep working on it.
     if (info->mapTilesLZ != old->mapTilesLZ)
-        LZ77UnCompVram(info->mapTilesLZ, (u16 *)BG_CHAR_ADDR(sRegionMap->charBaseIdx));
-    LZ77UnCompVram(info->mapTilemapLZ, (u16 *)BG_SCREEN_ADDR(sRegionMap->mapBaseIdx));
+        sSwitchDmaRequests[0] = QueueRegionMapGfxCopy(info->mapTilesLZ, sSwitchTilesBuffer, sizeof(sSwitchTilesBuffer),
+                                                      (void *)BG_CHAR_ADDR(sRegionMap->charBaseIdx));
+    sSwitchDmaRequests[1] = QueueRegionMapGfxCopy(info->mapTilemapLZ, sSwitchTilemapBuffer, sizeof(sSwitchTilemapBuffer),
+                                                  (void *)BG_SCREEN_ADDR(sRegionMap->mapBaseIdx));
     if (info->mapPalette != old->mapPalette)
         LoadPalette(info->mapPalette, BG_PLTT_ID(7), 3 * PLTT_SIZE_4BPP);
 
