@@ -178,3 +178,9 @@ it from WSL with `./pokemon-spectrum64.exe`. The save `pokemon-spectrum.sav` is 
 It runs `make linux` (64-bit, plus a non-blocking 32-bit job) and `make winwsl` (64- and 32-bit), then the
 headless self-tests on the Linux executables. The Windows and Linux executables are uploaded as workflow artifacts.
 Before each build it runs `make checkspecials` (`tools/check_specials.sh`, bash only), which fails if any script special returns `bool8`/`u8`/`s8` (PS-090).
+
+## Kanto map import (optional, PS-093)
+
+The Kanto maps (`data/maps/Kanto*`, `data/layouts/Kanto*`, `data/tilesets/*/kanto_*`) are generated from a
+pret/pokefirered checkout by `tools/kanto_import/kanto_import.pl` (Perl with core modules only, no Python) and
+committed, so building needs nothing extra. Re-importing does: see `tools/kanto_import/README.md`.

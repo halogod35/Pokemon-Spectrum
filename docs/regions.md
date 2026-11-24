@@ -5,8 +5,10 @@ value it had in Emerald (map sections, flags, scripts, Fly table). Every other r
 entry in the **region table** (`src/region.c`, `sRegions[]`, types in `include/region.h`,
 ids in `include/constants/regions.h`) plus ordinary map data.
 
-This file is the checklist for adding one. The policy (card PS-069) stands: regions are the
-user's own designs, built in Porymap; nothing from other games is imported.
+This file is the checklist for adding one. Regions are either the user's own designs, built in
+Porymap, or map data imported mechanically from a pret GBA decomp (user decision 2026-11-21, epic
+PS-093: Kanto from `pokefirered`, see "Kanto" below). Story content (NPCs, trainers, items,
+dialogue) is never imported.
 
 ## What the engine does per region
 
@@ -31,7 +33,7 @@ hold a section id above 0xFF. Rule (`GetMetLocationForMapSec`, `region.c`):
 - Hoenn maps store the map section itself (all below 0xD6), as before.
 - A map of any other region stores the region's **alias**: `RegionInfo.metLocation`, a value
   in `METLOC_REGION_START..METLOC_REGION_END` (0xD6-0xFC, one per region). `GetMapName()`
-  shows the region's name for it, so the summary screen reads "met in TEMPLATE" rather than
+  shows the region's name for it, so the summary screen reads "met in KANTO" rather than
   the exact town. 0xFD-0xFF stay the `METLOC_*` specials.
 - Writers must go through `GetCurrentMetLocation()` / `GetMetLocationForMapSec()`, never store
   `gMapHeader.regionMapSectionId` in a u8 (pokemon.c, egg_hatch.c, tv.c do).
@@ -40,7 +42,7 @@ hold a section id above 0xFF. Rule (`GetMetLocationForMapSec`, `region.c`):
 
 1. **Id.** `include/constants/regions.h`: add `REGION_<NAME>` before `REGIONS_COUNT`, bump the count.
 2. **Map sections.** `src/data/region_map/region_map_sections.json`: append the region's sections
-   after the existing ones (after `MAPSEC_NONE` and the template's). The first section of the
+   after the existing ones (after `MAPSEC_NONE`; Kanto's generated ones come last). The first section of the
    first non-Hoenn region carries `"value": "0x100"`; later ones just follow. `x`, `y`, `width`,
    `height` are the section's cell(s) on **that region's** map. The build regenerates
    `include/constants/region_map_sections.h` and `gRegionMapEntries`.
@@ -57,15 +59,14 @@ hold a section id above 0xFF. Rule (`GetMetLocationForMapSec`, `region.c`):
    palette are possible: point `mapTilesLZ`/`mapPalette` at them (8bpp tiles, 3 palettes from
    `BG_PLTT_ID(7)`). Tile 0x0D is Hoenn's inland town marker, 0x00 is open sea.
 7. **Layout.** A `[REGION_MAP_HEIGHT][REGION_MAP_WIDTH]` array of `MAPSEC_*` (`MAPSEC_NONE`
-   for empty cells), like `src/data/region_map/template_region_map_layout.h`. It must agree
+   for empty cells), like the generated `src/data/region_map/kanto_region.h`. It must agree
    with the `x`/`y` in step 2.
 8. **Table entry.** `src/region.c` `sRegions[REGION_<NAME>]`: name (up to 10 characters fit
    the Fly window line), `mapSecStart`/`mapSecEnd`, `metLocation` (next free alias:
    `METLOC_REGION_START + n`), layout, graphics, Fly spots, `hasPokenavMap`, `popupTheme`,
    `firstBadgeFlag`.
 9. **Transit.** Add the region's hub(s) to `sRegionTransitDestinations[]` and give a ferry/train
-   NPC the script from `data/scripts/region_transit.inc` (example in the file and in
-   `data/maps/TemplateTown/scripts.inc`).
+   NPC the script from `data/scripts/region_transit.inc` (example in the file).
 10. **Multiplayer.** `src/mp/mp_presence.c`: append `MP_GROUP_SIZE(<last map of the group>)` and
     `MP_CHECK_GROUP(<index>, ...)` for the new map group (the build fails until you do).
 11. **Badges.** Gym scripts `setflag FLAG_BADGE<nn>_GET` from the region's block. Field moves
@@ -73,20 +74,24 @@ hold a section id above 0xFF. Rule (`GetMetLocationForMapSec`, `region.c`):
 12. Build through CI, then check: map popups, the wall map, Fly to and from the region (L/R),
     PokéNav map, trainer card, and two players seeing each other there.
 
-## The template region
+## Kanto (PS-093, imported from pret/pokefirered)
 
-`REGION_TEMPLATE` is a placeholder made from Emerald's own tilesets: `data/maps/TemplateTown`
-(20x20 grass ring, a placeholder ferry sailor and a placeholder gym leader who sets
-`FLAG_BADGE09_GET`) and `data/maps/TemplateRoute` above it, two map sections, one Fly spot,
-`graphics/pokenav/region_map/template_map.bin`. It is **not reachable in normal play** (no
-Hoenn script or NPC leads there); test builds add a `TEST ONLY` commit that does. Replace it
-with your own region or delete it (remove the table entry, the maps, the layouts, the sections,
-the map group, `FLAG_VISITED_TEMPLATE_TOWN`, `HEAL_LOCATION_TEMPLATE_TOWN` and the
-`mp_presence.c` entry).
+`REGION_KANTO` is region 1. Its map data is **generated** by `tools/kanto_import/kanto_import.pl`
+from a pokefirered checkout (README in that directory): maps `data/maps/Kanto*`, layouts
+`data/layouts/Kanto*`, tilesets `data/tilesets/*/kanto_*` (re-packed to Emerald's 512-tile /
+512-metatile / 6-palette primary split, see the card PS-094), the `MAPSEC_KANTO_*` sections,
+`HEAL_LOCATION_KANTO_*`, the `FLAG_VISITED_KANTO_*` block in `constants/flags.h`, the
+`gMapGroup_Kanto*` groups, `src/data/tilesets/kanto_*.h`, `src/data/region_map/kanto_region.h`
+(layout, Fly spots, section range), `src/mp/kanto_mp_groups.h` and the placeholder picture
+`graphics/pokenav/region_map/kanto_map.bin`. Edit the converter or its tables, not the output.
+The hand-written parts are the table entry in `src/region.c`, `REGION_KANTO` in
+`constants/regions.h`, and the include/marker hooks listed in the converter's README. Until the
+boat from Hoenn (PS-095) exists Kanto is **not reachable in normal play**; test builds add a
+`TEST ONLY` commit with `--debug-warp` (`docs/multiplayer/dev-harness.md`).
 
 ## Flag space note
 
 The `REGION_FLAGS_START` block lives in the system-flag extension that PS-070 (save expansion) added
 (`SYSTEM_FLAGS_EXT_START`, 0xE00..0xFFF), inside the saved flag space, so region badges and the
-template Fly spot are saved like any other flag. A compile-time check in `constants/flags.h` keeps the
+Kanto visited flags are saved like any other flag. A compile-time check in `constants/flags.h` keeps the
 block inside that range.

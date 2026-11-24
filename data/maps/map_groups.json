@@ -34,7 +34,9 @@
     "gMapGroup_IndoorRoute123",
     "gMapGroup_IndoorRoute119",
     "gMapGroup_IndoorRoute124",
-    "gMapGroup_TemplateRegion"
+    "gMapGroup_KantoTownsAndRoutes",
+    "gMapGroup_KantoIndoorPallet",
+    "gMapGroup_KantoIndoorViridian"
   ],
   "gMapGroup_TownsAndRoutes": [
     "PetalburgCity",
@@ -622,9 +624,24 @@
   "gMapGroup_IndoorRoute124": [
     "Route124_DivingTreasureHuntersHouse"
   ],
-  "gMapGroup_TemplateRegion": [
-    "TemplateTown",
-    "TemplateRoute"
+  "gMapGroup_KantoTownsAndRoutes": [
+    "KantoPalletTown",
+    "KantoViridianCity",
+    "KantoRoute1"
+  ],
+  "gMapGroup_KantoIndoorPallet": [
+    "KantoPalletTown_PlayersHouse_1F",
+    "KantoPalletTown_PlayersHouse_2F",
+    "KantoPalletTown_RivalsHouse",
+    "KantoPalletTown_ProfessorOaksLab"
+  ],
+  "gMapGroup_KantoIndoorViridian": [
+    "KantoViridianCity_House",
+    "KantoViridianCity_Gym",
+    "KantoViridianCity_School",
+    "KantoViridianCity_Mart",
+    "KantoViridianCity_PokemonCenter_1F",
+    "KantoViridianCity_PokemonCenter_2F"
   ],
   "connections_include_order": [
     "LittlerootTown",

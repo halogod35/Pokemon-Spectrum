@@ -5,7 +5,7 @@
 // The table with each region's data is sRegions in src/region.c; docs/regions.md explains how to add one.
 
 #define REGION_HOENN             0
-#define REGION_TEMPLATE          1 // placeholder region made from Emerald's own tilesets, to be replaced (docs/regions.md)
+#define REGION_KANTO             1 // PS-093/PS-094: Kanto, imported from pret/pokefirered by tools/kanto_import (docs/regions.md)
 #define REGIONS_COUNT            2
 #define REGION_NONE              0xFF
 
@@ -18,7 +18,7 @@
 
 // Pokémon met locations and TV show locations are stored as a u8. A map in a region whose
 // sections are above 0xFF stores the region's alias in this range instead (one per region),
-// shown as the region's name ("met in TEMPLATE"). 0xD6 is MAPSEC_NONE + 1; 0xFD-0xFF are the
+// shown as the region's name ("met in KANTO"). 0xD6 is MAPSEC_NONE + 1; 0xFD-0xFF are the
 // METLOC_* specials.
 #define METLOC_REGION_START      0xD6
 #define METLOC_REGION_END        0xFC
