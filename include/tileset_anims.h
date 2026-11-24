@@ -32,4 +32,11 @@ void InitTilesetAnim_EliteFour(void);
 void InitTilesetAnim_BattleDome(void);
 void InitTilesetAnim_BattlePyramid(void);
 
+// PS-096: pokefirered's animations for the Kanto tilesets (tools/kanto_import writes the callbacks)
+void InitTilesetAnim_KantoGeneral(void);
+void InitTilesetAnim_KantoCeladonCity(void);
+void InitTilesetAnim_KantoCeladonGym(void);
+void InitTilesetAnim_KantoSilphCo(void);
+void InitTilesetAnim_KantoVermilionGym(void);
+
 #endif // GUARD_TILESET_ANIMS_H

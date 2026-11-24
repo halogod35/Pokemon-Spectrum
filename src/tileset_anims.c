@@ -1186,3 +1186,235 @@ static void BlendAnimPalette_BattleDome_FloorLightsNoBlend(u16 timer)
             sSecondaryTilesetAnimCallback = NULL;
     }
 }
+
+// PS-096: pokefirered's tileset animations for the Kanto tilesets, ported from its src/tileset_anims.c (frame
+// tables, timers and counter maxima as there). The frames are copied by tools/kanto_import/kanto_import.pl into
+// data/tilesets/*/kanto_*/anim/. The VRAM tile offsets are pokefirered's own: a primary's animated tiles sit
+// below tile 512 (kept by the prefix re-pack), and a secondary's own tiles start at VRAM tile 640 in both
+// engines (pokefirered: 640 primary tiles; here: 512 primary tiles + the 128 re-packed primary tiles that
+// the converter prepends to every Kanto secondary), so the offsets read 640 + n as in pokefirered.
+
+#define KANTO_SECONDARY_TILE_BASE 640
+
+static void TilesetAnim_KantoGeneral(u16);
+static void TilesetAnim_KantoCeladonCity(u16);
+static void TilesetAnim_KantoCeladonGym(u16);
+static void TilesetAnim_KantoSilphCo(u16);
+static void TilesetAnim_KantoVermilionGym(u16);
+
+// 16x16: 4 tiles at 508
+static const u16 sTilesetAnims_KantoGeneral_Flower_Frame0[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/flower/0.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Flower_Frame1[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/flower/1.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Flower_Frame2[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/flower/2.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Flower_Frame3[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/flower/3.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Flower_Frame4[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/flower/4.png", ".4bpp");
+
+static const u16 *const sTilesetAnims_KantoGeneral_Flower[] = {
+    sTilesetAnims_KantoGeneral_Flower_Frame0,
+    sTilesetAnims_KantoGeneral_Flower_Frame1,
+    sTilesetAnims_KantoGeneral_Flower_Frame2,
+    sTilesetAnims_KantoGeneral_Flower_Frame3,
+    sTilesetAnims_KantoGeneral_Flower_Frame4
+};
+
+// 16x192: 48 tiles at 416 (water, the current and the land/water edges)
+static const u16 sTilesetAnims_KantoGeneral_Water_Frame0[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/water_current_landwatersedge/0.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Water_Frame1[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/water_current_landwatersedge/1.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Water_Frame2[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/water_current_landwatersedge/2.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Water_Frame3[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/water_current_landwatersedge/3.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Water_Frame4[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/water_current_landwatersedge/4.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Water_Frame5[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/water_current_landwatersedge/5.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Water_Frame6[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/water_current_landwatersedge/6.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_Water_Frame7[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/water_current_landwatersedge/7.png", ".4bpp");
+
+static const u16 *const sTilesetAnims_KantoGeneral_Water[] = {
+    sTilesetAnims_KantoGeneral_Water_Frame0,
+    sTilesetAnims_KantoGeneral_Water_Frame1,
+    sTilesetAnims_KantoGeneral_Water_Frame2,
+    sTilesetAnims_KantoGeneral_Water_Frame3,
+    sTilesetAnims_KantoGeneral_Water_Frame4,
+    sTilesetAnims_KantoGeneral_Water_Frame5,
+    sTilesetAnims_KantoGeneral_Water_Frame6,
+    sTilesetAnims_KantoGeneral_Water_Frame7
+};
+
+// 16x72: 18 tiles at 464
+static const u16 sTilesetAnims_KantoGeneral_SandWaterEdge_Frame0[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/sandwatersedge/0.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_SandWaterEdge_Frame1[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/sandwatersedge/1.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_SandWaterEdge_Frame2[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/sandwatersedge/2.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_SandWaterEdge_Frame3[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/sandwatersedge/3.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_SandWaterEdge_Frame4[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/sandwatersedge/4.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_SandWaterEdge_Frame5[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/sandwatersedge/5.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_SandWaterEdge_Frame6[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/sandwatersedge/6.png", ".4bpp");
+static const u16 sTilesetAnims_KantoGeneral_SandWaterEdge_Frame7[] = INCGFX_U16("data/tilesets/primary/kanto_general/anim/sandwatersedge/7.png", ".4bpp");
+
+static const u16 *const sTilesetAnims_KantoGeneral_SandWaterEdge[] = {
+    sTilesetAnims_KantoGeneral_SandWaterEdge_Frame0,
+    sTilesetAnims_KantoGeneral_SandWaterEdge_Frame1,
+    sTilesetAnims_KantoGeneral_SandWaterEdge_Frame2,
+    sTilesetAnims_KantoGeneral_SandWaterEdge_Frame3,
+    sTilesetAnims_KantoGeneral_SandWaterEdge_Frame4,
+    sTilesetAnims_KantoGeneral_SandWaterEdge_Frame5,
+    sTilesetAnims_KantoGeneral_SandWaterEdge_Frame6,
+    sTilesetAnims_KantoGeneral_SandWaterEdge_Frame7
+};
+
+// 16x32: 8 tiles at 640 + 104 (pokefirered: 744)
+static const u16 sTilesetAnims_KantoCeladonCity_Fountain_Frame0[] = INCGFX_U16("data/tilesets/secondary/kanto_celadon_city/anim/fountain/0.png", ".4bpp");
+static const u16 sTilesetAnims_KantoCeladonCity_Fountain_Frame1[] = INCGFX_U16("data/tilesets/secondary/kanto_celadon_city/anim/fountain/1.png", ".4bpp");
+static const u16 sTilesetAnims_KantoCeladonCity_Fountain_Frame2[] = INCGFX_U16("data/tilesets/secondary/kanto_celadon_city/anim/fountain/2.png", ".4bpp");
+static const u16 sTilesetAnims_KantoCeladonCity_Fountain_Frame3[] = INCGFX_U16("data/tilesets/secondary/kanto_celadon_city/anim/fountain/3.png", ".4bpp");
+static const u16 sTilesetAnims_KantoCeladonCity_Fountain_Frame4[] = INCGFX_U16("data/tilesets/secondary/kanto_celadon_city/anim/fountain/4.png", ".4bpp");
+
+static const u16 *const sTilesetAnims_KantoCeladonCity_Fountain[] = {
+    sTilesetAnims_KantoCeladonCity_Fountain_Frame0,
+    sTilesetAnims_KantoCeladonCity_Fountain_Frame1,
+    sTilesetAnims_KantoCeladonCity_Fountain_Frame2,
+    sTilesetAnims_KantoCeladonCity_Fountain_Frame3,
+    sTilesetAnims_KantoCeladonCity_Fountain_Frame4
+};
+
+// 16x32: 8 tiles at 640 + 336 (pokefirered: 976; the tiles are condominiums', which silph_co draws with)
+static const u16 sTilesetAnims_KantoSilphCo_Fountain_Frame0[] = INCGFX_U16("data/tilesets/secondary/kanto_silph_co/anim/fountain/0.png", ".4bpp");
+static const u16 sTilesetAnims_KantoSilphCo_Fountain_Frame1[] = INCGFX_U16("data/tilesets/secondary/kanto_silph_co/anim/fountain/1.png", ".4bpp");
+static const u16 sTilesetAnims_KantoSilphCo_Fountain_Frame2[] = INCGFX_U16("data/tilesets/secondary/kanto_silph_co/anim/fountain/2.png", ".4bpp");
+static const u16 sTilesetAnims_KantoSilphCo_Fountain_Frame3[] = INCGFX_U16("data/tilesets/secondary/kanto_silph_co/anim/fountain/3.png", ".4bpp");
+
+static const u16 *const sTilesetAnims_KantoSilphCo_Fountain[] = {
+    sTilesetAnims_KantoSilphCo_Fountain_Frame0,
+    sTilesetAnims_KantoSilphCo_Fountain_Frame1,
+    sTilesetAnims_KantoSilphCo_Fountain_Frame2,
+    sTilesetAnims_KantoSilphCo_Fountain_Frame3
+};
+
+// 56x8: 7 tiles at 640 + 240 (pokefirered: 880)
+static const u16 sTilesetAnims_KantoVermilionGym_MotorizedDoor_Frame0[] = INCGFX_U16("data/tilesets/secondary/kanto_vermilion_gym/anim/motorizeddoor/0.png", ".4bpp");
+static const u16 sTilesetAnims_KantoVermilionGym_MotorizedDoor_Frame1[] = INCGFX_U16("data/tilesets/secondary/kanto_vermilion_gym/anim/motorizeddoor/1.png", ".4bpp");
+
+static const u16 *const sTilesetAnims_KantoVermilionGym_MotorizedDoor[] = {
+    sTilesetAnims_KantoVermilionGym_MotorizedDoor_Frame0,
+    sTilesetAnims_KantoVermilionGym_MotorizedDoor_Frame1
+};
+
+// 16x16: 4 tiles at 640 + 99 (pokefirered: 739)
+static const u16 sTilesetAnims_KantoCeladonGym_Flowers_Frame0[] = INCGFX_U16("data/tilesets/secondary/kanto_celadon_gym/anim/flowers/0.png", ".4bpp");
+static const u16 sTilesetAnims_KantoCeladonGym_Flowers_Frame1[] = INCGFX_U16("data/tilesets/secondary/kanto_celadon_gym/anim/flowers/1.png", ".4bpp");
+static const u16 sTilesetAnims_KantoCeladonGym_Flowers_Frame2[] = INCGFX_U16("data/tilesets/secondary/kanto_celadon_gym/anim/flowers/2.png", ".4bpp");
+
+static const u16 *const sTilesetAnims_KantoCeladonGym_Flowers[] = {
+    sTilesetAnims_KantoCeladonGym_Flowers_Frame0,
+    sTilesetAnims_KantoCeladonGym_Flowers_Frame1,
+    sTilesetAnims_KantoCeladonGym_Flowers_Frame2,
+    sTilesetAnims_KantoCeladonGym_Flowers_Frame1
+};
+
+static void QueueAnimTiles_KantoGeneral_Flower(u16 timer)
+{
+    u16 i = timer % ARRAY_COUNT(sTilesetAnims_KantoGeneral_Flower);
+    AppendTilesetAnimToBuffer(sTilesetAnims_KantoGeneral_Flower[i], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(508)), 4 * TILE_SIZE_4BPP);
+}
+
+static void QueueAnimTiles_KantoGeneral_Water(u16 timer)
+{
+    u16 i = timer % ARRAY_COUNT(sTilesetAnims_KantoGeneral_Water);
+    AppendTilesetAnimToBuffer(sTilesetAnims_KantoGeneral_Water[i], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(416)), 48 * TILE_SIZE_4BPP);
+}
+
+static void QueueAnimTiles_KantoGeneral_SandWaterEdge(u16 timer)
+{
+    u16 i = timer % ARRAY_COUNT(sTilesetAnims_KantoGeneral_SandWaterEdge);
+    AppendTilesetAnimToBuffer(sTilesetAnims_KantoGeneral_SandWaterEdge[i], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(464)), 18 * TILE_SIZE_4BPP);
+}
+
+static void TilesetAnim_KantoGeneral(u16 timer)
+{
+    if (timer % 8 == 0)
+        QueueAnimTiles_KantoGeneral_SandWaterEdge(timer / 8);
+    if (timer % 16 == 1)
+        QueueAnimTiles_KantoGeneral_Water(timer / 16);
+    if (timer % 16 == 2)
+        QueueAnimTiles_KantoGeneral_Flower(timer / 16);
+}
+
+void InitTilesetAnim_KantoGeneral(void)
+{
+    sPrimaryTilesetAnimCounter = 0;
+    sPrimaryTilesetAnimCounterMax = 640;
+    sPrimaryTilesetAnimCallback = TilesetAnim_KantoGeneral;
+}
+
+static void QueueAnimTiles_KantoCeladonCity_Fountain(u16 timer)
+{
+    u16 i = timer % ARRAY_COUNT(sTilesetAnims_KantoCeladonCity_Fountain);
+    AppendTilesetAnimToBuffer(sTilesetAnims_KantoCeladonCity_Fountain[i], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(KANTO_SECONDARY_TILE_BASE + 104)), 8 * TILE_SIZE_4BPP);
+}
+
+static void TilesetAnim_KantoCeladonCity(u16 timer)
+{
+    if (timer % 12 == 0)
+        QueueAnimTiles_KantoCeladonCity_Fountain(timer / 12);
+}
+
+void InitTilesetAnim_KantoCeladonCity(void)
+{
+    sSecondaryTilesetAnimCounter = 0;
+    sSecondaryTilesetAnimCounterMax = 120;
+    sSecondaryTilesetAnimCallback = TilesetAnim_KantoCeladonCity;
+}
+
+static void QueueAnimTiles_KantoSilphCo_Fountain(u16 timer)
+{
+    u16 i = timer % ARRAY_COUNT(sTilesetAnims_KantoSilphCo_Fountain);
+    AppendTilesetAnimToBuffer(sTilesetAnims_KantoSilphCo_Fountain[i], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(KANTO_SECONDARY_TILE_BASE + 336)), 8 * TILE_SIZE_4BPP);
+}
+
+static void TilesetAnim_KantoSilphCo(u16 timer)
+{
+    if (timer % 10 == 0)
+        QueueAnimTiles_KantoSilphCo_Fountain(timer / 10);
+}
+
+void InitTilesetAnim_KantoSilphCo(void)
+{
+    sSecondaryTilesetAnimCounter = 0;
+    sSecondaryTilesetAnimCounterMax = 160;
+    sSecondaryTilesetAnimCallback = TilesetAnim_KantoSilphCo;
+}
+
+static void QueueAnimTiles_KantoVermilionGym_MotorizedDoor(u16 timer)
+{
+    u16 i = timer % ARRAY_COUNT(sTilesetAnims_KantoVermilionGym_MotorizedDoor);
+    AppendTilesetAnimToBuffer(sTilesetAnims_KantoVermilionGym_MotorizedDoor[i], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(KANTO_SECONDARY_TILE_BASE + 240)), 7 * TILE_SIZE_4BPP);
+}
+
+static void TilesetAnim_KantoVermilionGym(u16 timer)
+{
+    if (timer % 2 == 0)
+        QueueAnimTiles_KantoVermilionGym_MotorizedDoor(timer / 2);
+}
+
+void InitTilesetAnim_KantoVermilionGym(void)
+{
+    sSecondaryTilesetAnimCounter = 0;
+    sSecondaryTilesetAnimCounterMax = 240;
+    sSecondaryTilesetAnimCallback = TilesetAnim_KantoVermilionGym;
+}
+
+static void QueueAnimTiles_KantoCeladonGym_Flowers(u16 timer)
+{
+    u16 i = timer % ARRAY_COUNT(sTilesetAnims_KantoCeladonGym_Flowers);
+    AppendTilesetAnimToBuffer(sTilesetAnims_KantoCeladonGym_Flowers[i], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(KANTO_SECONDARY_TILE_BASE + 99)), 4 * TILE_SIZE_4BPP);
+}
+
+static void TilesetAnim_KantoCeladonGym(u16 timer)
+{
+    if (timer % 16 == 0)
+        QueueAnimTiles_KantoCeladonGym_Flowers(timer / 16);
+}
+
+void InitTilesetAnim_KantoCeladonGym(void)
+{
+    sSecondaryTilesetAnimCounter = 0;
+    sSecondaryTilesetAnimCounterMax = 256;
+    sSecondaryTilesetAnimCallback = TilesetAnim_KantoCeladonGym;
+}

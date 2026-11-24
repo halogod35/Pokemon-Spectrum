@@ -182,6 +182,7 @@ sub translate_const
 sub png_read
 {
     my ($path, $width) = @_; # 4bpp rows; PS-098: an 8-bit indexed PNG whose colours stay below 16 is packed to 4bpp
+    # $width: the expected width in pixels (default: a tileset's 128); PS-096: 0 accepts any width in whole tiles
     $width //= $PNG_WIDTH;
     my $d = slurp($path);
     die "$path: not a PNG\n" unless substr($d, 0, 8) eq "\x89PNG\r\n\x1a\n";
@@ -201,8 +202,8 @@ sub png_read
         $pos += 12 + $len;
         last if $type eq 'IEND';
     }
-    die "$path: expected a 4bpp (or 8-bit) indexed, non-interlaced PNG $width px wide (got w=$ihdr{w} bd=$ihdr{bd} ct=$ihdr{ct} il=$ihdr{il})\n"
-        unless $ihdr{w} == $width && ($ihdr{bd} == 4 || $ihdr{bd} == 8) && $ihdr{ct} == 3 && $ihdr{il} == 0;
+    die "$path: expected a 4bpp (or 8-bit) indexed, non-interlaced PNG " . ($width ? "$width px wide" : "with a width in whole tiles") . " (got w=$ihdr{w} bd=$ihdr{bd} ct=$ihdr{ct} il=$ihdr{il})\n"
+        unless ($width ? $ihdr{w} == $width : ($ihdr{w} > 0 && $ihdr{w} % $TILE_PX == 0)) && ($ihdr{bd} == 4 || $ihdr{bd} == 8) && $ihdr{ct} == 3 && $ihdr{il} == 0;
     my $raw = Compress::Zlib::uncompress($idat);
     die "$path: zlib inflate failed\n" unless defined $raw;
     my $stride = $ihdr{bd} == 8 ? $ihdr{w} : $ihdr{w} / 2; # bytes per row: one byte per pixel at 8 bits, two pixels per byte at 4
@@ -522,6 +523,21 @@ sub convert_attributes
     return @out;
 }
 
+# PS-096: tileset animations. pokefirered animates these tilesets (its src/tileset_anims.c, frames in the
+# tileset's anim/ directory); the Kanto callbacks with the same VRAM tile offsets live in our
+# src/tileset_anims.c (the prefix re-pack keeps every tile id: a primary's animated tiles are below 512, a
+# secondary's own tiles start at 640 in both engines). The frames are copied into the re-packed tileset's
+# anim/ directory and the generated header gets the callback. A tileset with frames but no row here
+# (mt_ember: Sevii) is reported and stays still.
+my %TILESET_ANIM_CALLBACKS = (
+    gTileset_General      => 'InitTilesetAnim_KantoGeneral',
+    gTileset_CeladonCity  => 'InitTilesetAnim_KantoCeladonCity',
+    gTileset_CeladonGym   => 'InitTilesetAnim_KantoCeladonGym',
+    gTileset_SilphCo      => 'InitTilesetAnim_KantoSilphCo',
+    gTileset_VermilionGym => 'InitTilesetAnim_KantoVermilionGym',
+);
+my %animFramesCopied; # our tileset sym => frame count
+
 # tilesets -> files. Primaries first, then every (secondary, primary) pair.
 my (@gfxLines, @metaLines, @hdrLines);
 my %writtenTilesets;
@@ -588,7 +604,35 @@ for my $out (@tilesetOutputs)
     }
     queue_write("$repo/$relDir/metatiles.bin", pack('v*', @metatiles));
     queue_write("$repo/$relDir/metatile_attributes.bin", pack('v*', @attrs));
-    $writtenTilesets{$oursym} = { dir => $relDir, nTiles => $nTiles, nMetatiles => scalar(@attrs), shared => $shareWith };
+    # PS-096: animation frames (the tileset's own anim/ directory, also for silph_co whose tiles are condominiums')
+    my $callback = 'NULL';
+    my $animDir = "$t->{dir}/anim";
+    if (my $cb = $TILESET_ANIM_CALLBACKS{$sym})
+    {
+        unless (-d $animDir) { err("tileset $sym: the converter expects animation frames in $animDir for $cb, there are none") }
+        else
+        {
+            my $n = 0;
+            for my $sub (sort glob("$animDir/*"))
+            {
+                next unless -d $sub;
+                my $anim = basename($sub);
+                for my $f (sort { ($a =~ /(\d+)\.png$/)[0] <=> ($b =~ /(\d+)\.png$/)[0] } glob("$sub/*.png"))
+                {
+                    my $png = png_read($f, 0);
+                    queue_write("$repo/$relDir/anim/$anim/" . basename($f), png_build($png->{w}, substr($png->{plte}, 0, 16 * 3), $png->{rows}));
+                    $n++;
+                }
+            }
+            if ($n) { $callback = $cb; $animFramesCopied{$oursym} = $n }
+            else { err("tileset $sym: $animDir holds no <anim>/<n>.png frames") }
+        }
+    }
+    elsif (-d $animDir)
+    {
+        note("tileset $sym: pokefirered animates it ($animDir) but the converter has no callback for it (TILESET_ANIM_CALLBACKS): it stays still");
+    }
+    $writtenTilesets{$oursym} = { dir => $relDir, nTiles => $nTiles, nMetatiles => scalar(@attrs), shared => $shareWith, callback => $callback };
     push @metaLines, "const u16 ${metaVar}[] = INCBIN_U16(\"$relDir/metatiles.bin\");",
                      "const u16 ${attrVar}[] = INCBIN_U16(\"$relDir/metatile_attributes.bin\");", "";
     push @hdrLines, "const struct Tileset $oursym =", "{",
@@ -598,7 +642,7 @@ for my $out (@tilesetOutputs)
                     "    .palettes = $palVar,",
                     "    .metatiles = $metaVar,",
                     "    .metatileAttributes = $attrVar,",
-                    "    .callback = NULL, // tileset animations: PS-096",
+                    ($callback eq 'NULL' ? "    .callback = NULL," : "    .callback = $callback, // PS-096: pokefirered's animation, frames in $relDir/anim"),
                     "};", "";
 }
 
@@ -643,7 +687,8 @@ for my $g (@OBJECT_GFX)
         my $pal = slurp($src);
         $pal =~ s/\r\n/\n/g;
         err("object event palette $from is not a JASC palette") unless $pal =~ /^JASC-PAL\n0100\n16\n/;
-        queue_write("$repo/graphics/object_events/$to", $pal);
+        (my $crlf = $pal) =~ s/\n/\r\n/g; # PS-096: .gitattributes has *.pal eol=crlf; written that way, a run leaves git clean
+        queue_write("$repo/graphics/object_events/$to", $crlf);
     }
 }
 
@@ -1210,7 +1255,8 @@ my $nPrimary = scalar(grep { $_->[0] && !defined $_->[1] } @tilesetOutputs);
 info(sprintf("kanto_import: %d maps in %d groups, %d layouts, %d tilesets (%d primary, %d sharing graphics), %d map sections (%d on the cursor grid), %d Fly spots, %d visited flags, %d heal locations",
      scalar(@mapOrder), scalar(@groupOrder), scalar(keys %layoutUsed), scalar(keys %writtenTilesets), $nPrimary, scalar(grep { $writtenTilesets{$_}{shared} } keys %writtenTilesets),
      scalar(@sectionIds), scalar(grep { $sectionOf{$_}{onGrid} } @sectionIds), scalar(grep { $healOf{$_} && $healOf{$_}{ourId} && $flagOf{$_} } @sectionIds), scalar(grep { $townSections{$_} } @sectionIds), scalar(@healEntries)));
-for my $sym (sort keys %writtenTilesets) { my $w = $writtenTilesets{$sym}; info("  tileset $sym: $w->{dir} ($w->{nTiles} tiles, $w->{nMetatiles} metatiles" . ($w->{shared} ? ", graphics of " . our_tileset_sym($w->{shared}, undef) : "") . ")") }
+for my $sym (sort keys %writtenTilesets) { my $w = $writtenTilesets{$sym}; info("  tileset $sym: $w->{dir} ($w->{nTiles} tiles, $w->{nMetatiles} metatiles" . ($w->{shared} ? ", graphics of " . our_tileset_sym($w->{shared}, undef) : "") . ($w->{callback} ne 'NULL' ? ", animated: $w->{callback}, $animFramesCopied{$sym} frames" : "") . ")") }
+info("  tileset animations: " . scalar(keys %animFramesCopied) . " tilesets with a callback, " . eval { my $s = 0; $s += $_ for values %animFramesCopied; $s } . " frames copied (" . join(", ", sort keys %animFramesCopied) . ")");
 info("  behaviours on the imported maps: " . join(", ", map { "$_" } sort keys %behaviorUsed));
 for my $m (sort keys %extrasUsed) { info("  extras: $m: " . join(", ", ($extrasUsed{$m}{objects} ? "$extrasUsed{$m}{objects} object event(s)" : ()), ($extrasUsed{$m}{scripts} ? "scripts appended" : ()))) }
 info("  note: $_") for @notes;
